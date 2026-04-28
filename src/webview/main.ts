@@ -14,6 +14,7 @@ import hljs from 'highlight.js/lib/common';
 import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
 import { toPng } from 'html-to-image';
+import * as XLSX from 'xlsx';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
@@ -141,6 +142,164 @@ function attachCodeActions() {
     wrap.appendChild(imgBtn);
     pre.appendChild(wrap);
   });
+}
+
+function attachTableActions(): void {
+  const tables = root.querySelectorAll<HTMLTableElement>('main.viewing table');
+  tables.forEach((table, idx) => {
+    if (table.dataset.midEnhanced === '1') return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'mid-table-wrap';
+    table.parentNode?.insertBefore(wrapper, table);
+    wrapper.appendChild(table);
+    table.classList.add('mid-datatable');
+    table.dataset.midEnhanced = '1';
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'mid-table-toolbar';
+    toolbar.innerHTML = `
+      <span class="mid-table-label">Table ${idx + 1}</span>
+      <div class="mid-table-actions">
+        <button data-format="csv">CSV</button>
+        <button data-format="tsv">TSV</button>
+        <button data-format="xlsx">Excel</button>
+      </div>
+    `;
+    wrapper.insertBefore(toolbar, table);
+
+    toolbar.addEventListener('click', evt => {
+      const fmt = (evt.target as HTMLElement).dataset.format as 'csv' | 'tsv' | 'xlsx' | undefined;
+      if (!fmt) return;
+      try {
+        exportTable(table, fmt, `table-${idx + 1}`);
+      } catch (err) {
+        vscode.postMessage({
+          type: 'showError',
+          message: `Mark It Down: failed to export table — ${(err as Error)?.message ?? String(err)}`,
+        });
+      }
+    });
+
+    wireSortableHeaders(table);
+  });
+}
+
+function wireSortableHeaders(table: HTMLTableElement): void {
+  const headRow = table.tHead?.rows[0];
+  if (!headRow) return;
+  Array.from(headRow.cells).forEach((th, colIndex) => {
+    th.classList.add('mid-sortable');
+    th.dataset.sort = 'none';
+    const indicator = document.createElement('span');
+    indicator.className = 'mid-sort-indicator';
+    indicator.textContent = ' ⇅';
+    th.appendChild(indicator);
+    th.addEventListener('click', () => sortTable(table, colIndex, th));
+  });
+}
+
+function sortTable(table: HTMLTableElement, colIndex: number, th: HTMLTableCellElement): void {
+  const tbody = table.tBodies[0];
+  if (!tbody) return;
+  const rows = Array.from(tbody.rows);
+  const current = th.dataset.sort ?? 'none';
+  const next = current === 'none' ? 'asc' : current === 'asc' ? 'desc' : 'none';
+
+  // Reset indicators on all headers
+  table.tHead?.querySelectorAll<HTMLTableCellElement>('th').forEach(other => {
+    if (other === th) return;
+    other.dataset.sort = 'none';
+    const ind = other.querySelector('.mid-sort-indicator');
+    if (ind) ind.textContent = ' ⇅';
+  });
+  th.dataset.sort = next;
+  const ind = th.querySelector('.mid-sort-indicator');
+  if (ind) {
+    ind.textContent = next === 'asc' ? ' ▲' : next === 'desc' ? ' ▼' : ' ⇅';
+  }
+
+  if (next === 'none') {
+    const original = rows
+      .slice()
+      .sort((a, b) => Number(a.dataset.midOriginal ?? 0) - Number(b.dataset.midOriginal ?? 0));
+    original.forEach(r => tbody.appendChild(r));
+    return;
+  }
+  if (rows[0] && rows[0].dataset.midOriginal === undefined) {
+    rows.forEach((r, i) => (r.dataset.midOriginal = String(i)));
+  }
+  const factor = next === 'asc' ? 1 : -1;
+  rows.sort((a, b) => factor * compareCells(a.cells[colIndex], b.cells[colIndex]));
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+function compareCells(a: HTMLTableCellElement | undefined, b: HTMLTableCellElement | undefined): number {
+  const av = (a?.textContent ?? '').trim();
+  const bv = (b?.textContent ?? '').trim();
+  const an = parseFinite(av);
+  const bn = parseFinite(bv);
+  if (an !== null && bn !== null) return an - bn;
+  return av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function parseFinite(s: string): number | null {
+  if (s.length === 0) return null;
+  const cleaned = s.replace(/[, ]/g, '').replace(/^\$/, '').replace(/%$/, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function tableToMatrix(table: HTMLTableElement): string[][] {
+  const out: string[][] = [];
+  const head = table.tHead?.rows[0];
+  if (head) {
+    out.push(
+      Array.from(head.cells).map(c => c.cloneNode(true) as HTMLElement)
+        .map(c => {
+          c.querySelector('.mid-sort-indicator')?.remove();
+          return (c.textContent ?? '').trim();
+        }),
+    );
+  }
+  Array.from(table.tBodies[0]?.rows ?? []).forEach(row => {
+    out.push(Array.from(row.cells).map(c => (c.textContent ?? '').trim()));
+  });
+  return out;
+}
+
+function exportTable(table: HTMLTableElement, format: 'csv' | 'tsv' | 'xlsx', baseName: string): void {
+  const matrix = tableToMatrix(table);
+  if (format === 'csv' || format === 'tsv') {
+    const sep = format === 'csv' ? ',' : '\t';
+    const text = matrix
+      .map(row => row.map(cell => csvEscape(cell, sep)).join(sep))
+      .join('\n');
+    vscode.postMessage({
+      type: 'saveTable',
+      format,
+      content: text,
+      suggestedName: `${baseName}.${format}`,
+    });
+    return;
+  }
+  // xlsx
+  const ws = XLSX.utils.aoa_to_sheet(matrix);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const buf = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+  vscode.postMessage({
+    type: 'saveTable',
+    format: 'xlsx',
+    contentBase64: buf,
+    suggestedName: `${baseName}.xlsx`,
+  });
+}
+
+function csvEscape(value: string, sep: string): string {
+  if (value.includes(sep) || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
 }
 
 async function exportCodeBlockAsPng(pre: HTMLPreElement, suggestedName: string): Promise<void> {
@@ -296,6 +455,7 @@ function renderView() {
   root.classList.add('viewing');
   root.innerHTML = renderMarkdown(currentText);
   attachCodeActions();
+  attachTableActions();
   renderMermaidDiagrams();
 
   // Intercept link clicks → open in OS browser
