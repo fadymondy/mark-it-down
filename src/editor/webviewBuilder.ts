@@ -156,13 +156,69 @@ export function buildWebviewHtml(
     main.viewing li { margin: 0.3em 0; }
     main.viewing input[type="checkbox"] { margin-right: 6px; }
     main.viewing .mermaid {
+      position: relative;
       background: var(--code-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 14px;
       margin: 1em 0;
       text-align: center;
+      overflow: hidden;
+      min-height: 60px;
+    }
+    main.viewing .mermaid-stage {
+      cursor: grab;
+      transform-origin: 0 0;
+      transition: transform 0.06s linear;
+      display: inline-block;
+      will-change: transform;
+    }
+    main.viewing .mermaid-stage.mermaid-grabbing { cursor: grabbing; transition: none; }
+    main.viewing .mermaid-stage svg { max-width: none; }
+    main.viewing .mermaid-controls {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 2;
+    }
+    main.viewing .mermaid:hover .mermaid-controls { opacity: 1; }
+    main.viewing .mermaid-controls button {
+      font-size: 11px;
+      padding: 2px 8px;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      cursor: pointer;
+      min-width: 24px;
+    }
+    main.viewing .mermaid-controls button:hover { background: rgba(127,127,127,0.10); }
+    main.viewing .mermaid-error {
+      text-align: left;
+      cursor: default;
+    }
+    main.viewing .mermaid-error-body {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: var(--vscode-errorForeground, #d04444);
+      font-size: 0.92em;
+    }
+    main.viewing .mermaid-error-title { font-weight: 600; }
+    main.viewing .mermaid-error-message { font-family: var(--vscode-editor-font-family, monospace); }
+    main.viewing .mermaid-error details { color: var(--fg-muted); }
+    main.viewing .mermaid-error details summary { cursor: pointer; user-select: none; }
+    main.viewing .mermaid-error details pre {
+      background: rgba(127,127,127,0.10);
+      padding: 8px 10px;
+      border-radius: 4px;
       overflow-x: auto;
+      margin-top: 6px;
+      font-size: 0.92em;
     }
     /* Editor mode (Phase 0.2 will replace this with Monaco) -------------- */
     .editor {
