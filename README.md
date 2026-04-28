@@ -11,7 +11,7 @@ A beautiful markdown viewer + editor for VSCode — rich rendering, live mermaid
 | Feature | Status | Phase |
 |---------|--------|-------|
 | Markdown viewer (rich rendering) | ✅ shipped | 0.1 |
-| File starts in viewer; toggle to editor | ✅ shipped (basic textarea editor) | 0.1 / 0.2 |
+| File starts in viewer; toggle to editor | ✅ shipped (CodeMirror 6 editor) | 0.1 / 0.2 |
 | Context-menu export → DOC, DOCX, PDF, TXT | 🚧 stubs registered | 0.6 |
 | Mermaid live preview (GitHub-style) | ✅ shipped | 0.3 (in 0.1) |
 | Code blocks with copy / export image | 🚧 copy shipped, export image pending | 0.4 |

@@ -275,13 +275,23 @@
         "markItDown.theme": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "light", "dark", "github", "dracula", "one-dark"],
+          "enum": [
+            "auto",
+            "light",
+            "dark",
+            "github",
+            "dracula",
+            "one-dark"
+          ],
           "description": "Theme for the markdown renderer. 'auto' follows VSCode's active theme."
         },
         "markItDown.startMode": {
           "type": "string",
           "default": "view",
-          "enum": ["view", "edit"],
+          "enum": [
+            "view",
+            "edit"
+          ],
           "description": "Default mode when opening a markdown file."
         },
         "markItDown.mermaid.enabled": {
@@ -291,8 +301,15 @@
         },
         "markItDown.notes.categories": {
           "type": "array",
-          "default": ["Daily", "Reference", "Snippet", "Drafts"],
-          "items": { "type": "string" },
+          "default": [
+            "Daily",
+            "Reference",
+            "Snippet",
+            "Drafts"
+          ],
+          "items": {
+            "type": "string"
+          },
           "description": "Categories shown in the Notes sidebar. Empty entries are ignored."
         },
         "markItDown.notes.defaultCategory": {
@@ -303,7 +320,10 @@
         "markItDown.notes.defaultScope": {
           "type": "string",
           "default": "workspace",
-          "enum": ["workspace", "global"],
+          "enum": [
+            "workspace",
+            "global"
+          ],
           "description": "Where new notes go by default. Falls back to 'global' when no folder is open."
         },
         "markItDown.warehouse.repo": {
@@ -324,7 +344,10 @@
         "markItDown.warehouse.transport": {
           "type": "string",
           "default": "gh",
-          "enum": ["gh", "git"],
+          "enum": [
+            "gh",
+            "git"
+          ],
           "markdownEnumDescriptions": [
             "Use the `gh` CLI's existing auth (runs `gh auth setup-git` to wire git credentials).",
             "Use plain `git` with whatever credential helper you have configured."
@@ -362,16 +385,23 @@
     "lint": "eslint src --ext ts"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.41.1",
+    "codemirror": "^6.0.2",
+    "dompurify": "^3.2.3",
+    "highlight.js": "^11.10.0",
     "marked": "^14.1.3",
     "marked-highlight": "^2.2.1",
-    "highlight.js": "^11.10.0",
-    "mermaid": "^11.4.1",
-    "dompurify": "^3.2.3"
+    "mermaid": "^11.4.1"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.2.0",
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.85.0",
-    "@types/dompurify": "^3.2.0",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
