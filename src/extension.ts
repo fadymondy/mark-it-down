@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import { MarkdownEditorProvider } from './editor/markdownEditorProvider';
+import { NotesStore } from './notes/notesStore';
+import { NotesTreeProvider } from './notes/notesTreeProvider';
+import { registerNotesCommands } from './notes/notesCommands';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -13,6 +16,15 @@ export function activate(context: vscode.ExtensionContext) {
         supportsMultipleEditorsPerDocument: false,
       },
     ),
+  );
+
+  const notesStore = new NotesStore(context);
+  const notesTree = new NotesTreeProvider(notesStore);
+  context.subscriptions.push(
+    notesStore,
+    notesTree,
+    vscode.window.registerTreeDataProvider('markItDown.notes', notesTree),
+    ...registerNotesCommands(context, notesStore),
   );
 
   context.subscriptions.push(

@@ -16,7 +16,7 @@ A beautiful markdown viewer + editor for VSCode — rich rendering, live mermaid
 | Mermaid live preview (GitHub-style) | ✅ shipped | 0.3 (in 0.1) |
 | Code blocks with copy / export image | 🚧 copy shipped, export image pending | 0.4 |
 | Tables → DataTable with sort + Excel/CSV export | ⬜ planned | 0.5 |
-| Notes sidebar with multi-type categories | ⬜ planned | 0.7 |
+| Notes sidebar with multi-type categories | ✅ shipped | 0.7 |
 | Multi-theme via `@orchestra-mcp/theme` (25 themes) | ⬜ planned | 0.8 |
 | MCP server for Claude Desktop / Code | ⬜ planned | 0.9 |
 

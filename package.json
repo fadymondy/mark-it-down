@@ -32,10 +32,33 @@
   },
   "icon": "media/icon.png",
   "main": "./out/extension.js",
-  "activationEvents": [
-    "onLanguage:markdown"
-  ],
+  "activationEvents": [],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "markItDown",
+          "title": "Mark It Down",
+          "icon": "media/notes-sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "markItDown": [
+        {
+          "id": "markItDown.notes",
+          "name": "Notes",
+          "icon": "media/notes-sidebar.svg",
+          "contextualTitle": "Mark It Down"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "markItDown.notes",
+        "contents": "No notes yet.\n[New Note](command:markItDown.notes.create)\n\nNotes are stored privately in VSCode's workspace or global storage. Cloud sync to a GitHub repo arrives in a future release."
+      }
+    ],
     "customEditors": [
       {
         "viewType": "markItDown.editor",
@@ -76,6 +99,46 @@
       {
         "command": "markItDown.exportTxt",
         "title": "Mark It Down: Export to TXT"
+      },
+      {
+        "command": "markItDown.notes.create",
+        "title": "New Note",
+        "category": "Mark It Down",
+        "icon": "$(add)"
+      },
+      {
+        "command": "markItDown.notes.open",
+        "title": "Open Note",
+        "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.notes.rename",
+        "title": "Rename Note",
+        "category": "Mark It Down",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "markItDown.notes.move",
+        "title": "Move to Category…",
+        "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.notes.delete",
+        "title": "Delete Note",
+        "category": "Mark It Down",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "markItDown.notes.refresh",
+        "title": "Refresh",
+        "category": "Mark It Down",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "markItDown.notes.revealStorage",
+        "title": "Reveal Notes Folder",
+        "category": "Mark It Down",
+        "icon": "$(folder-opened)"
       }
     ],
     "menus": {
@@ -102,6 +165,64 @@
           "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdx",
           "group": "markItDown@3"
         }
+      ],
+      "view/title": [
+        {
+          "command": "markItDown.notes.create",
+          "when": "view == markItDown.notes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "markItDown.notes.refresh",
+          "when": "view == markItDown.notes",
+          "group": "navigation@2"
+        },
+        {
+          "command": "markItDown.notes.revealStorage",
+          "when": "view == markItDown.notes",
+          "group": "overflow@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "markItDown.notes.create",
+          "when": "view == markItDown.notes && viewItem =~ /^markItDown.notes.scope./",
+          "group": "inline@1"
+        },
+        {
+          "command": "markItDown.notes.create",
+          "when": "view == markItDown.notes && viewItem =~ /^markItDown.notes.category./",
+          "group": "inline@1"
+        },
+        {
+          "command": "markItDown.notes.rename",
+          "when": "view == markItDown.notes && viewItem =~ /^markItDown.notes.note./",
+          "group": "inline@1"
+        },
+        {
+          "command": "markItDown.notes.delete",
+          "when": "view == markItDown.notes && viewItem =~ /^markItDown.notes.note./",
+          "group": "inline@2"
+        },
+        {
+          "command": "markItDown.notes.move",
+          "when": "view == markItDown.notes && viewItem =~ /^markItDown.notes.note./",
+          "group": "modify@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "markItDown.notes.rename",
+          "when": "false"
+        },
+        {
+          "command": "markItDown.notes.move",
+          "when": "false"
+        },
+        {
+          "command": "markItDown.notes.delete",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
@@ -123,6 +244,23 @@
           "type": "boolean",
           "default": true,
           "description": "Render ```mermaid code blocks as live diagrams."
+        },
+        "markItDown.notes.categories": {
+          "type": "array",
+          "default": ["Daily", "Reference", "Snippet", "Drafts"],
+          "items": { "type": "string" },
+          "description": "Categories shown in the Notes sidebar. Empty entries are ignored."
+        },
+        "markItDown.notes.defaultCategory": {
+          "type": "string",
+          "default": "Drafts",
+          "description": "Pre-selected category when creating a new note."
+        },
+        "markItDown.notes.defaultScope": {
+          "type": "string",
+          "default": "workspace",
+          "enum": ["workspace", "global"],
+          "description": "Where new notes go by default. Falls back to 'global' when no folder is open."
         }
       }
     }
