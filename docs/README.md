@@ -14,7 +14,7 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | F6 — Notes sidebar | shipped (0.7) | [notes-sidebar.md](notes-sidebar.md) |
 | F7 — 25-theme bridge | planned | — |
 | F8 — MCP server | planned | — |
-| F9 — Notes warehouse repo | planned | — |
+| F9 — Notes warehouse repo | shipped | [notes-warehouse.md](notes-warehouse.md) |
 | F10 — Publish any markdown to GitHub Pages | planned | — |
 | F11 — Slideshow export | planned | — |
 | F12 — Standalone Electron app | planned | — |

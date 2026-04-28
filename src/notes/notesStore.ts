@@ -80,6 +80,24 @@ export class NotesStore {
     return note;
   }
 
+  public async importNote(meta: NoteMetadata, content: string): Promise<NoteMetadata> {
+    if (meta.scope === 'workspace' && !this.hasWorkspaceStorage()) {
+      throw new Error('Workspace storage unavailable; cannot import workspace note.');
+    }
+    const uri = this.uriFor(meta);
+    await ensureDir(uri);
+    await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content));
+    const index = this.read(meta.scope).filter(n => n.id !== meta.id);
+    index.push({ ...meta });
+    await this.write(meta.scope, index);
+    return meta;
+  }
+
+  public async readContent(meta: NoteMetadata): Promise<string> {
+    const buf = await vscode.workspace.fs.readFile(this.uriFor(meta));
+    return new TextDecoder().decode(buf);
+  }
+
   public async rename(id: string, title: string): Promise<NoteMetadata> {
     return this.update(id, n => ({ ...n, title: title.trim() || n.title }));
   }

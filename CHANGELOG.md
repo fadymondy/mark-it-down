@@ -4,6 +4,21 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Notes warehouse repo (#10)
+
+- Configure any GitHub repo as a cloud-storage backend for your notes via `markItDown.warehouse.repo` (`owner/repo`); set the branch, subdir, transport (`gh` or `git`), and auto-push behavior independently
+- Status-bar indicator on the right (`Notes synced` / `syncing…` / `behind` / `conflict` / `sync error` / `off`); click → opens the **Mark It Down: Warehouse** output channel
+- Pull on activation (non-blocking); debounced auto-push on note save (default 5s, configurable 1–60s)
+- Workspace notes go under `<subdir>/<workspace-slug>/`, global notes under `<subdir>/_personal/`. Same warehouse can host many workspaces side-by-side; same warehouse can serve multiple machines
+- Per-scope `_index.json` mirrors the F6 NotesStore index — title / category / timestamps. Markdown content lives next to it as `<id>.md`
+- First-push gate: confirmation modal listing repo, branch, subdir, workspace slug, file plan, and counts (added / updated / deleted) — must explicitly **Push** before any commit. Per-`(repo, workspaceId)` flag stored in `workspaceState`.
+- Conflict detection: when both local and remote moved since the last sync, the local copy is kept and the conflict is logged + surfaced in the status bar. Never auto-merges.
+- Secret-safety scanner: every `<id>.md` is scanned before push for GitHub PATs, AWS keys, OpenAI / Anthropic `sk-`, Slack `xox`, Google API keys, PEM private keys, and JWTs. Findings show a redacted preview + line number; user can Cancel or **Push anyway** for false positives.
+- Commands: `markItDown.warehouse.syncNow`, `.pull`, `.openOnGitHub`, `.openLog` — surfaced in the Notes view title bar and command palette
+- Transport `gh` runs `gh auth setup-git` once per repo so push uses your existing `gh auth` session — no extra credentials prompted. Transport `git` shells out to plain git with whatever credentials you already have
+- Working clone lives at `${context.globalStorageUri}/warehouse/<owner>--<repo>/`; safe to delete (re-clones on next sync)
+- Last-sync timestamps stored in `globalState[markItDown.warehouse.lastSyncedAt]` for conflict detection across sessions
+
 ### Added — Phase 0.7: Notes sidebar (#7)
 
 - Activity-bar view container "Mark It Down" with a dedicated "Notes" tree view

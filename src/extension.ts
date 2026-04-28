@@ -3,6 +3,9 @@ import { MarkdownEditorProvider } from './editor/markdownEditorProvider';
 import { NotesStore } from './notes/notesStore';
 import { NotesTreeProvider } from './notes/notesTreeProvider';
 import { registerNotesCommands } from './notes/notesCommands';
+import { WarehouseManager } from './warehouse/warehouseManager';
+import { registerWarehouseCommands } from './warehouse/warehouseCommands';
+import { disposeLogChannel } from './warehouse/warehouseLog';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -20,12 +23,16 @@ export function activate(context: vscode.ExtensionContext) {
 
   const notesStore = new NotesStore(context);
   const notesTree = new NotesTreeProvider(notesStore);
+  const warehouse = new WarehouseManager(context, notesStore);
   context.subscriptions.push(
     notesStore,
     notesTree,
+    warehouse,
     vscode.window.registerTreeDataProvider('markItDown.notes', notesTree),
     ...registerNotesCommands(context, notesStore),
+    ...registerWarehouseCommands(warehouse),
   );
+  warehouse.start();
 
   context.subscriptions.push(
     vscode.commands.registerCommand('markItDown.toggleMode', () => {
@@ -56,5 +63,5 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  // no-op
+  disposeLogChannel();
 }
