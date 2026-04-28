@@ -4,6 +4,14 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.2: Real code editor in Edit mode (#2)
+
+- The custom editor's Edit mode now uses [CodeMirror 6](https://codemirror.net) instead of a placeholder textarea — syntax highlighting, line numbers, multi-cursor, history (Cmd/Ctrl+Z), bracket matching, indent on input, line wrapping, default keymap (find/select-all/comment/etc.)
+- Theme bridged to VSCode's active theme via `--vscode-*` CSS variables; dark themes additionally load `@codemirror/theme-one-dark` for syntax token colors
+- Two-way bound to the document via `WorkspaceEdit` — undo stack and external edits both round-trip cleanly; `suppressEditorChange` flag prevents echo loops
+- Mode toggle (View ↔ Edit) destroys + rebuilds the EditorView so memory is clean
+- Deviation from the issue spec (Monaco): swapped to CodeMirror 6 to keep the strict CSP intact and avoid a 15MB Monaco bundle. See [docs/code-editor.md](docs/code-editor.md#why-codemirror-not-monaco) for the rationale and a path back to Monaco if desired.
+
 ### Added — Notes warehouse repo (#10)
 
 - Configure any GitHub repo as a cloud-storage backend for your notes via `markItDown.warehouse.repo` (`owner/repo`); set the branch, subdir, transport (`gh` or `git`), and auto-push behavior independently

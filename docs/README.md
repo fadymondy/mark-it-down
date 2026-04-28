@@ -6,7 +6,7 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 
 | Feature | Status | Doc |
 |---|---|---|
-| F1 — Monaco editor | planned | — |
+| F1 — Code editor (CodeMirror 6) | shipped | [code-editor.md](code-editor.md) |
 | F2 — Mermaid polish | planned | — |
 | F3 — Code-block image export | planned | — |
 | F4 — Sortable DataTable + table exports | planned | — |

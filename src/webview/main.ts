@@ -13,6 +13,12 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js/lib/common';
 import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
+import { EditorState } from '@codemirror/state';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
+import { oneDark } from '@codemirror/theme-one-dark';
 
 interface VSCodeApi {
   postMessage(msg: unknown): void;
@@ -40,6 +46,9 @@ const fname = document.getElementById('filename') as HTMLSpanElement;
 let currentText = '';
 let currentMode: Mode = 'view';
 let mermaidInitialized = false;
+let editorView: EditorView | null = null;
+let lastThemeKind = 1;
+let suppressEditorChange = false;
 
 function initMermaid(themeKind: number) {
   // 1=Light, 2=Dark, 3=HighContrastDark, 4=HighContrastLight
@@ -149,18 +158,93 @@ function renderView() {
   });
 }
 
+function buildEditorState(text: string, themeKind: number): EditorState {
+  const isDark = themeKind === 2 || themeKind === 3;
+  const updateListener = EditorView.updateListener.of(update => {
+    if (suppressEditorChange) return;
+    if (update.docChanged) {
+      vscode.postMessage({ type: 'edit', text: update.state.doc.toString() });
+    }
+  });
+  const extensions = [
+    lineNumbers(),
+    highlightActiveLine(),
+    highlightActiveLineGutter(),
+    drawSelection(),
+    history(),
+    indentOnInput(),
+    bracketMatching(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    markdown({ base: markdownLanguage, codeLanguages: [] }),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    EditorView.lineWrapping,
+    EditorState.tabSize.of(2),
+    updateListener,
+    EditorView.theme({
+      '&': {
+        height: '100%',
+        fontSize: 'var(--vscode-editor-font-size, 13px)',
+        backgroundColor: 'var(--vscode-editor-background, transparent)',
+        color: 'var(--vscode-editor-foreground)',
+      },
+      '.cm-content': {
+        fontFamily: 'var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
+        caretColor: 'var(--vscode-editorCursor-foreground)',
+        padding: '14px 0',
+      },
+      '.cm-gutters': {
+        backgroundColor: 'var(--vscode-editorGutter-background, transparent)',
+        color: 'var(--vscode-editorLineNumber-foreground)',
+        border: 'none',
+      },
+      '.cm-activeLine': { backgroundColor: 'rgba(127,127,127,0.06)' },
+      '.cm-activeLineGutter': { backgroundColor: 'rgba(127,127,127,0.10)' },
+      '.cm-cursor': { borderLeftColor: 'var(--vscode-editorCursor-foreground)' },
+      '.cm-selectionBackground, ::selection': {
+        backgroundColor: 'var(--vscode-editor-selectionBackground) !important',
+      },
+      '.cm-scroller': { overflow: 'auto' },
+    }, { dark: isDark }),
+  ];
+  if (isDark) {
+    extensions.unshift(oneDark);
+  }
+  return EditorState.create({ doc: text, extensions });
+}
+
 function renderEdit() {
   root.classList.remove('viewing');
   root.classList.add('editing');
-  const ta = document.createElement('textarea');
-  ta.className = 'editor';
-  ta.value = currentText;
-  ta.spellcheck = false;
-  ta.addEventListener('input', () => {
-    vscode.postMessage({ type: 'edit', text: ta.value });
-  });
-  root.replaceChildren(ta);
-  ta.focus();
+  const host = document.createElement('div');
+  host.className = 'editor';
+  root.replaceChildren(host);
+  if (editorView) {
+    editorView.destroy();
+    editorView = null;
+  }
+  editorView = new EditorView({ state: buildEditorState(currentText, lastThemeKind), parent: host });
+  editorView.focus();
+}
+
+function syncEditorContent(): void {
+  if (!editorView) return;
+  const liveText = editorView.state.doc.toString();
+  if (liveText === currentText) return;
+  suppressEditorChange = true;
+  try {
+    editorView.dispatch({
+      changes: { from: 0, to: liveText.length, insert: currentText },
+    });
+  } finally {
+    suppressEditorChange = false;
+  }
+}
+
+function syncEditorTheme(themeKind: number): void {
+  if (!editorView) return;
+  if (themeKind === lastThemeKind) return;
+  const text = editorView.state.doc.toString();
+  editorView.setState(buildEditorState(text, themeKind));
 }
 
 function setMode(mode: Mode, push = true) {
@@ -179,23 +263,18 @@ window.addEventListener('message', evt => {
   const msg = evt.data as UpdateMessage;
   if (msg?.type !== 'update') return;
   initMermaid(msg.themeKind);
+  const themeChanged = msg.themeKind !== lastThemeKind;
+  lastThemeKind = msg.themeKind;
   currentText = msg.text;
-  // Re-render whichever mode is active
   if (msg.mode !== currentMode) {
     setMode(msg.mode, false);
   } else if (currentMode === 'view') {
     renderView();
   } else {
-    // In edit mode the textarea already shows the user's typing — only refresh
-    // if the document text drifted (e.g. external save/format)
-    const ta = root.querySelector('textarea') as HTMLTextAreaElement | null;
-    if (ta && ta.value !== currentText) {
-      const wasFocused = document.activeElement === ta;
-      const sel = wasFocused ? { start: ta.selectionStart, end: ta.selectionEnd } : null;
-      ta.value = currentText;
-      if (sel && wasFocused) {
-        ta.setSelectionRange(sel.start, sel.end);
-      }
+    if (themeChanged) {
+      syncEditorTheme(msg.themeKind);
+    } else {
+      syncEditorContent();
     }
   }
 });
