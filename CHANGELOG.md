@@ -4,6 +4,14 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.3: Mermaid polish (#3)
+
+- Mermaid diagrams in View mode now have hover controls: `+` / `−` zoom, `1×` reset, and `Copy` (posts the original mermaid source via the existing clipboard channel)
+- Cmd/Ctrl + scroll over a diagram zooms in/out (clamped to 0.2×–6×); click-and-drag pans
+- Theme sync: when VSCode's color theme changes mid-session, `initMermaid()` re-initializes mermaid with the matching theme and every existing diagram re-renders via `rerenderMermaidForTheme()` from its stashed source
+- Error UX: failed renders show a structured card with title + parser message + collapsible source instead of a blank box
+- Pointer-event drag with `setPointerCapture` keeps the drag attached even if the cursor leaves the diagram bounds
+
 ### Added — Phase 0.2: Real code editor in Edit mode (#2)
 
 - The custom editor's Edit mode now uses [CodeMirror 6](https://codemirror.net) instead of a placeholder textarea — syntax highlighting, line numbers, multi-cursor, history (Cmd/Ctrl+Z), bracket matching, indent on input, line wrapping, default keymap (find/select-all/comment/etc.)

@@ -50,8 +50,11 @@ let editorView: EditorView | null = null;
 let lastThemeKind = 1;
 let suppressEditorChange = false;
 
+let mermaidThemeKind = 0;
+
 function initMermaid(themeKind: number) {
   // 1=Light, 2=Dark, 3=HighContrastDark, 4=HighContrastLight
+  if (mermaidThemeKind === themeKind && mermaidInitialized) return;
   const isDark = themeKind === 2 || themeKind === 3;
   mermaid.initialize({
     startOnLoad: false,
@@ -60,6 +63,7 @@ function initMermaid(themeKind: number) {
     fontFamily: 'inherit',
   });
   mermaidInitialized = true;
+  mermaidThemeKind = themeKind;
 }
 
 marked.use(
@@ -120,22 +124,126 @@ function attachCodeActions() {
 function renderMermaidDiagrams() {
   const targets = root.querySelectorAll<HTMLDivElement>('.mermaid');
   if (targets.length === 0) return;
-  if (!mermaidInitialized) initMermaid(1);
+  if (!mermaidInitialized) initMermaid(lastThemeKind || 1);
   targets.forEach((el, i) => {
     const id = `mermaid-${Date.now()}-${i}`;
-    const code = el.textContent ?? '';
+    const code = (el.dataset.mermaidSource ?? el.textContent ?? '').trim();
+    el.dataset.mermaidSource = code;
     el.removeAttribute('data-processed');
     mermaid
       .render(id, code)
       .then(({ svg }) => {
-        el.innerHTML = svg;
+        renderMermaidSuccess(el, svg, code);
       })
       .catch(err => {
-        el.innerHTML = `<pre style="color: var(--vscode-errorForeground)">Mermaid error: ${String(
-          (err as Error)?.message ?? err,
-        )}</pre>`;
+        renderMermaidError(el, err, code);
       });
   });
+}
+
+function renderMermaidSuccess(host: HTMLDivElement, svg: string, source: string): void {
+  host.innerHTML = '';
+  host.classList.remove('mermaid-error');
+  host.classList.add('mermaid-rendered');
+
+  const stage = document.createElement('div');
+  stage.className = 'mermaid-stage';
+
+  const transform = { scale: 1, x: 0, y: 0 };
+  const apply = () => {
+    stage.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
+  };
+
+  stage.innerHTML = svg;
+  host.appendChild(stage);
+
+  const controls = document.createElement('div');
+  controls.className = 'mermaid-controls';
+  controls.innerHTML = `
+    <button data-action="zoom-out" title="Zoom out">−</button>
+    <button data-action="reset" title="Reset (1×)">1×</button>
+    <button data-action="zoom-in" title="Zoom in">+</button>
+    <button data-action="copy" title="Copy source">Copy</button>
+  `;
+  host.appendChild(controls);
+
+  controls.addEventListener('click', evt => {
+    const action = (evt.target as HTMLElement).dataset.action;
+    if (!action) return;
+    if (action === 'zoom-in') transform.scale = Math.min(transform.scale * 1.25, 6);
+    else if (action === 'zoom-out') transform.scale = Math.max(transform.scale / 1.25, 0.2);
+    else if (action === 'reset') {
+      transform.scale = 1;
+      transform.x = 0;
+      transform.y = 0;
+    } else if (action === 'copy') {
+      vscode.postMessage({ type: 'copy', text: source });
+      return;
+    }
+    apply();
+  });
+
+  host.addEventListener('wheel', evt => {
+    if (!evt.ctrlKey && !evt.metaKey) return;
+    evt.preventDefault();
+    const factor = evt.deltaY < 0 ? 1.1 : 1 / 1.1;
+    transform.scale = Math.min(6, Math.max(0.2, transform.scale * factor));
+    apply();
+  }, { passive: false });
+
+  let dragging: { startX: number; startY: number; baseX: number; baseY: number } | null = null;
+  stage.addEventListener('pointerdown', evt => {
+    if (evt.button !== 0) return;
+    dragging = {
+      startX: evt.clientX,
+      startY: evt.clientY,
+      baseX: transform.x,
+      baseY: transform.y,
+    };
+    stage.setPointerCapture(evt.pointerId);
+    stage.classList.add('mermaid-grabbing');
+  });
+  stage.addEventListener('pointermove', evt => {
+    if (!dragging) return;
+    transform.x = dragging.baseX + (evt.clientX - dragging.startX);
+    transform.y = dragging.baseY + (evt.clientY - dragging.startY);
+    apply();
+  });
+  const endDrag = (evt: PointerEvent) => {
+    if (!dragging) return;
+    dragging = null;
+    stage.classList.remove('mermaid-grabbing');
+    stage.releasePointerCapture(evt.pointerId);
+  };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+}
+
+function renderMermaidError(host: HTMLDivElement, err: unknown, source: string): void {
+  host.innerHTML = '';
+  host.classList.remove('mermaid-rendered');
+  host.classList.add('mermaid-error');
+  const message = (err instanceof Error ? err.message : String(err)).split('\n')[0];
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mermaid-error-body';
+  wrap.innerHTML = `
+    <div class="mermaid-error-title">Mermaid render failed</div>
+    <div class="mermaid-error-message"></div>
+    <details><summary>Diagram source</summary><pre></pre></details>
+  `;
+  (wrap.querySelector('.mermaid-error-message') as HTMLElement).textContent = message;
+  (wrap.querySelector('pre') as HTMLPreElement).textContent = source;
+  host.appendChild(wrap);
+}
+
+function rerenderMermaidForTheme(): void {
+  const targets = root.querySelectorAll<HTMLDivElement>('.mermaid[data-mermaid-source]');
+  targets.forEach(el => {
+    el.classList.remove('mermaid-rendered', 'mermaid-error');
+    el.innerHTML = '';
+  });
+  renderMermaidDiagrams();
 }
 
 function renderView() {
@@ -262,20 +370,27 @@ btnEdit.addEventListener('click', () => setMode('edit'));
 window.addEventListener('message', evt => {
   const msg = evt.data as UpdateMessage;
   if (msg?.type !== 'update') return;
-  initMermaid(msg.themeKind);
   const themeChanged = msg.themeKind !== lastThemeKind;
   lastThemeKind = msg.themeKind;
+  initMermaid(msg.themeKind);
   currentText = msg.text;
   if (msg.mode !== currentMode) {
     setMode(msg.mode, false);
   } else if (currentMode === 'view') {
-    renderView();
+    if (themeChanged) {
+      renderView();
+    } else {
+      renderView();
+    }
   } else {
     if (themeChanged) {
       syncEditorTheme(msg.themeKind);
     } else {
       syncEditorContent();
     }
+  }
+  if (currentMode === 'view' && themeChanged) {
+    rerenderMermaidForTheme();
   }
 });
 
