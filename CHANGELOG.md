@@ -4,6 +4,12 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.4: Code-block image export (#4)
+
+- Each code block in View mode has a new `PNG` action next to `Copy` that exports the block as a 2× pixel-ratio PNG via [html-to-image](https://www.npmjs.com/package/html-to-image)
+- Captures syntax highlighting, the active VSCode editor background, font, padding, and border-radius — strips the hover toolbar so it doesn't appear in the image
+- Save flow uses `vscode.window.showSaveDialog`, defaults to the markdown file's directory with a slugified filename like `typescript-snippet-3.png`, then offers `Open` / `Reveal` follow-up actions
+
 ### Added — Phase 0.3: Mermaid polish (#3)
 
 - Mermaid diagrams in View mode now have hover controls: `+` / `−` zoom, `1×` reset, and `Copy` (posts the original mermaid source via the existing clipboard channel)

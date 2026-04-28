@@ -13,6 +13,7 @@ import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js/lib/common';
 import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
+import { toPng } from 'html-to-image';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
@@ -108,17 +109,61 @@ function renderMarkdown(md: string): string {
 }
 
 function attachCodeActions() {
-  root.querySelectorAll<HTMLPreElement>('main.viewing pre').forEach(pre => {
+  root.querySelectorAll<HTMLPreElement>('main.viewing pre').forEach((pre, idx) => {
     if (pre.querySelector('.code-actions')) return;
     const wrap = document.createElement('div');
     wrap.className = 'code-actions';
     const code = pre.querySelector('code')?.textContent ?? '';
+    const lang =
+      pre
+        .querySelector('code')
+        ?.className.match(/language-(\S+)/)?.[1] ?? 'code';
+
     const copyBtn = document.createElement('button');
     copyBtn.textContent = 'Copy';
+    copyBtn.title = 'Copy code to clipboard';
     copyBtn.addEventListener('click', () => vscode.postMessage({ type: 'copy', text: code }));
     wrap.appendChild(copyBtn);
+
+    const imgBtn = document.createElement('button');
+    imgBtn.textContent = 'PNG';
+    imgBtn.title = 'Export this code block as PNG';
+    imgBtn.addEventListener('click', () =>
+      exportCodeBlockAsPng(pre, `${lang}-snippet-${idx + 1}`).catch(err => {
+        vscode.postMessage({
+          type: 'showError',
+          message: `Mark It Down: failed to export code block — ${
+            (err as Error)?.message ?? String(err)
+          }`,
+        });
+      }),
+    );
+    wrap.appendChild(imgBtn);
     pre.appendChild(wrap);
   });
+}
+
+async function exportCodeBlockAsPng(pre: HTMLPreElement, suggestedName: string): Promise<void> {
+  const actions = pre.querySelector<HTMLDivElement>('.code-actions');
+  const previousActionsDisplay = actions?.style.display ?? '';
+  if (actions) actions.style.display = 'none';
+  try {
+    const styles = getComputedStyle(document.body);
+    const bg = styles.getPropertyValue('--vscode-editor-background').trim() || '#ffffff';
+    const dataUrl = await toPng(pre, {
+      backgroundColor: bg,
+      pixelRatio: 2,
+      cacheBust: true,
+      style: { boxShadow: 'none', borderRadius: '6px' },
+    });
+    vscode.postMessage({
+      type: 'saveCodeImage',
+      dataUrl,
+      suggestedName,
+    });
+  } finally {
+    if (actions) actions.style.display = previousActionsDisplay;
+  }
 }
 
 function renderMermaidDiagrams() {
