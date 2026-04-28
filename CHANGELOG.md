@@ -4,6 +4,15 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.8: Theme bridge with 25 bundled palettes (#8)
+
+- 25 hand-curated theme palettes ship inline (15 dark + 10 light): GitHub Light/Dark, Dracula, Atom One Dark/Light, Monokai, Solarized Light/Dark, Tokyo Night (+Light), Ayu Light/Mirage/Dark, Gruvbox Light/Dark, Nord (+Light), Palenight, Material Dark/Light, Night Owl, Cobalt 2, Oceanic Next, Hyper Snazzy, Rosé Pine
+- `markItDown.theme` setting enum extended from 6 to 26 values (`auto` + 25 themes); existing `auto` still bridges to VSCode's `--vscode-*` CSS variables
+- New command `Mark It Down: Pick Theme` opens a Quick Pick over the 25 themes with kind hints; writes to workspace settings (or global if no folder open)
+- Mid-session theme changes reload the webview HTML for every open Mark It Down editor — no VSCode restart needed (tradeoff: edit-mode cursor resets; live CSS-variable swap is a future-work seed)
+- Mermaid theme follows each bundled palette's `kind` (light/dark) so flowcharts stay readable
+- Spec referenced `@orchestra-mcp/theme`; we shipped the palettes inline so F7 doesn't block on a private package — see [docs/themes.md](docs/themes.md#why-not-orchestra-mcptheme)
+
 ### Added — Phase 0.5: Sortable tables + per-table export (#5)
 
 - Markdown tables in View mode are now sortable — click any column header to cycle asc → desc → none (original markdown order)

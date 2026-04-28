@@ -58,9 +58,21 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     const themeSub = vscode.window.onDidChangeActiveColorTheme(() => sendUpdate());
 
+    const cfgSub = vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('markItDown.theme')) {
+        const next = vscode.workspace.getConfiguration('markItDown').get<string>('theme') ?? 'auto';
+        webviewPanel.webview.html = buildWebviewHtml(
+          webviewPanel.webview,
+          this.context.extensionUri,
+          this.resolveTheme(next),
+        );
+      }
+    });
+
     webviewPanel.onDidDispose(() => {
       docSub.dispose();
       themeSub.dispose();
+      cfgSub.dispose();
       this.panels.delete(document.uri.toString());
     });
 
@@ -209,11 +221,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   }
 
   private resolveTheme(preference: string): string {
-    if (preference !== 'auto') {
-      return preference;
-    }
-    return vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark
-      ? 'dark'
-      : 'light';
+    // 'auto' returns 'auto' so the webview uses --vscode-* CSS variables.
+    // Any other id is matched against the bundled theme set; if not found,
+    // fall back to 'auto' so a typo in settings doesn't break rendering.
+    if (preference === 'auto') return 'auto';
+    return preference;
   }
 }
