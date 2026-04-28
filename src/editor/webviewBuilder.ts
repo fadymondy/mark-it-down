@@ -141,15 +141,48 @@ export function buildWebviewHtml(
       background: var(--code-bg);
       border-radius: 0 6px 6px 0;
     }
+    main.viewing .mid-table-wrap {
+      margin: 1em 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    main.viewing .mid-table-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--code-bg);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85em;
+    }
+    main.viewing .mid-table-label { color: var(--fg-muted); }
+    main.viewing .mid-table-actions { display: flex; gap: 4px; }
+    main.viewing .mid-table-actions button {
+      font-size: 11px;
+      padding: 2px 8px;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    main.viewing .mid-table-actions button:hover { background: rgba(127,127,127,0.10); }
     main.viewing table {
       border-collapse: collapse;
       width: 100%;
-      margin: 1em 0;
+      margin: 0;
       font-size: 0.95em;
     }
     main.viewing th, main.viewing td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
     main.viewing th { background: var(--code-bg); font-weight: 600; }
     main.viewing tr:nth-child(even) td { background: var(--table-stripe); }
+    main.viewing th.mid-sortable { cursor: pointer; user-select: none; }
+    main.viewing th.mid-sortable:hover { background: rgba(127,127,127,0.12); }
+    main.viewing .mid-sort-indicator { font-size: 0.75em; opacity: 0.6; margin-left: 4px; }
+    main.viewing th[data-sort="asc"] .mid-sort-indicator,
+    main.viewing th[data-sort="desc"] .mid-sort-indicator { opacity: 1; }
     main.viewing img { max-width: 100%; border-radius: 4px; }
     main.viewing hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
     main.viewing ul, main.viewing ol { padding-left: 1.4em; }

@@ -102,6 +102,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             await this.saveCodeImage(document, msg.dataUrl, String(msg.suggestedName ?? 'code-block'));
           }
           return;
+        case 'saveTable':
+          await this.saveTable(document, msg);
+          return;
         case 'showError':
           if (typeof msg.message === 'string') {
             vscode.window.showErrorMessage(msg.message);
@@ -109,6 +112,46 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           return;
       }
     });
+  }
+
+  private async saveTable(
+    document: vscode.TextDocument,
+    msg: { format?: unknown; content?: unknown; contentBase64?: unknown; suggestedName?: unknown },
+  ): Promise<void> {
+    const format = msg.format === 'csv' || msg.format === 'tsv' || msg.format === 'xlsx' ? msg.format : null;
+    if (!format) return;
+    const baseName = String(msg.suggestedName ?? `table.${format}`).replace(/[^A-Za-z0-9._-]+/g, '-');
+    const documentDir = vscode.Uri.joinPath(document.uri, '..');
+    const defaultUri = vscode.Uri.joinPath(documentDir, baseName);
+    const filterLabel = format === 'xlsx' ? 'Excel workbook' : format.toUpperCase();
+    const target = await vscode.window.showSaveDialog({
+      defaultUri,
+      filters: { [filterLabel]: [format] },
+      title: `Mark It Down: save table as ${format.toUpperCase()}`,
+    });
+    if (!target) return;
+    let buffer: Uint8Array;
+    if (format === 'xlsx') {
+      if (typeof msg.contentBase64 !== 'string') {
+        vscode.window.showErrorMessage('Mark It Down: malformed xlsx payload — export aborted.');
+        return;
+      }
+      buffer = Buffer.from(msg.contentBase64, 'base64');
+    } else {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      buffer = Buffer.from(content, 'utf8');
+    }
+    await vscode.workspace.fs.writeFile(target, buffer);
+    const choice = await vscode.window.showInformationMessage(
+      `Mark It Down: saved ${target.fsPath.split('/').pop()}`,
+      'Open',
+      'Reveal',
+    );
+    if (choice === 'Open') {
+      await vscode.commands.executeCommand('vscode.open', target);
+    } else if (choice === 'Reveal') {
+      await vscode.commands.executeCommand('revealFileInOS', target);
+    }
   }
 
   private async saveCodeImage(

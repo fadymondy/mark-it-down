@@ -4,6 +4,15 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.5: Sortable tables + per-table export (#5)
+
+- Markdown tables in View mode are now sortable — click any column header to cycle asc → desc → none (original markdown order)
+- Mixed-type-aware comparison: numeric strings (with `$`, `,`, `%` strip), then `localeCompare` with numeric-aware sensitivity for everything else
+- Per-table toolbar above each table with **CSV** / **TSV** / **Excel** export buttons
+- CSV/TSV serialization is RFC-4180 compliant (quote on separator/quote/newline, escape embedded `"` by doubling). Exports respect the **current** sort order in the DOM.
+- Excel export uses [SheetJS](https://www.npmjs.com/package/xlsx) (`aoa_to_sheet` → `XLSX.write({ type: 'base64' })`) — bundled webview grew 8.1MB → 8.7MB
+- Save flow: `vscode.window.showSaveDialog` → write via host → info toast with `Open` / `Reveal` actions
+
 ### Added — Phase 0.4: Code-block image export (#4)
 
 - Each code block in View mode has a new `PNG` action next to `Copy` that exports the block as a 2× pixel-ratio PNG via [html-to-image](https://www.npmjs.com/package/html-to-image)
