@@ -97,8 +97,54 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             vscode.window.setStatusBarMessage('Mark It Down: copied', 1500);
           }
           return;
+        case 'saveCodeImage':
+          if (typeof msg.dataUrl === 'string') {
+            await this.saveCodeImage(document, msg.dataUrl, String(msg.suggestedName ?? 'code-block'));
+          }
+          return;
+        case 'showError':
+          if (typeof msg.message === 'string') {
+            vscode.window.showErrorMessage(msg.message);
+          }
+          return;
       }
     });
+  }
+
+  private async saveCodeImage(
+    document: vscode.TextDocument,
+    dataUrl: string,
+    suggestedName: string,
+  ): Promise<void> {
+    const match = /^data:image\/(png|jpeg|webp);base64,(.+)$/.exec(dataUrl);
+    if (!match) {
+      vscode.window.showErrorMessage('Mark It Down: malformed image data — export aborted.');
+      return;
+    }
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+    const buffer = Buffer.from(match[2], 'base64');
+    const baseName = suggestedName.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 64) || 'code-block';
+    const documentDir = vscode.Uri.joinPath(document.uri, '..');
+    const defaultUri = vscode.Uri.joinPath(documentDir, `${baseName}.${ext}`);
+    const target = await vscode.window.showSaveDialog({
+      defaultUri,
+      filters: { Image: [ext] },
+      title: 'Mark It Down: save code-block image',
+    });
+    if (!target) {
+      return;
+    }
+    await vscode.workspace.fs.writeFile(target, buffer);
+    const choice = await vscode.window.showInformationMessage(
+      `Mark It Down: saved ${target.fsPath.split('/').pop()}`,
+      'Open',
+      'Reveal',
+    );
+    if (choice === 'Open') {
+      await vscode.commands.executeCommand('vscode.open', target);
+    } else if (choice === 'Reveal') {
+      await vscode.commands.executeCommand('revealFileInOS', target);
+    }
   }
 
   public toggleActiveMode(): void {

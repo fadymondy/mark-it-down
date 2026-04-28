@@ -4,3 +4,6 @@ dist/
 *.vsix
 .DS_Store
 .vscode-test/
+
+# Claude Code session metadata — local only
+.claude/
