@@ -77,12 +77,20 @@ Settings (Cmd+, → "Mark It Down"):
 | `markItDown.notes.categories` | `["Daily","Reference","Snippet","Drafts"]` | list of strings |
 | `markItDown.notes.defaultCategory` | `"Drafts"` | string |
 | `markItDown.notes.defaultScope` | `"workspace"` | `workspace / global` |
+| `markItDown.warehouse.repo` | `""` (off) | `owner/repo` |
+| `markItDown.warehouse.branch` | `"main"` | string |
+| `markItDown.warehouse.subdir` | `"notes"` | string |
+| `markItDown.warehouse.transport` | `"gh"` | `gh / git` |
+| `markItDown.warehouse.autoPush` | `true` | boolean |
+| `markItDown.warehouse.autoPushDebounceMs` | `5000` | 1000–60000 |
+| `markItDown.warehouse.workspaceId` | `""` (auto) | string |
 
 ## Documentation
 
 Per-feature pages live in [docs/](docs/). Currently shipped:
 
 - [Notes sidebar](docs/notes-sidebar.md) — workspace + global notes with categories, opened through the Mark It Down editor
+- [Notes warehouse](docs/notes-warehouse.md) — sync your notes to a GitHub repo as cloud storage; pull on activation, debounced auto-push on save, secret-scan + dry-run gate
 
 ## Contributing
 
