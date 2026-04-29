@@ -4,6 +4,18 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.1 hardening: MCP IPC channel for active-editor introspection (#35)
+
+- The 2 stub tools from F8 (`get_active_markdown` and `list_open_md`) now actually work
+- New cross-platform IPC channel: Unix-domain socket on macOS/Linux at `${globalStorageUri}/mid-mcp.sock`, named pipe on Windows at `\\.\pipe\mark-it-down-<hash>` (the hash makes multiple installs collision-safe)
+- `src/mcp/ipcProtocol.ts` — newline-delimited JSON request/response types + `ipcEndpoint(dir)` helper
+- `src/mcp/ipcServer.ts` — `McpIpcServer` listener wired into extension activation; cleans up stale sockets on POSIX startup; per-connection request handler covers `ping` / `get_active_markdown` / `list_open_md`
+- `src/mcp/ipcClient.ts` — connects + sends + closes per request (no pool needed at MCP volume); 3s timeout
+- `src/mcp/server.ts` — `--ipc-sock <path>` CLI arg; both tools route through `IpcClient` and gracefully degrade with a clear error when the channel is unreachable
+- `src/mcp/installCommand.ts` — auto-passes `--ipc-sock` per-install so users don't have to know the path
+- 4 new unit tests + 3 round-trip integration tests covering the protocol with a stand-in server (71 tests total, all passing)
+- `docs/mcp-server.md` updated to remove the deferred caveat for both tools, document the IPC architecture, and show the response shape for each
+
 ### Added — v1.1 hardening: VSCode Marketplace publisher setup runbook (#34)
 
 - `package.json` extended with marketplace-friendly metadata: `bugs.url`, `categories` adds "Notebooks", `keywords` adds preview/publish/slideshow/github-pages, `galleryBanner` (`#0d1117` dark), `qna: marketplace`

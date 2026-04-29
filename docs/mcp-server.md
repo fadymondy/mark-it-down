@@ -126,13 +126,47 @@ Patch any of `title`, `category`, `content`. Bumps `updatedAt`.
 
 Permanently delete a note. No soft-delete.
 
-### `get_active_markdown` (deferred)
+### `get_active_markdown` ✓ (v0.9.1)
 
-Would return whatever is open in the active Mark It Down editor. Requires bidirectional IPC between the running VSCode extension and the spawned MCP server — a Unix socket / named pipe is on the v1+ roadmap. In v0.9 the tool is registered but returns an `isError` result with a clear message.
+Returns the markdown currently open in the active VSCode editor. Requires `--ipc-sock` to be set when the MCP server launches (the install command sets it automatically). Returns `null` when no markdown editor is active. Returns an `isError` result if the IPC channel can't be reached (extension not running, stale socket).
 
-### `list_open_md` (deferred)
+Response shape:
 
-Same story: requires extension IPC. Stub registered.
+```jsonc
+{
+  "uri": "file:///path/to/note.md",
+  "fsPath": "/path/to/note.md",
+  "content": "# the full markdown body",
+  "isDirty": false,
+  "languageId": "markdown"
+}
+```
+
+### `list_open_md` ✓ (v0.9.1)
+
+Lists every open `.md` / `.mdx` document in the running VSCode. Same IPC requirements as above. Returns an empty array when no markdown is open.
+
+Response shape:
+
+```jsonc
+[
+  { "uri": "file:///path/to/a.md", "fsPath": "/path/to/a.md", "isDirty": false, "isActive": true  },
+  { "uri": "file:///path/to/b.md", "fsPath": "/path/to/b.md", "isDirty": true,  "isActive": false }
+]
+```
+
+### How the IPC channel works (v0.9.1+)
+
+On extension activation, `McpIpcServer` listens on a Unix-domain socket (POSIX) or named pipe (Windows). Endpoint:
+
+| OS | Endpoint |
+|---|---|
+| macOS / Linux | `${globalStorageUri}/mid-mcp.sock` |
+| Windows | `\\.\pipe\mark-it-down-<hash-of-globalStorage>` |
+
+The MCP server spawns with `--ipc-sock <endpoint>` (passed automatically by the `Install MCP for Claude Desktop / Code` command). When `get_active_markdown` or `list_open_md` is called, it connects, sends a newline-delimited JSON request, awaits the matching `id` response, then closes the socket. One connection per call — cheap at MCP's volume, no pool / reconnect logic needed.
+
+If the extension isn't running (or `--ipc-sock` was omitted), both tools return a clear error explaining the requirement.
 
 ## What lives where
 

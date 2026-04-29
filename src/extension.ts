@@ -11,6 +11,7 @@ import { markdownToTxt } from './exporters/exportTxt';
 import { markdownToDocx } from './exporters/exportDocx';
 import { markdownToPdf } from './exporters/exportPdf';
 import { registerMcpInstallCommands } from './mcp/installCommand';
+import { McpIpcServer } from './mcp/ipcServer';
 import { PublishManager } from './publish/publishManager';
 import { registerPublishCommands } from './publish/publishCommands';
 import { SlideshowManager } from './slideshow/slideshowManager';
@@ -53,6 +54,11 @@ export function activate(context: vscode.ExtensionContext) {
   updates.start();
   warehouse.start();
   void notesStore.writeMcpIndexSnapshot();
+  const ipcServer = new McpIpcServer(context);
+  context.subscriptions.push(ipcServer);
+  ipcServer.start().catch(err => {
+    console.warn('[mid] MCP IPC listener failed to start:', (err as Error).message);
+  });
   context.subscriptions.push(
     notesStore.onDidChange(() => {
       void notesStore.writeMcpIndexSnapshot();
