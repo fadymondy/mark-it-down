@@ -4,6 +4,15 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.6: File-level export pipeline TXT/DOCX/PDF (#6)
+
+- The previously-stub commands `markItDown.exportPdf`, `exportDocx`, `exportTxt` are now real
+- **TXT** export uses a hand-rolled marked-lexer walker; tables become aligned ASCII; lists keep `-` / `1.` markers; blockquotes use `>` prefix; code fenced with `---`
+- **DOCX** export uses the [`docx`](https://www.npmjs.com/package/docx) npm package — real Word document with headings (visible in Word's outline pane), styled paragraphs (bold/italic/strike), indented lists, code blocks (Courier + grey shading), real `<table>`s with shaded header rows, blockquotes (italic + 720-twip indent), HRs
+- **PDF** export uses [`pdfkit`](https://www.npmjs.com/package/pdfkit) — pure-Node, no chromium dependency, ~250KB. LETTER page, Helvetica/Courier mix, code blocks with grey background fill, ruled tables. Spec called for puppeteer-core but bundling chromium in a `.vsix` isn't viable; pdfkit is the pragmatic in-process alternative.
+- All three share a `runFileExport` host helper: read source → parse → render → save dialog → write → toast with `Open` / `Reveal`
+- Limitations documented in `docs/file-export.md`: code-block syntax color and mermaid rasterization are deferred (would require a hidden render pass through the webview)
+
 ### Added — Phase 0.8: Theme bridge with 25 bundled palettes (#8)
 
 - 25 hand-curated theme palettes ship inline (15 dark + 10 light): GitHub Light/Dark, Dracula, Atom One Dark/Light, Monokai, Solarized Light/Dark, Tokyo Night (+Light), Ayu Light/Mirage/Dark, Gruvbox Light/Dark, Nord (+Light), Palenight, Material Dark/Light, Night Owl, Cobalt 2, Oceanic Next, Hyper Snazzy, Rosé Pine

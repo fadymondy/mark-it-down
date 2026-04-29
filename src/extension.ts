@@ -7,6 +7,9 @@ import { WarehouseManager } from './warehouse/warehouseManager';
 import { registerWarehouseCommands } from './warehouse/warehouseCommands';
 import { disposeLogChannel } from './warehouse/warehouseLog';
 import { THEMES } from './themes/themes';
+import { markdownToTxt } from './exporters/exportTxt';
+import { markdownToDocx } from './exporters/exportDocx';
+import { markdownToPdf } from './exporters/exportPdf';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -46,19 +49,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
     vscode.commands.registerCommand('markItDown.exportPdf', async (uri?: vscode.Uri) => {
-      const target = uri ?? vscode.window.activeTextEditor?.document.uri;
-      if (!target) return;
-      vscode.window.showInformationMessage('PDF export — coming in v0.6');
+      await runFileExport(uri, 'pdf', async (md, title) => markdownToPdf(md, title));
     }),
     vscode.commands.registerCommand('markItDown.exportDocx', async (uri?: vscode.Uri) => {
-      const target = uri ?? vscode.window.activeTextEditor?.document.uri;
-      if (!target) return;
-      vscode.window.showInformationMessage('DOCX export — coming in v0.6');
+      await runFileExport(uri, 'docx', async md => markdownToDocx(md));
     }),
     vscode.commands.registerCommand('markItDown.exportTxt', async (uri?: vscode.Uri) => {
-      const target = uri ?? vscode.window.activeTextEditor?.document.uri;
-      if (!target) return;
-      vscode.window.showInformationMessage('TXT export — coming in v0.6');
+      await runFileExport(uri, 'txt', async md => Buffer.from(markdownToTxt(md), 'utf8'));
     }),
     vscode.commands.registerCommand('markItDown.pickTheme', async () => {
       const cfg = vscode.workspace.getConfiguration('markItDown');
@@ -87,4 +84,46 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   disposeLogChannel();
+}
+
+type ExportExt = 'pdf' | 'docx' | 'txt';
+
+async function runFileExport(
+  uri: vscode.Uri | undefined,
+  ext: ExportExt,
+  build: (markdown: string, title: string) => Promise<Buffer>,
+): Promise<void> {
+  const target = uri ?? vscode.window.activeTextEditor?.document.uri;
+  if (!target) {
+    vscode.window.showErrorMessage('Mark It Down: no markdown file selected.');
+    return;
+  }
+  try {
+    const bytes = await vscode.workspace.fs.readFile(target);
+    const markdown = new TextDecoder().decode(bytes);
+    const baseName = target.path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? 'document';
+    const dir = vscode.Uri.joinPath(target, '..');
+    const defaultUri = vscode.Uri.joinPath(dir, `${baseName}.${ext}`);
+    const filterLabel = ext === 'pdf' ? 'PDF' : ext === 'docx' ? 'Word document' : 'Plain text';
+    const save = await vscode.window.showSaveDialog({
+      defaultUri,
+      filters: { [filterLabel]: [ext] },
+      title: `Mark It Down: export to ${ext.toUpperCase()}`,
+    });
+    if (!save) return;
+    const buffer = await build(markdown, baseName);
+    await vscode.workspace.fs.writeFile(save, buffer);
+    const choice = await vscode.window.showInformationMessage(
+      `Mark It Down: exported ${save.fsPath.split('/').pop()}`,
+      'Open',
+      'Reveal',
+    );
+    if (choice === 'Open') {
+      await vscode.commands.executeCommand('vscode.open', save);
+    } else if (choice === 'Reveal') {
+      await vscode.commands.executeCommand('revealFileInOS', save);
+    }
+  } catch (err) {
+    vscode.window.showErrorMessage(`Mark It Down: export failed — ${(err as Error).message}`);
+  }
 }
