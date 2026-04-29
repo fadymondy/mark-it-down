@@ -9,6 +9,7 @@
   },
   "categories": [
     "Visualization",
+    "Notebooks",
     "Other"
   ],
   "keywords": [
@@ -17,20 +18,32 @@
     "editor",
     "mermaid",
     "notes",
-    "mcp"
+    "mcp",
+    "preview",
+    "publish",
+    "slideshow",
+    "github-pages"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/fadymondy/mark-it-down.git"
   },
-  "homepage": "https://github.com/fadymondy/mark-it-down",
+  "bugs": {
+    "url": "https://github.com/fadymondy/mark-it-down/issues"
+  },
+  "homepage": "https://github.com/fadymondy/mark-it-down#readme",
   "author": {
     "name": "Fady Mondy",
     "email": "info@3x1.io",
     "url": "https://github.com/fadymondy"
   },
   "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0d1117",
+    "theme": "dark"
+  },
+  "qna": "marketplace",
   "main": "./out/extension.js",
   "build": {
     "appId": "io.markitdown.app",

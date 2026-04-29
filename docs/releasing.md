@@ -117,6 +117,79 @@ If a released version is broken:
 2. Bump the version (e.g. `0.2.0` → `0.2.1`), fix the bug on a hotfix branch, repeat the release flow. Don't rewrite or delete the bad tag — semver says versions are immutable.
 3. Note the broken version in the CHANGELOG of the new release: "Fixes a regression in v0.2.0 that caused X."
 
+## Setting up the VSCode Marketplace publisher
+
+Required for the release workflow's auto-publish step to actually push the `.vsix` to the Marketplace. Without `VSCE_PAT` set, the workflow still attaches the `.vsix` to the GitHub release (users can sideload), but no Marketplace listing updates.
+
+You'll need:
+
+- A Microsoft account
+- ~15 minutes for first-time setup
+
+### 1. Create the publisher
+
+1. Go to https://marketplace.visualstudio.com/manage
+2. Sign in with your Microsoft account
+3. **Create publisher** → ID: `fadymondy` (must match `package.json#publisher`)
+4. Fill in display name, email, optional logo. Publisher IDs are immutable — pick carefully.
+
+### 2. Create an Azure DevOps PAT
+
+1. Go to https://dev.azure.com — sign in with the same Microsoft account
+2. (If prompted) create a default organization
+3. Top-right user icon → **Personal access tokens** → **New Token**
+4. Settings:
+   - **Name**: "vsce publish"
+   - **Organization**: All accessible organizations (required for vsce)
+   - **Expiration**: 1 year (set a calendar reminder)
+   - **Scopes**: **Custom defined** → check **Marketplace → Manage**
+5. Copy the token immediately — that's `VSCE_PAT`. It won't be shown again.
+
+### 3. Add the secret to the repo
+
+Repo → **Settings → Secrets and variables → Actions → New repository secret** → name `VSCE_PAT`, value the token from step 2.
+
+### 4. First publish (manual, one-time)
+
+The first publish has to be manual to claim the listing. From your local checkout:
+
+```bash
+npm install -g @vscode/vsce
+vsce login fadymondy            # paste the PAT
+npm run compile
+vsce package --no-dependencies  # produces mark-it-down-0.X.Y.vsix
+vsce publish --packagePath mark-it-down-*.vsix
+```
+
+After this succeeds, the listing appears at https://marketplace.visualstudio.com/items?itemName=fadymondy.mark-it-down within ~5 minutes.
+
+### 5. Open VSX (recommended)
+
+For non-Microsoft VSCode forks (Cursor, Code-OSS, Codeberg-Codium, etc.) the Marketplace is locked. Mirror to Open VSX so those users can install too:
+
+1. Sign in at https://open-vsx.org with your GitHub account
+2. Generate an access token (Profile → Tokens)
+3. Add as `OVSX_PAT` repo secret
+4. Add a step to the release workflow's vscode job: `npx ovsx publish *.vsix --pat $OVSX_PAT`
+
+(This isn't wired automatically yet — left for a follow-up; the Marketplace path works on its own.)
+
+### 6. Verify subsequent releases
+
+After the first publish + the secret is set, every `v*.*.*` tag push triggers `release.yml`'s vscode job. The job runs `vsce publish` automatically and the listing updates within minutes. Watch the Actions tab; the Marketplace step's logs show the upload.
+
+### 7. Add screenshots to the listing
+
+The Marketplace pulls images from the README's image references at install time. The screenshots live in [media/marketplace/](../media/marketplace/) — see that directory's README for what to capture and the recommended sizes. Reference them in the main README under a "Screenshots" heading; `vsce package` bundles them with the `.vsix`.
+
+### Token rotation
+
+Both `VSCE_PAT` and (when configured) `OVSX_PAT` expire — set a calendar reminder for ~11 months out. Rotation is steps 2 + 3 only.
+
+### When you're not ready yet
+
+The release workflow's Marketplace publish step has `if: ${{ env.VSCE_PAT != '' }}` — when the secret is absent, the step is skipped without failing. The `.vsix` still attaches to the GitHub release for sideload.
+
 ## Setting up macOS code signing
 
 Required for Electron auto-update to work on macOS. Without these, the release workflow still produces a `.dmg` that installs fine on first download, but `electron-updater` can't apply updates to it (Apple Gatekeeper rejects the differential update on unsigned apps). Linux + Windows updates work without any of this.
