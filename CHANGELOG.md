@@ -4,6 +4,18 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Tags (#42)
+
+- New optional `tags?: string[]` field on `NoteMetadata` — multi-tag-per-note, orthogonal to `category`
+- Tags are normalized: lowercase, alphanumeric + dashes, deduped + sorted (e.g. `Postgres Tuning, design` → `["design", "postgres-tuning"]`)
+- `NotesStore.setTags(id, tags[])` + `tagsInUse(scope?)` helpers
+- 2 new commands:
+  - `Mark It Down: Edit Tags` — context menu on a note + command palette; opens an InputBox prefilled with current tags
+  - `Mark It Down: Filter by Tag` — Quick Pick over all tags in use → Quick Pick of matching notes → opens the chosen one
+- Notes tree renders up to 3 tag badges in the description (`#design #postgres-tuning · 14:32`); full tag list in the tooltip
+- MCP `list_notes` accepts an optional `tag` filter (case-insensitive); `create_note` + `update_note` accept a `tags: string[]` patch
+- `MdNote` interface (MCP-side) gains the same `tags?` field
+
 ### Added — v1.2 polish: search across notes (#41)
 
 - New `packages/core/src/search/searcher.ts` — pure-function fuzzy search (no deps), shared by sidebar + MCP. Per-token scoring: exact title (+10), partial title (+5), category (+3), body occurrences (+1, capped at 5). Tie-breaks by recency.

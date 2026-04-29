@@ -61,6 +61,48 @@ export function registerNotesCommands(
       await store.setCategory(note.id, category);
     }),
 
+    vscode.commands.registerCommand('markItDown.notes.editTags', async (target?: NoteTreeNode | string) => {
+      const note = await resolveNote(store, target);
+      if (!note) return;
+      const current = (note.tags ?? []).join(', ');
+      const next = await vscode.window.showInputBox({
+        prompt: 'Tags (comma-separated; lowercase, alphanumeric + dashes)',
+        value: current,
+        placeHolder: 'design, retrospective, postgres',
+      });
+      if (next === undefined) return;
+      await store.setTags(note.id, next.split(/[,\s]+/));
+    }),
+
+    vscode.commands.registerCommand('markItDown.notes.filterByTag', async () => {
+      const tags = store.tagsInUse();
+      if (tags.length === 0) {
+        vscode.window.showInformationMessage('Mark It Down: no tags yet — use "Edit Tags" on a note first.');
+        return;
+      }
+      const choice = await vscode.window.showQuickPick(tags, { placeHolder: 'Filter notes by tag' });
+      if (!choice) return;
+      const matches = store.listAll().filter(n => (n.tags ?? []).includes(choice));
+      if (matches.length === 0) {
+        vscode.window.showInformationMessage(`Mark It Down: no notes tagged "${choice}".`);
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        matches
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          .map(n => ({
+            label: n.title,
+            description: `${n.scope}/${n.category}`,
+            detail: (n.tags ?? []).map(t => `#${t}`).join(' '),
+            id: n.id,
+          })),
+        { placeHolder: `Notes tagged "${choice}" (${matches.length})` },
+      );
+      if (picked) {
+        await vscode.commands.executeCommand('markItDown.notes.open', picked.id);
+      }
+    }),
+
     vscode.commands.registerCommand('markItDown.notes.delete', async (target?: NoteTreeNode | string) => {
       const note = await resolveNote(store, target);
       if (!note) return;

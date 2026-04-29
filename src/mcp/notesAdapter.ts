@@ -5,6 +5,7 @@ export interface MdNote {
   id: string;
   title: string;
   category: string;
+  tags?: string[];
   scope: 'global';
   createdAt: string;
   updatedAt: string;
@@ -21,10 +22,14 @@ const INDEX_FILENAME = '_mcp-index.json';
 export class NotesAdapter {
   constructor(private readonly notesDir: string) {}
 
-  async listNotes(filter: { category?: string } = {}): Promise<MdNote[]> {
+  async listNotes(filter: { category?: string; tag?: string } = {}): Promise<MdNote[]> {
     const idx = await this.readIndex();
+    let out = idx.notes;
     const cat = filter.category?.trim();
-    return cat ? idx.notes.filter(n => n.category === cat) : idx.notes;
+    if (cat) out = out.filter(n => n.category === cat);
+    const tag = filter.tag?.trim().toLowerCase();
+    if (tag) out = out.filter(n => (n.tags ?? []).includes(tag));
+    return out;
   }
 
   async getNote(id: string): Promise<{ meta: MdNote; content: string } | undefined> {
@@ -35,13 +40,14 @@ export class NotesAdapter {
     return { meta, content };
   }
 
-  async createNote(input: { title: string; category: string; content?: string }): Promise<MdNote> {
+  async createNote(input: { title: string; category: string; content?: string; tags?: string[] }): Promise<MdNote> {
     const now = new Date().toISOString();
     const id = randomId();
     const meta: MdNote = {
       id,
       title: input.title.trim() || 'Untitled note',
       category: input.category.trim() || 'Drafts',
+      tags: input.tags ? normalizeTags(input.tags) : undefined,
       scope: 'global',
       createdAt: now,
       updatedAt: now,
@@ -62,7 +68,7 @@ export class NotesAdapter {
 
   async updateNote(
     id: string,
-    patch: { title?: string; category?: string; content?: string },
+    patch: { title?: string; category?: string; content?: string; tags?: string[] },
   ): Promise<MdNote> {
     const idx = await this.readIndex();
     const i = idx.notes.findIndex(n => n.id === id);
@@ -70,6 +76,10 @@ export class NotesAdapter {
     const next: MdNote = { ...idx.notes[i] };
     if (patch.title !== undefined) next.title = patch.title.trim() || next.title;
     if (patch.category !== undefined) next.category = patch.category.trim() || next.category;
+    if (patch.tags !== undefined) {
+      const cleaned = normalizeTags(patch.tags);
+      next.tags = cleaned.length > 0 ? cleaned : undefined;
+    }
     next.updatedAt = new Date().toISOString();
     if (patch.content !== undefined) {
       await fs.writeFile(this.notePath(next.filename), patch.content, 'utf8');
@@ -123,6 +133,13 @@ export class NotesAdapter {
     await this.ensureDir();
     await fs.writeFile(this.indexPath(), JSON.stringify(idx, null, 2) + '\n', 'utf8');
   }
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const cleaned = tags
+    .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''))
+    .filter(t => t.length > 0);
+  return [...new Set(cleaned)].sort();
 }
 
 function randomId(): string {

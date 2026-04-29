@@ -28,13 +28,14 @@ const server = new McpServer(
 server.registerTool(
   'list_notes',
   {
-    description: 'List notes in the Mark It Down warehouse. Optionally filter by category.',
+    description: 'List notes in the Mark It Down warehouse. Optionally filter by category and/or tag.',
     inputSchema: {
       category: z.string().optional().describe('Restrict to notes in this category'),
+      tag: z.string().optional().describe('Restrict to notes carrying this tag (lowercase)'),
     },
   },
-  async ({ category }) => {
-    const notes = await adapter.listNotes({ category });
+  async ({ category, tag }) => {
+    const notes = await adapter.listNotes({ category, tag });
     return {
       content: [
         {
@@ -72,15 +73,16 @@ server.registerTool(
 server.registerTool(
   'create_note',
   {
-    description: 'Create a new global note with optional initial content.',
+    description: 'Create a new global note with optional initial content + tags.',
     inputSchema: {
       title: z.string().describe('Note title'),
       category: z.string().describe('Category, e.g. Daily / Reference / Snippet / Drafts'),
       content: z.string().optional().describe('Initial markdown content (default: "# <title>\\n\\n")'),
+      tags: z.array(z.string()).optional().describe('Tags (lowercase, alphanumeric + dashes; cross-cut categories)'),
     },
   },
-  async ({ title, category, content }) => {
-    const meta = await adapter.createNote({ title, category, content });
+  async ({ title, category, content, tags }) => {
+    const meta = await adapter.createNote({ title, category, content, tags });
     return {
       content: [{ type: 'text', text: JSON.stringify(meta, null, 2) }],
     };
@@ -90,17 +92,18 @@ server.registerTool(
 server.registerTool(
   'update_note',
   {
-    description: 'Update a note. Any of title / category / content may be patched; updatedAt bumps.',
+    description: 'Update a note. Any of title / category / content / tags may be patched; updatedAt bumps.',
     inputSchema: {
       id: z.string(),
       title: z.string().optional(),
       category: z.string().optional(),
       content: z.string().optional(),
+      tags: z.array(z.string()).optional(),
     },
   },
-  async ({ id, title, category, content }) => {
+  async ({ id, title, category, content, tags }) => {
     try {
-      const next = await adapter.updateNote(id, { title, category, content });
+      const next = await adapter.updateNote(id, { title, category, content, tags });
       return { content: [{ type: 'text', text: JSON.stringify(next, null, 2) }] };
     } catch (err) {
       return {

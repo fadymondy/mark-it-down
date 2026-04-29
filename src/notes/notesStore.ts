@@ -6,6 +6,8 @@ export interface NoteMetadata {
   id: string;
   title: string;
   category: string;
+  /** Free-form tags. Multiple tags per note. Cross-cuts categories. */
+  tags?: string[];
   scope: NoteScope;
   createdAt: string;
   updatedAt: string;
@@ -106,6 +108,11 @@ export class NotesStore {
     return this.update(id, n => ({ ...n, category }));
   }
 
+  public async setTags(id: string, tags: string[]): Promise<NoteMetadata> {
+    const cleaned = normalizeTags(tags);
+    return this.update(id, n => ({ ...n, tags: cleaned.length > 0 ? cleaned : undefined }));
+  }
+
   public async touch(uri: vscode.Uri): Promise<void> {
     const note = this.getByUri(uri);
     if (!note) {
@@ -127,6 +134,15 @@ export class NotesStore {
       // file already gone — index update is what matters
     }
     return note;
+  }
+
+  public tagsInUse(scope?: NoteScope): string[] {
+    const source = scope ? this.read(scope) : this.listAll();
+    const all = new Set<string>();
+    for (const n of source) {
+      for (const t of n.tags ?? []) all.add(t);
+    }
+    return [...all].sort((a, b) => a.localeCompare(b));
   }
 
   public categoriesInUse(scope?: NoteScope): string[] {
@@ -205,6 +221,13 @@ export class NotesStore {
     }
     return this.context.globalStorageUri;
   }
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const cleaned = tags
+    .map(t => t.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''))
+    .filter(t => t.length > 0);
+  return [...new Set(cleaned)].sort();
 }
 
 function randomId(): string {
