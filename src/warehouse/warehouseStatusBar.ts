@@ -49,7 +49,12 @@ export class WarehouseStatusBar implements vscode.Disposable {
   private currentState: SyncState = 'disabled';
 
   constructor() {
-    this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 50);
+    this.item = vscode.window.createStatusBarItem(
+      'markItDown.warehouse.status',
+      vscode.StatusBarAlignment.Right,
+      50,
+    );
+    this.item.name = 'Mark It Down Warehouse Sync';
     this.item.command = 'markItDown.warehouse.openLog';
     this.set('disabled');
     this.item.show();
@@ -61,6 +66,10 @@ export class WarehouseStatusBar implements vscode.Disposable {
     this.item.text = `${render.icon} ${render.text}`;
     this.item.tooltip = detail ? `${render.tooltip}\n${detail}` : render.tooltip;
     this.item.backgroundColor = render.background;
+    this.item.accessibilityInformation = {
+      label: `Mark It Down warehouse: ${render.text}${detail ? `, ${detail}` : ''}`,
+      role: 'button',
+    };
   }
 
   public state(): SyncState {

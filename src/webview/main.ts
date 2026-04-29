@@ -121,12 +121,14 @@ function attachTableActions(): void {
 
     const toolbar = document.createElement('div');
     toolbar.className = 'mid-table-toolbar';
+    toolbar.setAttribute('role', 'toolbar');
+    toolbar.setAttribute('aria-label', `Table ${idx + 1} export`);
     toolbar.innerHTML = `
       <span class="mid-table-label">Table ${idx + 1}</span>
       <div class="mid-table-actions">
-        <button data-format="csv">CSV</button>
-        <button data-format="tsv">TSV</button>
-        <button data-format="xlsx">Excel</button>
+        <button data-format="csv" aria-label="Export table ${idx + 1} as CSV">CSV</button>
+        <button data-format="tsv" aria-label="Export table ${idx + 1} as TSV">TSV</button>
+        <button data-format="xlsx" aria-label="Export table ${idx + 1} as Excel">Excel</button>
       </div>
     `;
     wrapper.insertBefore(toolbar, table);
@@ -154,11 +156,21 @@ function wireSortableHeaders(table: HTMLTableElement): void {
   Array.from(headRow.cells).forEach((th, colIndex) => {
     th.classList.add('mid-sortable');
     th.dataset.sort = 'none';
+    th.setAttribute('role', 'columnheader');
+    th.setAttribute('tabindex', '0');
+    th.setAttribute('aria-sort', 'none');
     const indicator = document.createElement('span');
     indicator.className = 'mid-sort-indicator';
     indicator.textContent = ' ⇅';
+    indicator.setAttribute('aria-hidden', 'true');
     th.appendChild(indicator);
     th.addEventListener('click', () => sortTable(table, colIndex, th));
+    th.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        sortTable(table, colIndex, th);
+      }
+    });
   });
 }
 
@@ -173,10 +185,12 @@ function sortTable(table: HTMLTableElement, colIndex: number, th: HTMLTableCellE
   table.tHead?.querySelectorAll<HTMLTableCellElement>('th').forEach(other => {
     if (other === th) return;
     other.dataset.sort = 'none';
+    other.setAttribute('aria-sort', 'none');
     const ind = other.querySelector('.mid-sort-indicator');
     if (ind) ind.textContent = ' ⇅';
   });
   th.dataset.sort = next;
+  th.setAttribute('aria-sort', next === 'asc' ? 'ascending' : next === 'desc' ? 'descending' : 'none');
   const ind = th.querySelector('.mid-sort-indicator');
   if (ind) {
     ind.textContent = next === 'asc' ? ' ▲' : next === 'desc' ? ' ▼' : ' ⇅';
@@ -528,6 +542,8 @@ function setMode(mode: Mode, push = true) {
   currentMode = mode;
   btnView.classList.toggle('active', mode === 'view');
   btnEdit.classList.toggle('active', mode === 'edit');
+  btnView.setAttribute('aria-pressed', mode === 'view' ? 'true' : 'false');
+  btnEdit.setAttribute('aria-pressed', mode === 'edit' ? 'true' : 'false');
   if (push) vscode.postMessage({ type: 'setMode', mode });
   if (mode === 'view') renderView();
   else renderEdit();
