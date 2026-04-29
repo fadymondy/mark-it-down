@@ -163,6 +163,12 @@
         "title": "Warehouse: Show Sync Log",
         "category": "Mark It Down",
         "icon": "$(output)"
+      },
+      {
+        "command": "markItDown.pickTheme",
+        "title": "Pick Theme",
+        "category": "Mark It Down",
+        "icon": "$(symbol-color)"
       }
     ],
     "menus": {
@@ -277,13 +283,17 @@
           "default": "auto",
           "enum": [
             "auto",
-            "light",
-            "dark",
-            "github",
-            "dracula",
-            "one-dark"
+            "github-light", "github-dark",
+            "dracula", "one-dark", "one-light", "monokai",
+            "solarized-light", "solarized-dark",
+            "tokyo-night", "tokyo-night-light",
+            "ayu-light", "ayu-mirage", "ayu-dark",
+            "gruvbox-light", "gruvbox-dark",
+            "nord", "nord-light",
+            "palenight", "material-dark", "material-light",
+            "night-owl", "cobalt2", "oceanic-next", "snazzy", "rose-pine"
           ],
-          "description": "Theme for the markdown renderer. 'auto' follows VSCode's active theme."
+          "description": "Theme for the markdown renderer. 'auto' follows VSCode's active theme; any other value applies a bundled palette (25 themes). Use the 'Pick Theme' command for a previewable picker."
         },
         "markItDown.startMode": {
           "type": "string",

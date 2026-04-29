@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { findTheme, paletteToCss } from '../themes/themes';
 
 const NONCE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
@@ -18,8 +19,14 @@ export function buildWebviewHtml(
     vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'main.js'),
   );
 
+  // Custom theme overrides — only emitted when a non-auto theme is selected.
+  const themeDef = theme === 'auto' ? undefined : findTheme(theme);
+  const themeOverride = themeDef
+    ? `:root[data-theme="${theme}"] { ${paletteToCss(themeDef.palette)} color-scheme: ${themeDef.kind}; }`
+    : '';
+
   return /* html */ `<!DOCTYPE html>
-<html lang="en" data-theme="${theme}">
+<html lang="en" data-theme="${theme}" data-theme-kind="${themeDef?.kind ?? 'auto'}">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="
@@ -45,6 +52,7 @@ export function buildWebviewHtml(
       --table-stripe: rgba(127,127,127,0.06);
       --accent: var(--vscode-textLink-foreground);
     }
+    ${themeOverride}
     html, body { margin: 0; padding: 0; height: 100%; }
     body {
       font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
