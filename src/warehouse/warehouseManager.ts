@@ -5,11 +5,15 @@ import { log } from './warehouseLog';
 import { WarehouseStatusBar } from './warehouseStatusBar';
 import { PushPlan, SecretsDetectedError, SyncSummary, WarehouseSync } from './warehouseSync';
 import { WarehouseTransport } from './warehouseTransport';
+import { ConflictRegistry } from './conflictRegistry';
+import { ConflictPanel } from './conflictPanel';
 
 export class WarehouseManager implements vscode.Disposable {
   private readonly transport: WarehouseTransport;
   private readonly sync: WarehouseSync;
   private readonly statusBar: WarehouseStatusBar;
+  public readonly conflicts: ConflictRegistry;
+  public readonly conflictPanel: ConflictPanel;
   private readonly subs: vscode.Disposable[] = [];
   private autoPushTimer: NodeJS.Timeout | undefined;
   private currentConfig: WarehouseConfig;
@@ -20,11 +24,15 @@ export class WarehouseManager implements vscode.Disposable {
     private readonly store: NotesStore,
   ) {
     this.transport = new WarehouseTransport(context.globalStorageUri);
-    this.sync = new WarehouseSync(context, store, this.transport);
+    this.conflicts = new ConflictRegistry();
+    this.sync = new WarehouseSync(context, store, this.transport, this.conflicts);
     this.statusBar = new WarehouseStatusBar();
+    this.conflictPanel = new ConflictPanel(context, this.conflicts, store);
     this.currentConfig = readConfig();
 
     this.subs.push(
+      this.conflicts,
+      this.conflictPanel,
       vscode.workspace.onDidChangeConfiguration(e => {
         if (isAffected(e)) {
           this.currentConfig = readConfig();
@@ -32,6 +40,7 @@ export class WarehouseManager implements vscode.Disposable {
         }
       }),
       this.store.onDidChange(() => this.maybeSchedulePush()),
+      this.conflicts.onDidChange(() => this.refreshStatusBar()),
     );
     this.refreshStatusBar();
   }
@@ -185,9 +194,13 @@ export class WarehouseManager implements vscode.Disposable {
   private refreshStatusBar(): void {
     if (!this.currentConfig.enabled) {
       this.statusBar.set('disabled');
-    } else {
-      this.statusBar.set('idle', `${this.currentConfig.repo}@${this.currentConfig.branch}`);
+      return;
     }
+    if (this.conflicts.count() > 0) {
+      this.statusBar.set('conflict', `${this.conflicts.count()} note(s) diverged. Click to resolve.`);
+      return;
+    }
+    this.statusBar.set('idle', `${this.currentConfig.repo}@${this.currentConfig.branch}`);
   }
 
   private report(summary: SyncSummary): void {

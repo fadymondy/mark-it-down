@@ -241,6 +241,12 @@
         "icon": "$(output)"
       },
       {
+        "command": "markItDown.warehouse.openConflicts",
+        "title": "Warehouse: Resolve Conflicts",
+        "category": "Mark It Down",
+        "icon": "$(warning)"
+      },
+      {
         "command": "markItDown.pickTheme",
         "title": "Pick Theme",
         "category": "Mark It Down",
