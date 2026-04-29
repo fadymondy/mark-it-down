@@ -20,4 +20,10 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | F12 — Standalone Electron app | shipped (first-cut) | [electron-app.md](electron-app.md) |
 | F13 — Claude Code plugin | shipped | [claude-plugin.md](claude-plugin.md) |
 
+## Post-v1.0
+
+| Feature | Status | Doc |
+|---|---|---|
+| F14 — Auto-update for both surfaces | shipped | [auto-update.md](auto-update.md) + [releasing.md](releasing.md) |
+
 Each feature gets its own page when it ships. New pages should follow the [notes-sidebar.md](notes-sidebar.md) shape: at-a-glance table, settings, workflows, edge cases, and a "what it unblocks" section.

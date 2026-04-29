@@ -4,6 +4,19 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.14: Auto-update for both surfaces (#28)
+
+- **VSCode extension**: in-extension `UpdateChecker` polls `GET /repos/fadymondy/mark-it-down/releases/latest` once per launch + every 6h; surfaces a notification with `Open Release` / `View Changes` / `Later` actions when a newer version is published. Doesn't re-notify for the same version. Never auto-installs (security smell).
+- **VSCode extension — What's New**: on first launch after an update, a one-time toast surfaces with a `View What's New` action that opens the GitHub release page. First-ever install is silent.
+- **Manual check**: `Mark It Down: Check for Updates` from the command palette.
+- **Setting**: `markItDown.updates.checkOnLaunch` (default `true`).
+- **Electron app**: `electron-updater` wired with `provider: github`. App checks on launch, downloads in background, prompts the user to install on next quit OR restart now. `autoInstallOnAppQuit` defaults to `false` — explicit user opt-in for silent installs.
+- **Help → Check for Updates…** menu item in the Electron app.
+- **package.json#build.publish** block configures the GitHub provider for electron-updater.
+- **`.github/workflows/release.yml`**: tag-push pipeline (`v*.*.*`) builds Electron installers (mac/win/linux matrix) + `.vsix` (vsce package) + auto-publishes to Marketplace if `VSCE_PAT` is set; release body is extracted verbatim from the matching CHANGELOG `## [X.Y.Z]` section.
+- **Docs**: `docs/auto-update.md` (what users see) + `docs/releasing.md` (full release runbook with rollback recipe + common failures table).
+- **macOS auto-update caveat**: requires signed + notarized DMG. Wire `CSC_LINK` + Apple credentials into the release workflow's env block when ready; until then unsigned macOS builds install fine but can't apply updates.
+
 ### Added — Phase 0.13: Claude Code plugin (mark-it-down-claude) (#14)
 
 - New `plugins/mark-it-down-claude/` packages the bundled MCP server, 6 user-invocable skills, and 3 specialist sub-agents into a single Claude Code plugin

@@ -1,8 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, MenuItemConstructorOptions, nativeTheme, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
 const isDev = process.env.MID_DEV === '1' || !app.isPackaged;
+const updateState = {
+  available: false,
+  downloaded: false,
+  version: app.getVersion(),
+  notes: '',
+};
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -44,6 +51,7 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
+  setupAutoUpdate();
 });
 
 app.on('window-all-closed', () => {
@@ -97,11 +105,93 @@ ipcMain.handle('mid:open-external', async (_e, url: string) => {
   await shell.openExternal(url);
 });
 
+ipcMain.handle('mid:update-status', async () => updateState);
+ipcMain.handle('mid:update-check-now', async () => {
+  if (isDev) return { skipped: true, reason: 'dev mode — skip update check' };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { ok: true, version: result?.updateInfo?.version };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+ipcMain.handle('mid:update-quit-and-install', async () => {
+  if (!updateState.downloaded) return false;
+  setImmediate(() => autoUpdater.quitAndInstall(true, true));
+  return true;
+});
+
 nativeTheme.on('updated', () => {
   if (mainWindow) {
     mainWindow.webContents.send('mid:theme-changed', nativeTheme.shouldUseDarkColors);
   }
 });
+
+function setupAutoUpdate(): void {
+  if (isDev) {
+    console.log('[mid] auto-update skipped (dev mode)');
+    return;
+  }
+  // electron-updater honors the `publish` block in package.json#build at build time
+  // and falls back to GitHub via repository.url at runtime.
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false; // user has to opt in via menu
+  autoUpdater.on('update-available', info => {
+    updateState.available = true;
+    updateState.version = info.version;
+    updateState.notes = typeof info.releaseNotes === 'string' ? info.releaseNotes : '';
+    broadcastUpdateState();
+    void dialog.showMessageBox({
+      type: 'info',
+      buttons: ['Later'],
+      title: 'Mark It Down',
+      message: `Update available: v${info.version}`,
+      detail: 'Downloading in the background. We\'ll prompt you when it\'s ready to install.',
+      noLink: true,
+    });
+  });
+  autoUpdater.on('update-not-available', () => {
+    updateState.available = false;
+    broadcastUpdateState();
+  });
+  autoUpdater.on('update-downloaded', info => {
+    updateState.downloaded = true;
+    updateState.version = info.version;
+    updateState.notes = typeof info.releaseNotes === 'string' ? info.releaseNotes : '';
+    broadcastUpdateState();
+    void dialog
+      .showMessageBox({
+        type: 'info',
+        buttons: ['Install on next launch', 'Restart and install now'],
+        defaultId: 1,
+        cancelId: 0,
+        title: 'Mark It Down',
+        message: `Update v${info.version} ready to install`,
+        detail: 'Restart now to apply, or install automatically next time you launch.',
+        noLink: true,
+      })
+      .then(result => {
+        if (result.response === 1) {
+          autoUpdater.quitAndInstall(true, true);
+        } else {
+          autoUpdater.autoInstallOnAppQuit = true;
+        }
+      });
+  });
+  autoUpdater.on('error', err => {
+    console.warn('[mid] auto-update error:', err?.message ?? err);
+  });
+  // Kick off a check on launch (debounced to one per launch)
+  autoUpdater.checkForUpdatesAndNotify().catch(err => {
+    console.warn('[mid] checkForUpdatesAndNotify failed:', err?.message ?? err);
+  });
+}
+
+function broadcastUpdateState(): void {
+  if (mainWindow) {
+    mainWindow.webContents.send('mid:update-state', updateState);
+  }
+}
 
 function buildMenu(): Menu {
   const isMac = process.platform === 'darwin';
@@ -162,6 +252,39 @@ function buildMenu(): Menu {
         {
           label: 'Mark It Down on GitHub',
           click: () => shell.openExternal('https://github.com/fadymondy/mark-it-down'),
+        },
+        {
+          label: 'Check for Updates…',
+          click: async () => {
+            if (isDev) {
+              await dialog.showMessageBox({
+                type: 'info',
+                title: 'Mark It Down',
+                message: 'Update checks are disabled in dev mode.',
+                buttons: ['OK'],
+              });
+              return;
+            }
+            try {
+              const result = await autoUpdater.checkForUpdates();
+              if (!result?.updateInfo || result.updateInfo.version === app.getVersion()) {
+                await dialog.showMessageBox({
+                  type: 'info',
+                  title: 'Mark It Down',
+                  message: `You're on the latest version (v${app.getVersion()}).`,
+                  buttons: ['OK'],
+                });
+              }
+            } catch (err) {
+              await dialog.showMessageBox({
+                type: 'error',
+                title: 'Mark It Down',
+                message: 'Update check failed',
+                detail: (err as Error).message,
+                buttons: ['OK'],
+              });
+            }
+          },
         },
       ],
     },
