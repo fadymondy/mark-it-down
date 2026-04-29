@@ -218,7 +218,7 @@ export class PublishManager {
     const subRoot = pub.subPath ? path.join(worktreeRoot, pub.subPath) : worktreeRoot;
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(subRoot));
     const themeDef = pub.theme ?? findTheme('github-light')!;
-    const assets = buildSiteAssets(themeDef.palette, themeDef.kind === 'dark');
+    const assets = buildSiteAssets(themeDef.palette, themeDef.kind === 'dark', themeDef);
 
     // Write each page
     for (const page of pages) {

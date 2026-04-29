@@ -2,6 +2,8 @@ import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import { paletteToCss, ThemePalette } from '../themes/themes';
+import { hljsCssFor } from '../../packages/core/src/themes/hljsCss';
+import { ThemeDefinition } from '../../packages/core/src/themes/themes';
 
 marked.use(
   markedHighlight({
@@ -35,12 +37,18 @@ export interface RenderedPage {
   html: string;
 }
 
-export function buildSiteAssets(palette: ThemePalette, kindIsDark: boolean): SiteAssets {
+export function buildSiteAssets(
+  palette: ThemePalette,
+  kindIsDark: boolean,
+  theme?: ThemeDefinition,
+): SiteAssets {
   const hljsTheme = kindIsDark ? HLJS_DARK_CSS : HLJS_LIGHT_CSS;
+  const hljsOverrides = theme ? hljsCssFor(theme) : '';
   const pageCss = `
 :root { ${paletteToCss(palette)} color-scheme: ${kindIsDark ? 'dark' : 'light'}; }
 ${BASE_CSS}
 ${hljsTheme}
+${hljsOverrides}
 `;
   return { pageCss, clientJs: CLIENT_JS };
 }
