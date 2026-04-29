@@ -8,8 +8,6 @@ import {
 import { NoteMetadata, NoteScope, NotesStore } from './notesStore';
 import { MarkdownEditorProvider } from '../editor/markdownEditorProvider';
 
-const NEW_CATEGORY_SENTINEL = '__new__';
-
 export function registerNotesCommands(
   context: vscode.ExtensionContext,
   store: NotesStore,

@@ -135,7 +135,7 @@ function renderBlock(token: MdToken): (Paragraph | Table)[] {
     case 'space':
     case 'html':
       return [];
-    default:
+    default: {
       if ((t as Tokens.Generic).tokens) {
         return ((t as Tokens.Generic).tokens as Token[]).flatMap(tok =>
           renderBlock(tok as MdToken),
@@ -143,6 +143,7 @@ function renderBlock(token: MdToken): (Paragraph | Table)[] {
       }
       const txt = ((t as Tokens.Generic).text as string) ?? '';
       return txt ? [new Paragraph({ children: [new TextRun(txt)] })] : [];
+    }
   }
 }
 
@@ -227,12 +228,13 @@ function inlineTokenToRuns(token: Token, base: InlineStyle): TextRun[] {
     }
     case 'br':
       return [new TextRun({ text: '\n', ...base })];
-    default:
+    default: {
       if ((t as Tokens.Generic).tokens) {
         return inlineToRuns((t as Tokens.Generic).tokens as Token[], base);
       }
       const txt = ((t as Tokens.Generic).text as string) ?? '';
       return txt ? [new TextRun({ text: txt, ...base })] : [];
+    }
   }
 }
 
