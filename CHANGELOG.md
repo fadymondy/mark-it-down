@@ -4,6 +4,13 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.1 hardening: VSCode integration tests via @vscode/test-electron (#32)
+
+- New `tests/integration/` with the runner (`runTest.ts`), Mocha test-suite loader (`suite/index.ts`), and 5 happy-path tests covering: extension presence, activation without errors, every contributed command registered after activation, custom-editor `openWith` for a `.md` file resolves cleanly, configuration namespaces (`theme`, `startMode`, `mermaid.enabled`, `notes.categories`) all readable.
+- `tsconfig.integration.json` outputs to `out/integration/`; `npm run compile:integration` + `npm run test:integration` scripts wired
+- New CI job (`integration`) runs after the lint-and-build matrix, on ubuntu only, downloads VSCode via `@vscode/test-electron`, invokes the suite under `xvfb-run`
+- Adds `.vscode-test-user-data/` + `coverage/` to `.gitignore`
+
 ### Added — v1.1 hardening: vitest harness + 65 initial unit tests (#31)
 
 - New `vitest.config.ts` with a `vscode` module alias pointing at `tests/__mocks__/vscode.ts` so src/ files that import vscode don't break the test runner

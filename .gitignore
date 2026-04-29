@@ -1,9 +1,11 @@
 node_modules/
 out/
 dist/
+coverage/
 *.vsix
 .DS_Store
 .vscode-test/
+.vscode-test-user-data/
 
 # Claude Code session metadata — local only
 .claude/

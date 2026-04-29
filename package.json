@@ -608,7 +608,9 @@
     "lint:fix": "eslint --fix src apps/electron",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "compile:integration": "tsc -p tests/integration/tsconfig.json",
+    "test:integration": "npm run compile && npm run compile:integration && node out/integration/runTest.js"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -634,16 +636,20 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/dompurify": "^3.2.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.59.1",
     "@typescript-eslint/parser": "^8.59.1",
     "@vitest/coverage-v8": "^4.1.5",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.2.0",
     "electron": "^41.3.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.24.0",
     "eslint": "^10.2.1",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.5",
     "typescript": "^5.7.0",
     "vitest": "^4.1.5"
   }
