@@ -183,6 +183,16 @@
         "title": "Mark It Down: Export to TXT"
       },
       {
+        "command": "markItDown.exportEpub",
+        "title": "Mark It Down: Export to ePub",
+        "icon": "$(book)"
+      },
+      {
+        "command": "markItDown.exportCategoryEpub",
+        "title": "Mark It Down: Export Category as ePub",
+        "icon": "$(book)"
+      },
+      {
         "command": "markItDown.notes.create",
         "title": "New Note",
         "category": "Mark It Down",
@@ -376,6 +386,11 @@
           "command": "markItDown.exportTxt",
           "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdx",
           "group": "markItDown@3"
+        },
+        {
+          "command": "markItDown.exportEpub",
+          "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .mdx",
+          "group": "markItDown@4"
         }
       ],
       "view/title": [
@@ -705,6 +720,21 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "Send anonymized error reports to help improve Mark It Down. **Default off**. When on, sends only stack traces + error messages with file paths anonymized; never note content. See [docs/telemetry.md](https://github.com/fadymondy/mark-it-down/blob/main/docs/telemetry.md)."
+        },
+        "markItDown.epub.author": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Author name baked into ePub metadata (`<dc:creator>`). Empty falls back to `Mark It Down`."
+        },
+        "markItDown.epub.publisher": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Publisher baked into ePub metadata (`<dc:publisher>`). Empty falls back to `Mark It Down`."
+        },
+        "markItDown.epub.coverImage": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a PNG or JPEG used as the ePub cover. Absolute path, or relative to the workspace root. Leave empty for no cover."
         },
         "markItDown.telemetry.dsn": {
           "type": "string",
