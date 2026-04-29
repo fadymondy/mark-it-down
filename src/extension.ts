@@ -11,6 +11,8 @@ import { markdownToTxt } from './exporters/exportTxt';
 import { markdownToDocx } from './exporters/exportDocx';
 import { markdownToPdf } from './exporters/exportPdf';
 import { registerMcpInstallCommands } from './mcp/installCommand';
+import { PublishManager } from './publish/publishManager';
+import { registerPublishCommands } from './publish/publishCommands';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -29,6 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
   const notesStore = new NotesStore(context);
   const notesTree = new NotesTreeProvider(notesStore);
   const warehouse = new WarehouseManager(context, notesStore);
+  const publish = new PublishManager(context, notesStore);
   context.subscriptions.push(
     notesStore,
     notesTree,
@@ -37,6 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
     ...registerNotesCommands(context, notesStore),
     ...registerWarehouseCommands(warehouse),
     ...registerMcpInstallCommands(context),
+    ...registerPublishCommands(publish),
   );
   warehouse.start();
   void notesStore.writeMcpIndexSnapshot();

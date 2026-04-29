@@ -180,6 +180,28 @@
         "command": "markItDown.mcp.revealServer",
         "title": "Show MCP Server Path (copy to clipboard)",
         "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.publish.deploy",
+        "title": "Publish: Deploy Site",
+        "category": "Mark It Down",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "markItDown.publish.deployCurrent",
+        "title": "Publish: Deploy Current Page",
+        "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.publish.copyUrl",
+        "title": "Publish: Copy Public URL",
+        "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.publish.openSite",
+        "title": "Publish: Open Site in Browser",
+        "category": "Mark It Down",
+        "icon": "$(globe)"
       }
     ],
     "menus": {
@@ -407,6 +429,31 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Override the workspace folder name used as a subfolder in the warehouse. Leave empty to derive from the workspace name."
+        },
+        "markItDown.publish.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow Publish commands to push a generated static site to the warehouse repo."
+        },
+        "markItDown.publish.branch": {
+          "type": "string",
+          "default": "gh-pages",
+          "description": "Branch on the warehouse repo to publish to."
+        },
+        "markItDown.publish.path": {
+          "type": "string",
+          "default": "",
+          "description": "Subdirectory under the publish branch root where the site lives. Empty = repo root."
+        },
+        "markItDown.publish.includeGlob": {
+          "type": "string",
+          "default": "**/*.md",
+          "description": "Glob (relative to source) of files included in a full Deploy Site run."
+        },
+        "markItDown.publish.theme": {
+          "type": "string",
+          "default": "github-light",
+          "description": "Theme baked into the published site (any markItDown.theme value except 'auto')."
         }
       }
     }
