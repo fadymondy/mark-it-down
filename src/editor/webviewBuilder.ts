@@ -188,6 +188,8 @@ export function buildWebviewHtml(
     main.viewing tr:nth-child(even) td { background: var(--table-stripe); }
     main.viewing th.mid-sortable { cursor: pointer; user-select: none; }
     main.viewing th.mid-sortable:hover { background: rgba(127,127,127,0.12); }
+    main.viewing th.mid-sortable:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .toolbar button:focus-visible, .mid-table-actions button:focus-visible, .mid-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     main.viewing .mid-sort-indicator { font-size: 0.75em; opacity: 0.6; margin-left: 4px; }
     main.viewing th[data-sort="asc"] .mid-sort-indicator,
     main.viewing th[data-sort="desc"] .mid-sort-indicator { opacity: 1; }
@@ -286,9 +288,9 @@ export function buildWebviewHtml(
   </style>
 </head>
 <body>
-  <div class="toolbar" role="toolbar">
-    <button id="mode-view" class="active" title="View mode">📖 View</button>
-    <button id="mode-edit" title="Edit mode">✏️ Edit</button>
+  <div class="toolbar" role="toolbar" aria-label="Mark It Down view mode">
+    <button id="mode-view" class="active" title="View mode" aria-label="Switch to View mode" aria-pressed="true">📖 View</button>
+    <button id="mode-edit" title="Edit mode" aria-label="Switch to Edit mode" aria-pressed="false">✏️ Edit</button>
     <span class="title" id="filename">—</span>
   </div>
   <main id="root" class="viewing">

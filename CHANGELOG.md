@@ -4,6 +4,18 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.2 polish: accessibility audit + remediations (#38)
+
+- Mode toggle buttons (View / Edit): `aria-pressed` toggled in sync with `.active` class; `aria-label` overrides emoji-only labels; toolbar wrapper gains `aria-label="Mark It Down view mode"`
+- Sortable table headers: `role="columnheader"` + `tabindex="0"` + `aria-sort` updated on sort + Enter/Space keyboard handler + visible `:focus` outline (sort was previously mouse-only)
+- Sort indicator span marked `aria-hidden` so screen readers don't double-announce
+- Per-table export buttons get `aria-label="Export table N as CSV/TSV/Excel"` so position is announced when there are multiple tables on a page
+- Per-table toolbar gets `role="toolbar"` + `aria-label`
+- `:focus-visible` outline added for `.toolbar`, `.mid-table-actions`, and `.mid-controls` button groups (was invisible during keyboard nav)
+- Warehouse status-bar item: stable `id` + descriptive `name` + `accessibilityInformation.{label, role}` updated on every state transition — screen readers now announce e.g. "Mark It Down warehouse: Notes synced, fadymondy/notes@main"
+- New `docs/accessibility.md` — full audit log with per-finding fix or follow-up link, scope-of-pass table, what's already covered by VSCode itself, and how to run the audit yourself
+- Deferred (with explicit follow-ups in `docs/accessibility.md`): full WCAG AA sweep across all 25 themes, slideshow panel focus trap, high-contrast variants, live-region announcements for sync state changes, skip-to-content in published HTML
+
 ### Added — v1.2 polish: opt-in telemetry via Sentry (#37)
 
 - New `src/telemetry/` module: `TelemetryClient` + `sanitize` helpers
