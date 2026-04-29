@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Multi-warehouse routing (#47)
+
+- New `markItDown.warehouse.routes` setting accepts an array of `{categoryPrefix, repo, branch?, subdir?}` rules; notes whose category matches a prefix sync to that route's repo, everything else falls through to the default `markItDown.warehouse.repo`
+- Pure router lives in `packages/core/src/warehouse-routing/`: builds resolved routes from rules, validates inputs (rejects empty / malformed / duplicate-prefix rules with reasons logged), inherits branch + subdir from the default config, sorts routes by descending prefix specificity so deeper rules win, exposes a per-route predicate
+- `WarehouseSync.pull` / `planPush` / `push` accept an optional `predicate` so each call only handles its route's notes; `planPush` flags remote notes whose category no longer matches the route as deletes (so re-categorising a note from one route to another is handled gracefully — added on the new repo, deleted from the old)
+- `WarehouseManager` iterates every enabled route per `syncNow` / `pullCommand` / `runAutoPush`, with separate first-push confirmation per repo (`firstPushFlagKey` already keys on repo so each new warehouse gets its own one-time dialog)
+- Status bar collapses to `<repo>@<branch>` for a single route, `N warehouses` for multiple
+- `Open on GitHub` shows a Quick Pick when more than one route is enabled
+- 10 new unit tests covering route parsing (no-rules, no-default, every rejection branch, branch/subdir inheritance + override) and routing semantics (prefix match, default exclusion, sibling non-bleed)
+
 ### Added — v2.0: Per-page slug overrides via frontmatter (#46)
 
 - Notes can declare a `slug:` in a YAML frontmatter block at the top of the body — published page goes to `notes/<slug>.html` instead of the default `notes/<slug-from-title>-<id>.html`

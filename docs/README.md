@@ -34,5 +34,6 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | #44 — Note attachments (drag-drop + warehouse + publish) | shipped | [note-attachments.md](note-attachments.md) |
 | #45 — Nested category hierarchies | shipped | [nested-categories.md](nested-categories.md) |
 | #46 — Per-page slug overrides via frontmatter | shipped | [slug-overrides.md](slug-overrides.md) |
+| #47 — Multi-warehouse routing per category | shipped | [multi-warehouse-routing.md](multi-warehouse-routing.md) |
 
 Each feature gets its own page when it ships. New pages should follow the [notes-sidebar.md](notes-sidebar.md) shape: at-a-glance table, settings, workflows, edge cases, and a "what it unblocks" section.

@@ -1,4 +1,8 @@
 import * as vscode from 'vscode';
+import {
+  buildRoutes,
+} from '../../packages/core/src/warehouse-routing';
+import type { RouteRule } from '../../packages/core/src/warehouse-routing';
 
 export type WarehouseTransport = 'gh' | 'git';
 
@@ -11,6 +15,20 @@ export interface WarehouseConfig {
   autoPush: boolean;
   autoPushDebounceMs: number;
   workspaceId: string;
+}
+
+export interface RoutedWarehouseConfig extends WarehouseConfig {
+  routeId: string;
+  /** True when this is the catch-all default route (no rule matched). */
+  isDefault: boolean;
+  /** Predicate over a note's category — true when the note belongs to this route. */
+  matches(category: string): boolean;
+}
+
+export interface WarehouseRoutes {
+  primary: WarehouseConfig;
+  routed: RoutedWarehouseConfig[];
+  rejectedRules: { index: number; reason: string }[];
 }
 
 export const PERSONAL_WORKSPACE_ID = '_personal';
@@ -44,6 +62,36 @@ export function readConfig(): WarehouseConfig {
 export function isAffected(event: vscode.ConfigurationChangeEvent): boolean {
   return event.affectsConfiguration('markItDown.warehouse');
 }
+
+export function readRoutes(): WarehouseRoutes {
+  const primary = readConfig();
+  const cfg = vscode.workspace.getConfiguration('markItDown.warehouse');
+  const rawRules = cfg.get<RouteRule[]>('routes') ?? [];
+  const resolution = buildRoutes(rawRules, {
+    repo: primary.repo,
+    branch: primary.branch,
+    subdir: primary.subdir,
+  });
+  const routed: RoutedWarehouseConfig[] = resolution.routes.map(route => ({
+    ...primary,
+    repo: route.repo,
+    branch: route.branch,
+    subdir: route.subdir,
+    enabled: route.repo.length > 0,
+    routeId: route.routeId,
+    isDefault: route.routeId === 'default',
+    matches: (cat: string) => route.match(cat),
+  }));
+  return { primary, routed, rejectedRules: resolution.rejected };
+}
+
+export function routeForNoteCategory(
+  routes: RoutedWarehouseConfig[],
+  category: string,
+): RoutedWarehouseConfig | undefined {
+  return routes.find(r => r.matches(category));
+}
+
 
 export function repoSlug(config: WarehouseConfig): string {
   return config.repo.replace(/[^A-Za-z0-9._-]+/g, '--');

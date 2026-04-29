@@ -598,6 +598,33 @@
           "default": "",
           "markdownDescription": "Override the workspace folder name used as a subfolder in the warehouse. Leave empty to derive from the workspace name."
         },
+        "markItDown.warehouse.routes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": ["categoryPrefix", "repo"],
+            "properties": {
+              "categoryPrefix": {
+                "type": "string",
+                "description": "Category path prefix this route claims (segment-aware, e.g. \"Personal\" matches \"Personal/Finance\" but not \"PersonalNotes\")."
+              },
+              "repo": {
+                "type": "string",
+                "description": "GitHub repo for this route in `owner/repo` form."
+              },
+              "branch": {
+                "type": "string",
+                "description": "Optional branch override (defaults to markItDown.warehouse.branch)."
+              },
+              "subdir": {
+                "type": "string",
+                "description": "Optional subdir override (defaults to markItDown.warehouse.subdir)."
+              }
+            }
+          },
+          "markdownDescription": "Multi-warehouse routing. Each rule sends notes whose category matches `categoryPrefix` to a different repo. Notes that match no rule fall through to the default `markItDown.warehouse.repo`. First match wins; longer prefixes are preferred. Invalid rules are logged + ignored. See [docs/multi-warehouse-routing.md](https://github.com/fadymondy/mark-it-down/blob/main/docs/multi-warehouse-routing.md)."
+        },
         "markItDown.publish.enabled": {
           "type": "boolean",
           "default": false,
