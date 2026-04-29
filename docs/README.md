@@ -13,7 +13,7 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | F5 — File export pipeline (PDF / DOCX / TXT) | shipped | [file-export.md](file-export.md) |
 | F6 — Notes sidebar | shipped (0.7) | [notes-sidebar.md](notes-sidebar.md) |
 | F7 — 25-theme bridge | shipped | [themes.md](themes.md) |
-| F8 — MCP server | planned | — |
+| F8 — MCP server | shipped | [mcp-server.md](mcp-server.md) |
 | F9 — Notes warehouse repo | shipped | [notes-warehouse.md](notes-warehouse.md) |
 | F10 — Publish any markdown to GitHub Pages | planned | — |
 | F11 — Slideshow export | planned | — |

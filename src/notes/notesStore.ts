@@ -138,6 +138,24 @@ export class NotesStore {
     this.emitter.fire();
   }
 
+  public async writeMcpIndexSnapshot(): Promise<void> {
+    const dir = vscode.Uri.joinPath(this.context.globalStorageUri, 'notes');
+    try {
+      await vscode.workspace.fs.createDirectory(dir);
+    } catch {
+      // already exists
+    }
+    const indexUri = vscode.Uri.joinPath(dir, '_mcp-index.json');
+    const snapshot = {
+      generatedAt: new Date().toISOString(),
+      notes: this.read('global'),
+    };
+    await vscode.workspace.fs.writeFile(
+      indexUri,
+      new TextEncoder().encode(JSON.stringify(snapshot, null, 2) + '\n'),
+    );
+  }
+
   public dispose(): void {
     this.emitter.dispose();
   }

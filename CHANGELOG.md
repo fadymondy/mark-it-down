@@ -4,6 +4,17 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.9: MCP server for Claude Desktop / Code (#9)
+
+- Standalone stdio MCP server bundled at `out/mcp/server.js` (esbuild → CJS Node18, ~1.1MB)
+- 5 active tools: `list_notes`, `get_note`, `create_note`, `update_note`, `delete_note` — operate on the global-scope notes from the Notes sidebar
+- 2 tools registered as stubs (return a clear "requires extension IPC" error): `get_active_markdown`, `list_open_md` — defer to v1+ pending an IPC channel between the running extension and the spawned MCP server
+- One-click install: `Mark It Down: Install MCP for Claude Desktop / Code` Quick-Picks Claude Desktop (per-OS path) or Claude Code (project-level `.mcp.json`) and writes the right `mcpServers["mark-it-down"]` entry. Uses the running Node binary (`process.execPath`) and the user's globalStorage notes dir.
+- `Mark It Down: Show MCP Server Path (copy to clipboard)` for users wiring it into other MCP clients manually
+- Extension writes `_mcp-index.json` snapshot to `globalStorage/notes/` on every NotesStore change so the cross-process MCP server stays in sync
+- Limitation: workspace-scope notes are not exposed (per-VSCode-window, no addressable path); use the warehouse repo for cross-machine notes instead
+- Restart Claude Desktop / Code after install to pick up the new server
+
 ### Added — Phase 0.6: File-level export pipeline TXT/DOCX/PDF (#6)
 
 - The previously-stub commands `markItDown.exportPdf`, `exportDocx`, `exportTxt` are now real

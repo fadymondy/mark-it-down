@@ -18,7 +18,7 @@ A beautiful markdown viewer + editor for VSCode — rich rendering, live mermaid
 | Tables → DataTable with sort + Excel/CSV export | ✅ shipped | 0.5 |
 | Notes sidebar with multi-type categories | ✅ shipped | 0.7 |
 | Multi-theme via `@orchestra-mcp/theme` (25 themes) | ✅ shipped (palettes bundled inline) | 0.8 |
-| MCP server for Claude Desktop / Code | ⬜ planned | 0.9 |
+| MCP server for Claude Desktop / Code | ✅ shipped (5 tools + one-click install; 2 IPC stubs) | 0.9 |
 
 ## Install (dev)
 
