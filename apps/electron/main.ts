@@ -136,6 +136,11 @@ function setupAutoUpdate(): void {
   // and falls back to GitHub via repository.url at runtime.
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false; // user has to opt in via menu
+  // Channel: stable | beta. Set via env so the Electron app respects whatever
+  // the VSCode extension wrote (or the user can override with MID_CHANNEL).
+  const channel = process.env.MID_CHANNEL === 'beta' ? 'beta' : 'latest';
+  autoUpdater.channel = channel;
+  autoUpdater.allowPrerelease = channel === 'beta';
   autoUpdater.on('update-available', info => {
     updateState.available = true;
     updateState.version = info.version;

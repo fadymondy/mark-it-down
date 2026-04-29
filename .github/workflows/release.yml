@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*'        # stable tags (e.g. v0.3.0)
+      - 'v*.*.*-*'      # pre-release tags (e.g. v0.3.0-rc.1, v0.3.0-beta.2)
 
 permissions:
   contents: write
@@ -107,3 +108,18 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           gh release edit "$TAG" --notes "${{ steps.extract.outputs.notes }}"
+      - name: Mark as pre-release if tag has a hyphen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # Pre-release tags look like v0.3.0-rc.1 / v0.3.0-beta.2 — flip
+          # the GitHub release's prerelease flag so the stable channel
+          # poller (which uses /releases/latest) skips them automatically.
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$TAG" --prerelease
+            echo "Marked $TAG as pre-release"
+          else
+            gh release edit "$TAG" --prerelease=false
+            echo "Marked $TAG as stable"
+          fi

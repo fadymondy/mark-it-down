@@ -46,6 +46,21 @@ Settings:
 | Setting | Default | What it does |
 |---|---|---|
 | `markItDown.updates.checkOnLaunch` | `true` | Poll GitHub on launch + every 6h. Set to `false` to disable; `Check for Updates` command still works manually. |
+| `markItDown.updates.channel` | `"stable"` | `"stable"` follows `releases/latest` (skips pre-releases). `"beta"` opts into pre-release tags (e.g. `v0.3.0-rc.1`). For the Electron app, set `MID_CHANNEL=beta` env var. See [Pre-release / beta channel](#pre-release--beta-channel) below. |
+
+## Pre-release / beta channel
+
+Cut a tag like `v0.3.0-rc.1` or `v0.3.0-beta.2`. The release workflow:
+
+1. Builds Electron installers + `.vsix` as for any release
+2. Sets the GitHub release's `prerelease: true` flag (because the tag has a `-` in it)
+
+The two pollers behave differently per channel:
+
+- **Stable channel** (default): the in-extension poller hits `/repos/.../releases/latest` which GitHub itself filters to skip pre-releases — beta tags are invisible. `electron-updater`'s default channel = `latest` does the same.
+- **Beta channel** (`markItDown.updates.channel: "beta"` / `MID_CHANNEL=beta`): the in-extension poller hits `/repos/.../releases?per_page=20` and picks the newest non-draft (pre-release OR stable). `electron-updater.allowPrerelease = true` does the same on the Electron side.
+
+So beta users see `v0.3.0-rc.1` immediately; stable users wait until you cut `v0.3.0` proper.
 
 ## Electron side
 
