@@ -126,6 +126,12 @@
           "name": "Notes",
           "icon": "media/notes-sidebar.svg",
           "contextualTitle": "Mark It Down"
+        },
+        {
+          "id": "markItDown.backlinks",
+          "name": "Backlinks",
+          "icon": "media/notes-sidebar.svg",
+          "contextualTitle": "Mark It Down"
         }
       ]
     },
@@ -227,6 +233,17 @@
         "title": "Filter by Tag",
         "category": "Mark It Down",
         "icon": "$(filter)"
+      },
+      {
+        "command": "markItDown.notes.createWithTitle",
+        "title": "New Note with Title",
+        "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.backlinks.refresh",
+        "title": "Refresh Backlinks",
+        "category": "Mark It Down",
+        "icon": "$(refresh)"
       },
       {
         "command": "markItDown.notes.revealStorage",
@@ -401,6 +418,11 @@
           "command": "markItDown.warehouse.openLog",
           "when": "view == markItDown.notes",
           "group": "overflow@4"
+        },
+        {
+          "command": "markItDown.backlinks.refresh",
+          "when": "view == markItDown.backlinks",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -446,6 +468,10 @@
         },
         {
           "command": "markItDown.notes.delete",
+          "when": "false"
+        },
+        {
+          "command": "markItDown.notes.createWithTitle",
           "when": "false"
         }
       ]

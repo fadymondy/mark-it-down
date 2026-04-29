@@ -2,6 +2,8 @@ import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js/lib/common';
 import DOMPurify from 'dompurify';
+import { rewriteWikiLinks } from '../wikilinks/renderer';
+import { NoteRef } from '../wikilinks/resolver';
 
 let initialized = false;
 
@@ -29,6 +31,13 @@ export interface RenderOptions {
    * on each. Set to false to leave mermaid blocks as plain code blocks.
    */
   extractMermaid?: boolean;
+  /**
+   * When provided, rewrites `[[wiki-link]]` references into anchor tags
+   * resolved against this corpus. Pass an empty array to keep parsing on
+   * but mark every link broken; omit to skip wiki-link processing entirely
+   * (so the brackets render as literal text via marked).
+   */
+  notes?: NoteRef[];
 }
 
 export interface RenderResult {
@@ -47,10 +56,13 @@ export interface RenderResult {
  */
 export function renderMarkdown(markdown: string, options: RenderOptions = {}): RenderResult {
   ensureInitialized();
-  const { extractMermaid = true } = options;
+  const { extractMermaid = true, notes } = options;
   const mermaidBlocks: string[] = [];
 
   let source = markdown;
+  if (notes !== undefined) {
+    source = rewriteWikiLinks(source, notes);
+  }
   if (extractMermaid) {
     source = source.replace(/```mermaid\s*\n([\s\S]*?)\n```/g, (_, code: string) => {
       const idx = mermaidBlocks.push(code) - 1;
@@ -61,7 +73,16 @@ export function renderMarkdown(markdown: string, options: RenderOptions = {}): R
   const rawHtml = marked.parse(source, { async: false }) as string;
   const safeHtml = DOMPurify.sanitize(rawHtml, {
     ADD_TAGS: ['mermaid'],
-    ADD_ATTR: ['data-mermaid-index', 'data-mermaid-source', 'class', 'target'],
+    ADD_ATTR: [
+      'data-mermaid-index',
+      'data-mermaid-source',
+      'data-wikilink-id',
+      'data-wikilink-ids',
+      'data-wikilink-target',
+      'data-wikilink-anchor',
+      'class',
+      'target',
+    ],
   });
 
   return { html: safeHtml, mermaidBlocks };

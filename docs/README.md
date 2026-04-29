@@ -26,4 +26,10 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 |---|---|---|
 | F14 — Auto-update for both surfaces | shipped | [auto-update.md](auto-update.md) + [releasing.md](releasing.md) |
 
+## v2.0 features
+
+| Feature | Status | Doc |
+|---|---|---|
+| #43 — `[[wiki-link]]` references + backlink panel | shipped | [wiki-links.md](wiki-links.md) |
+
 Each feature gets its own page when it ships. New pages should follow the [notes-sidebar.md](notes-sidebar.md) shape: at-a-glance table, settings, workflows, edge cases, and a "what it unblocks" section.
