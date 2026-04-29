@@ -305,6 +305,11 @@
         "title": "Check for Updates",
         "category": "Mark It Down",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "markItDown.telemetry.sendTestEvent",
+        "title": "Telemetry: Send Test Event",
+        "category": "Mark It Down"
       }
     ],
     "menus": {
@@ -599,6 +604,16 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Check for newer Mark It Down releases on GitHub once per launch (and every 6 hours after). Only used by users on a self-installed `.vsix`; Marketplace installs use VSCode's native update mechanism."
+        },
+        "markItDown.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Send anonymized error reports to help improve Mark It Down. **Default off**. When on, sends only stack traces + error messages with file paths anonymized; never note content. See [docs/telemetry.md](https://github.com/fadymondy/mark-it-down/blob/main/docs/telemetry.md)."
+        },
+        "markItDown.telemetry.dsn": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Sentry DSN endpoint to receive telemetry events. Empty = no events sent regardless of `enabled`. The official Mark It Down build doesn't ship a DSN; set this to point at your own Sentry project, or leave empty to keep telemetry fully local even when `enabled: true`."
         }
       }
     }
@@ -633,6 +648,7 @@
     "@codemirror/theme-one-dark": "^6.1.3",
     "@codemirror/view": "^6.41.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sentry/node": "^10.50.0",
     "@types/pdfkit": "^0.17.6",
     "codemirror": "^6.0.2",
     "docx": "^9.6.1",

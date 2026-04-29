@@ -4,6 +4,18 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.2 polish: opt-in telemetry via Sentry (#37)
+
+- New `src/telemetry/` module: `TelemetryClient` + `sanitize` helpers
+- **Default off.** First activation surfaces a one-time consent toast (`Enable / Keep off / Learn more`) — choice persists in `globalState[markItDown.telemetry.consentShown]`
+- 2 settings: `markItDown.telemetry.enabled` (default `false`) + `markItDown.telemetry.dsn` (default empty — official build ships without a DSN; events stay local until the user points it at their own Sentry project)
+- 1 command: `Mark It Down: Telemetry: Send Test Event` for verification
+- PII filter at source: workspace paths → `<workspace>`, home dir → `~`, extension dir → `<extension>`, system temp → `<tmp>`. Strings truncated at 4096 chars. Applied to error events AND breadcrumbs via Sentry `beforeSend` / `beforeBreadcrumb`.
+- Random per-launch session id (16-char hex, not persisted) tagged on every event
+- `release` tag from `package.json#version`; `tracesSampleRate: 0` (no perf traces collected)
+- 9 unit tests covering the sanitizer (path replacement, longest-anchor-first, deep walk, length truncation, session-id format + uniqueness)
+- Full reference docs at `docs/telemetry.md` — consent flow, what's sent, what's NEVER sent, verification recipe
+
 ### Added — v1.2 polish: packages/core/ extraction — first cut (#36)
 
 - New `packages/core/src/` directory holds the `vscode`-API-free shared modules:
