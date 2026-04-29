@@ -4,6 +4,18 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.10: Publish to GitHub Pages (#11)
+
+- New `Mark It Down: Publish: Deploy Site` command publishes all global notes as a static site to the warehouse repo's `gh-pages` branch (configurable via `markItDown.publish.branch` and `.path`)
+- `Mark It Down: Publish: Deploy Current Page` publishes only the active markdown for one-off shares
+- `Mark It Down: Publish: Copy Public URL` copies the would-be URL for the active file (no build)
+- `Mark It Down: Publish: Open Site in Browser` opens the deployed root
+- Static generator (`src/publish/staticGenerator.ts`): marked + markedHighlight server-side render → HTML; mermaid blocks left for client-side render via JSDelivr CDN; sortable-table JS bundled into `assets/site.js`; theme palette baked into `assets/style.css` from any of the 25 [bundled palettes](docs/themes.md)
+- Output structure: `index.html` (page list) + `notes/<slug>-<id>.html` per note + shared `assets/style.css` + `assets/site.js`
+- Publish flow uses `git worktree add` against the warehouse working clone so the publish branch and the sync branch don't fight; orphan branch is created on first deploy if missing
+- 5 new settings: `markItDown.publish.enabled / .branch / .path / .includeGlob / .theme`
+- v1 limitations documented in [docs/publish.md](docs/publish.md): no first-run wizard for Pages enable, no private-repo warning, glob filtering not yet applied, no per-page slug override
+
 ### Added — Phase 0.9: MCP server for Claude Desktop / Code (#9)
 
 - Standalone stdio MCP server bundled at `out/mcp/server.js` (esbuild → CJS Node18, ~1.1MB)
