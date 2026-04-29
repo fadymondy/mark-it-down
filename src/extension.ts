@@ -3,6 +3,8 @@ import { MarkdownEditorProvider } from './editor/markdownEditorProvider';
 import { NotesStore } from './notes/notesStore';
 import { NotesTreeProvider } from './notes/notesTreeProvider';
 import { registerNotesCommands } from './notes/notesCommands';
+import { BacklinksIndex } from './notes/backlinksIndex';
+import { BacklinksTreeProvider, buildNoteIndexProvider } from './notes/backlinksProvider';
 import { WarehouseManager } from './warehouse/warehouseManager';
 import { registerWarehouseCommands } from './warehouse/warehouseCommands';
 import { disposeLogChannel } from './warehouse/warehouseLog';
@@ -35,6 +37,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   const notesStore = new NotesStore(context);
   const notesTree = new NotesTreeProvider(notesStore);
+  const backlinksIndex = new BacklinksIndex(notesStore);
+  const backlinksTree = new BacklinksTreeProvider(notesStore, backlinksIndex);
+  const noteIndexProviderHandle = buildNoteIndexProvider(notesStore, backlinksIndex);
+  context.subscriptions.push(
+    provider.attachNoteIndex(noteIndexProviderHandle.provider),
+    new vscode.Disposable(() => noteIndexProviderHandle.dispose()),
+  );
   const warehouse = new WarehouseManager(context, notesStore);
   const publish = new PublishManager(context, notesStore);
   const slideshow = new SlideshowManager(context);
@@ -43,15 +52,21 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     notesStore,
     notesTree,
+    backlinksIndex,
+    backlinksTree,
     warehouse,
     updates,
     vscode.window.registerTreeDataProvider('markItDown.notes', notesTree),
+    vscode.window.registerTreeDataProvider('markItDown.backlinks', backlinksTree),
     ...registerNotesCommands(context, notesStore),
     ...registerWarehouseCommands(warehouse),
     ...registerMcpInstallCommands(context),
     ...registerPublishCommands(publish),
     ...registerSlideshowCommands(slideshow),
     vscode.commands.registerCommand('markItDown.updates.checkNow', () => updates.checkNow()),
+    vscode.commands.registerCommand('markItDown.backlinks.refresh', () => {
+      void backlinksIndex.rebuild();
+    }),
     telemetry,
     vscode.commands.registerCommand('markItDown.telemetry.sendTestEvent', () => {
       telemetry.captureMessage('Mark It Down test event from command palette', 'info');
@@ -60,6 +75,7 @@ export function activate(context: vscode.ExtensionContext) {
       );
     }),
   );
+  backlinksIndex.start();
   updates.start();
   void telemetry.start();
   warehouse.start();

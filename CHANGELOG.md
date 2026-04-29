@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Wiki-links + backlinks (#43)
+
+- Markdown gets `[[note title]]`, `[[note title|alias]]`, and `[[note title#anchor]]` syntax — resolved against the live notes corpus
+- New `packages/core/src/wikilinks/` package: pure parser (skips fenced + inline code), case-insensitive resolver with ambiguous + broken statuses, source rewriter that injects sanitised anchor HTML before marked runs
+- Webview renders wiki-links with three visual states — solid accent (resolved), warning colour (ambiguous → Quick Pick on click), red dotted (broken → "Create note?" prompt)
+- New **Backlinks** sidebar view next to **Notes** — for the active note, lists every other note linking to it, with verbatim wiki-link snippet in the description
+- `BacklinksIndex` rebuilds on store changes (debounced 300 ms) + on demand via `Mark It Down: Refresh Backlinks`
+- New hidden command `markItDown.notes.createWithTitle` — invoked by broken-link clicks, jumps the user through scope + category pickers prefilled with the bracketed title
+- 17 new unit tests across parser (code-region masking, alias/anchor split, multi-link lines) and resolver (case-folding, ambiguity, self-link suppression, alias preservation in backlinks)
+
 ### Added — v2.0: Tags (#42)
 
 - New optional `tags?: string[]` field on `NoteMetadata` — multi-tag-per-note, orthogonal to `category`

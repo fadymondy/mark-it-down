@@ -8,12 +8,58 @@ interface PanelState {
   document: vscode.TextDocument;
 }
 
+export interface NoteIndexEntry {
+  id: string;
+  title: string;
+}
+
+export interface NoteIndexProvider {
+  list(): NoteIndexEntry[];
+  /** Fires when the list changes. */
+  onDidChange: vscode.Event<void>;
+  /** Open a note by id (after a wiki-link click). */
+  open(id: string): Promise<void>;
+  /**
+   * Pick one of several note ids when a wiki-link is ambiguous.
+   * Resolves to the chosen id or undefined if cancelled.
+   */
+  pickAmbiguous(ids: string[]): Promise<string | undefined>;
+  /**
+   * Create a new note from a broken wiki-link click. Resolves to the new id
+   * or undefined if cancelled.
+   */
+  createFromTitle(title: string): Promise<string | undefined>;
+}
+
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'markItDown.editor';
 
   private readonly panels = new Map<string, { panel: vscode.WebviewPanel; state: PanelState }>();
+  private noteIndexProvider?: NoteIndexProvider;
+  private noteIndexSub?: vscode.Disposable;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
+
+  public attachNoteIndex(provider: NoteIndexProvider): vscode.Disposable {
+    this.noteIndexProvider = provider;
+    this.noteIndexSub?.dispose();
+    this.noteIndexSub = provider.onDidChange(() => {
+      for (const { panel, state } of this.panels.values()) {
+        panel.webview.postMessage({
+          type: 'update',
+          text: state.document.getText(),
+          mode: state.mode,
+          themeKind: vscode.window.activeColorTheme.kind,
+          notes: this.noteIndexProvider?.list() ?? [],
+        });
+      }
+    });
+    return new vscode.Disposable(() => {
+      this.noteIndexSub?.dispose();
+      this.noteIndexSub = undefined;
+      this.noteIndexProvider = undefined;
+    });
+  }
 
   public async resolveCustomTextEditor(
     document: vscode.TextDocument,
@@ -47,6 +93,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         text: document.getText(),
         mode: state.mode,
         themeKind: vscode.window.activeColorTheme.kind,
+        notes: this.noteIndexProvider?.list() ?? [],
       });
     };
 
@@ -122,8 +169,34 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             vscode.window.showErrorMessage(msg.message);
           }
           return;
+        case 'openWikilink':
+          await this.handleWikilinkClick(msg);
+          return;
       }
     });
+  }
+
+  private async handleWikilinkClick(msg: {
+    id?: unknown;
+    ids?: unknown;
+    target?: unknown;
+  }): Promise<void> {
+    const provider = this.noteIndexProvider;
+    if (!provider) return;
+    if (typeof msg.id === 'string' && msg.id.length > 0) {
+      await provider.open(msg.id);
+      return;
+    }
+    if (typeof msg.ids === 'string' && msg.ids.length > 0) {
+      const ids = msg.ids.split(',').filter(Boolean);
+      const picked = await provider.pickAmbiguous(ids);
+      if (picked) await provider.open(picked);
+      return;
+    }
+    if (typeof msg.target === 'string' && msg.target.length > 0) {
+      const created = await provider.createFromTitle(msg.target);
+      if (created) await provider.open(created);
+    }
   }
 
   private async saveTable(
@@ -217,6 +290,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       text: target.state.document.getText(),
       mode: next,
       themeKind: vscode.window.activeColorTheme.kind,
+      notes: this.noteIndexProvider?.list() ?? [],
     });
   }
 

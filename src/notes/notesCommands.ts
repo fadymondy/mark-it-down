@@ -35,6 +35,24 @@ export function registerNotesCommands(
       }
     }),
 
+    vscode.commands.registerCommand(
+      'markItDown.notes.createWithTitle',
+      async (title: string) => {
+        const scope = await pickScope(store, undefined);
+        if (!scope) return undefined;
+        const category = await pickCategory(store, scope);
+        if (!category) return undefined;
+        try {
+          const note = await store.create({ title, category, scope });
+          await openNote(store, note);
+          return note;
+        } catch (err) {
+          vscode.window.showErrorMessage(`Mark It Down: ${(err as Error).message}`);
+          return undefined;
+        }
+      },
+    ),
+
     vscode.commands.registerCommand('markItDown.notes.open', async (target?: string | NoteTreeNode) => {
       const note = await resolveNote(store, target);
       if (!note) return;

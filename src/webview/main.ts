@@ -30,11 +30,17 @@ const vscode = acquireVsCodeApi();
 
 type Mode = 'view' | 'edit';
 
+interface NoteIndexEntry {
+  id: string;
+  title: string;
+}
+
 interface UpdateMessage {
   type: 'update';
   text: string;
   mode: Mode;
   themeKind: number;
+  notes?: NoteIndexEntry[];
 }
 
 const root = document.getElementById('root') as HTMLElement;
@@ -48,6 +54,7 @@ let mermaidInitialized = false;
 let editorView: EditorView | null = null;
 let lastThemeKind = 1;
 let suppressEditorChange = false;
+let noteIndex: NoteIndexEntry[] = [];
 
 let mermaidThemeKind = 0;
 
@@ -66,11 +73,25 @@ function initMermaid(themeKind: number) {
 }
 
 function renderMarkdown(md: string): string {
-  const { html, mermaidBlocks } = coreRenderMarkdown(md);
+  const { html, mermaidBlocks } = coreRenderMarkdown(md, { notes: noteIndex });
   const container = document.createElement('div');
   container.innerHTML = html;
   applyMermaidPlaceholders(container, mermaidBlocks);
   return container.innerHTML;
+}
+
+function attachWikilinkHandlers() {
+  root.querySelectorAll<HTMLElement>('.mid-wikilink').forEach(el => {
+    if (el.dataset.midWikilinkBound === '1') return;
+    el.dataset.midWikilinkBound = '1';
+    el.addEventListener('click', evt => {
+      evt.preventDefault();
+      const id = el.getAttribute('data-wikilink-id') ?? undefined;
+      const ids = el.getAttribute('data-wikilink-ids') ?? undefined;
+      const target = el.getAttribute('data-wikilink-target') ?? undefined;
+      vscode.postMessage({ type: 'openWikilink', id, ids, target });
+    });
+  });
 }
 
 function attachCodeActions() {
@@ -434,6 +455,7 @@ function renderView() {
   root.innerHTML = renderMarkdown(currentText);
   attachCodeActions();
   attachTableActions();
+  attachWikilinkHandlers();
   renderMermaidDiagrams();
 
   // Intercept link clicks → open in OS browser
@@ -559,6 +581,7 @@ window.addEventListener('message', evt => {
   lastThemeKind = msg.themeKind;
   initMermaid(msg.themeKind);
   currentText = msg.text;
+  if (Array.isArray(msg.notes)) noteIndex = msg.notes;
   if (msg.mode !== currentMode) {
     setMode(msg.mode, false);
   } else if (currentMode === 'view') {

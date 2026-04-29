@@ -193,6 +193,25 @@ export function buildWebviewHtml(
     main.viewing .mid-sort-indicator { font-size: 0.75em; opacity: 0.6; margin-left: 4px; }
     main.viewing th[data-sort="asc"] .mid-sort-indicator,
     main.viewing th[data-sort="desc"] .mid-sort-indicator { opacity: 1; }
+    main.viewing .mid-wikilink {
+      color: var(--link);
+      text-decoration: none;
+      border-bottom: 1px dashed var(--link);
+      padding-bottom: 1px;
+      cursor: pointer;
+    }
+    main.viewing .mid-wikilink:hover { color: var(--link-hover); border-bottom-style: solid; }
+    main.viewing .mid-wikilink-broken {
+      color: var(--vscode-errorForeground, #d04444);
+      border-bottom-color: var(--vscode-errorForeground, #d04444);
+      border-bottom-style: dotted;
+    }
+    main.viewing .mid-wikilink-ambiguous {
+      color: var(--vscode-editorWarning-foreground, #c79b18);
+      border-bottom-color: var(--vscode-editorWarning-foreground, #c79b18);
+    }
+    main.viewing .mid-wikilink::before { content: "[["; opacity: 0.4; font-size: 0.85em; }
+    main.viewing .mid-wikilink::after  { content: "]]"; opacity: 0.4; font-size: 0.85em; }
     main.viewing img { max-width: 100%; border-radius: 4px; }
     main.viewing hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
     main.viewing ul, main.viewing ol { padding-left: 1.4em; }
