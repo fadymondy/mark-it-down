@@ -202,6 +202,27 @@
         "title": "Publish: Open Site in Browser",
         "category": "Mark It Down",
         "icon": "$(globe)"
+      },
+      {
+        "command": "markItDown.slideshow.previewLocal",
+        "title": "Slideshow: Preview Local",
+        "category": "Mark It Down",
+        "icon": "$(play)"
+      },
+      {
+        "command": "markItDown.slideshow.publish",
+        "title": "Slideshow: Publish",
+        "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.slideshow.copyShareUrl",
+        "title": "Slideshow: Copy Share URL",
+        "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.slideshow.exportPdf",
+        "title": "Slideshow: Export to PDF",
+        "category": "Mark It Down"
       }
     ],
     "menus": {
@@ -454,6 +475,23 @@
           "type": "string",
           "default": "github-light",
           "description": "Theme baked into the published site (any markItDown.theme value except 'auto')."
+        },
+        "markItDown.slideshow.theme": {
+          "type": "string",
+          "default": "black",
+          "enum": ["black", "white", "league", "beige", "night", "serif", "simple", "solarized", "moon", "dracula", "sky", "blood"],
+          "description": "Reveal.js theme used by the slideshow preview and published slides."
+        },
+        "markItDown.slideshow.transition": {
+          "type": "string",
+          "default": "slide",
+          "enum": ["none", "fade", "slide", "convex", "concave", "zoom"],
+          "description": "Slide-to-slide transition style."
+        },
+        "markItDown.slideshow.includeSpeakerNotes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render lines after a `Notes:` block on each slide as Reveal speaker notes."
         }
       }
     }

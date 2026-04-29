@@ -16,7 +16,7 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | F8 — MCP server | shipped | [mcp-server.md](mcp-server.md) |
 | F9 — Notes warehouse repo | shipped | [notes-warehouse.md](notes-warehouse.md) |
 | F10 — Publish any markdown to GitHub Pages | shipped | [publish.md](publish.md) |
-| F11 — Slideshow export | planned | — |
+| F11 — Slideshow export | shipped | [slideshow.md](slideshow.md) |
 | F12 — Standalone Electron app | planned | — |
 | F13 — Claude Code plugin | planned | — |
 

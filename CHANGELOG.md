@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.11: Slideshow export (#12)
+
+- Convert any markdown into a [reveal.js](https://revealjs.com) slideshow — `---` for horizontal slide breaks, `--` for vertical sub-slides, optional YAML frontmatter for `theme` / `transition` / `title` / `speakerNotes`
+- `Mark It Down: Slideshow: Preview Local` opens a webview panel beside the editor with reveal.js + mermaid + highlight.js loaded from JSDelivr at view time (CSP relaxed scoped to that panel only)
+- `Mark It Down: Slideshow: Publish` reuses the F10 publish pipeline — pushes a single self-contained HTML to `<publish-branch>/<publish-path>/slides/<basename>.html`, surfaces an info toast with Open / Copy URL actions
+- `Mark It Down: Slideshow: Copy Share URL` and `Slideshow: Export to PDF` (the PDF command currently surfaces a defer-notice pointing at reveal's built-in `?print-pdf` browser print mode)
+- 3 new settings: `markItDown.slideshow.theme` (12 reveal themes), `.transition` (6 styles), `.includeSpeakerNotes`
+- `Notes:` block at the end of any slide body becomes reveal speaker notes (`<aside class="notes">`)
+- Mermaid + code highlighting work in slides via the same render pipeline as the rest of Mark It Down
+
 ### Added — Phase 0.10: Publish to GitHub Pages (#11)
 
 - New `Mark It Down: Publish: Deploy Site` command publishes all global notes as a static site to the warehouse repo's `gh-pages` branch (configurable via `markItDown.publish.branch` and `.path`)
