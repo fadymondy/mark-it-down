@@ -4,6 +4,14 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.1 hardening: vitest harness + 65 initial unit tests (#31)
+
+- New `vitest.config.ts` with a `vscode` module alias pointing at `tests/__mocks__/vscode.ts` so src/ files that import vscode don't break the test runner
+- 65 unit tests across 6 files covering the pure-function modules: `markdownTokens` (tokenize + inlineToText), `secretScanner` (9 token patterns + redaction), `warehouseConfig` (slugify, repoSlug, repoUrl, repoWebUrl, scopeDir), `themes` (25 palettes + findTheme + paletteToCss), `compareSemver` + `parseSemver` (exported from `updateChecker`), `markdownToTxt` (heading / inline / list / code / table / blockquote / hr handling)
+- Scripts: `npm test`, `npm run test:watch`, `npm run test:coverage`
+- CI workflow now runs unit tests + uploads a v8 coverage report as an artifact (no threshold enforced yet — first baseline)
+- Exported `compareSemver` + `parseSemver` from `src/updates/updateChecker.ts` for testability (no behavior change)
+
 ### Added — v1.1 hardening: ESLint flat config + PR-time CI (#30)
 
 - New `eslint.config.mjs` (flat config, ESLint 10) covering `src/`, `apps/electron/`, with separate Node + browser global sets per file group

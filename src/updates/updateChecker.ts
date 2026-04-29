@@ -171,7 +171,7 @@ function fetchLatestRelease(): Promise<UpdateInfo | undefined> {
   });
 }
 
-function compareSemver(a: string, b: string): number {
+export function compareSemver(a: string, b: string): number {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
   for (let i = 0; i < 3; i++) {
@@ -180,7 +180,7 @@ function compareSemver(a: string, b: string): number {
   return 0;
 }
 
-function parseSemver(v: string): [number, number, number] {
+export function parseSemver(v: string): [number, number, number] {
   const cleaned = v.replace(/^v/, '').split('-')[0];
   const parts = cleaned.split('.').map(p => Number.parseInt(p, 10));
   return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
