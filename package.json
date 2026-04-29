@@ -44,7 +44,7 @@
     "theme": "dark"
   },
   "qna": "marketplace",
-  "main": "./out/extension.js",
+  "main": "./out/src/extension.js",
   "build": {
     "appId": "io.markitdown.app",
     "productName": "Mark It Down",

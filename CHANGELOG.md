@@ -4,6 +4,19 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.2 polish: packages/core/ extraction — first cut (#36)
+
+- New `packages/core/src/` directory holds the `vscode`-API-free shared modules:
+  - `themes/` — the 25 palette definitions + helpers (moved from `src/themes/`)
+  - `markdown/tokens.ts` — `tokenize` + `inlineToText` (moved from `src/exporters/markdownTokens.ts`)
+  - `markdown/renderer.ts` — **new** consolidated `renderMarkdown` + `applyMermaidPlaceholders` that both `src/webview/main.ts` (VSCode webview) and `apps/electron/renderer/renderer.ts` (Electron renderer) now use
+  - `secrets/scanner.ts` — token regex set (moved from `src/warehouse/secretScanner.ts`)
+  - `semver/compare.ts` — `compareSemver` + `parseSemver` (moved from `src/updates/updateChecker.ts`)
+- All previous import sites stay working via thin re-export shims in the original locations (no churn at call sites; tests still green at 71/71)
+- `tsconfig.json` widened to include both `src/` and `packages/core/src/` under a project-root `rootDir`; `package.json#main` updated to `./out/src/extension.js` to match the new output layout (`out/src/...` + `out/packages/core/src/...`)
+- Documented what's deferred in `packages/core/README.md`: notes/warehouse/publish/slideshow/MCP-install all touch `vscode.*` and need interface abstractions before they can land; Electron's IPC bridge currently re-implements small subsets that core could absorb in a future ship
+- Webview + Electron renderer now share one `renderMarkdown` implementation — the ~30 LOC mermaid-placeholder duplication that #13 (Electron first-cut) called out is gone
+
 ### Added — v1.1 hardening: MCP IPC channel for active-editor introspection (#35)
 
 - The 2 stub tools from F8 (`get_active_markdown` and `list_open_md`) now actually work

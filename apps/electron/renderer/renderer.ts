@@ -1,8 +1,5 @@
-import { marked } from 'marked';
-import { markedHighlight } from 'marked-highlight';
-import hljs from 'highlight.js/lib/common';
+import { renderMarkdown as coreRenderMarkdown, applyMermaidPlaceholders } from '../../../packages/core/src/markdown/renderer';
 import mermaid from 'mermaid';
-import DOMPurify from 'dompurify';
 
 interface Mid {
   readFile(path: string): Promise<string>;
@@ -16,17 +13,6 @@ interface Mid {
   onMenuSave(cb: () => void): () => void;
 }
 declare const window: Window & { mid: Mid };
-
-marked.use(
-  markedHighlight({
-    langPrefix: 'hljs language-',
-    highlight(code, lang) {
-      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-      return hljs.highlight(code, { language }).value;
-    },
-  }) as Parameters<typeof marked.use>[0],
-);
-marked.setOptions({ gfm: true });
 
 const root = document.getElementById('root') as HTMLElement;
 const filenameEl = document.getElementById('filename') as HTMLSpanElement;
@@ -57,24 +43,10 @@ function initMermaid(themeKind: number): void {
 }
 
 function renderMarkdown(md: string): string {
-  const mermaidBlocks: string[] = [];
-  const withMermaid = md.replace(/```mermaid\s*\n([\s\S]*?)\n```/g, (_m, code) => {
-    const i = mermaidBlocks.push(code) - 1;
-    return `<div class="mermaid" data-mermaid-index="${i}"></div>`;
-  });
-  const html = marked.parse(withMermaid, { async: false }) as string;
-  const safe = DOMPurify.sanitize(html, {
-    ADD_ATTR: ['data-mermaid-index'],
-  });
+  const { html, mermaidBlocks } = coreRenderMarkdown(md);
   const container = document.createElement('div');
-  container.innerHTML = safe;
-  container.querySelectorAll<HTMLDivElement>('.mermaid[data-mermaid-index]').forEach(el => {
-    const idx = Number(el.dataset.mermaidIndex);
-    if (!Number.isNaN(idx) && mermaidBlocks[idx]) {
-      el.textContent = mermaidBlocks[idx];
-      delete el.dataset.mermaidIndex;
-    }
-  });
+  container.innerHTML = html;
+  applyMermaidPlaceholders(container, mermaidBlocks);
   return container.innerHTML;
 }
 
