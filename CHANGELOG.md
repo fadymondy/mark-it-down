@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.2 polish: side-by-side conflict-resolution UI for warehouse (#39)
+
+- New `ConflictRegistry` collects diverged notes during sync (was previously just a log warning)
+- New `ConflictPanel` webview shows local vs remote side-by-side per note with `Keep local` / `Replace with remote` / `Skip` actions; live-refreshes as the registry changes
+- Status bar's `conflict` state now opens the panel on click (other states still open the log channel)
+- New command: `Mark It Down: Warehouse: Resolve Conflicts`
+- `Replace with remote` calls `NotesStore.importNote` with the remote content + remote `updatedAt`
+- Strict CSP scoped to the panel webview; per-button `aria-label`s; dark/light theme follows VSCode `--vscode-*` variables
+- F9 (#10) docs future-work seed for "side-by-side conflict UI" — resolved
+
 ### Added — v1.2 polish: accessibility audit + remediations (#38)
 
 - Mode toggle buttons (View / Edit): `aria-pressed` toggled in sync with `.active` class; `aria-label` overrides emoji-only labels; toolbar wrapper gains `aria-label="Mark It Down view mode"`

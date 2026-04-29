@@ -5,6 +5,7 @@ import { PERSONAL_WORKSPACE_ID, scopeDir, WarehouseConfig } from './warehouseCon
 import { log } from './warehouseLog';
 import { scanForSecrets, SecretFinding } from './secretScanner';
 import { WarehouseClone, WarehouseTransport } from './warehouseTransport';
+import { ConflictRegistry } from './conflictRegistry';
 
 export interface SyncSummary {
   pulled: { added: number; updated: number; conflicts: number };
@@ -43,6 +44,7 @@ export class WarehouseSync {
     private readonly context: vscode.ExtensionContext,
     private readonly store: NotesStore,
     private readonly transport: WarehouseTransport,
+    private readonly conflicts: ConflictRegistry,
   ) {}
 
   public async pull(config: WarehouseConfig): Promise<SyncSummary['pulled']> {
@@ -82,6 +84,21 @@ export class WarehouseSync {
         if (localChangedSinceSync && remoteChangedSinceSync && localTime !== remoteTime) {
           conflicts++;
           log('warn', `conflict on note ${local.id} (${local.title}); keeping local copy`);
+          const remoteContent = await this.readRemoteContent(config, clone, scope, entry.filename);
+          if (remoteContent !== undefined) {
+            const localContent = await this.store.readContent(local).catch(() => '');
+            this.conflicts.record({
+              noteId: local.id,
+              scope: local.scope,
+              title: local.title,
+              category: local.category,
+              local,
+              remote: { updatedAt: entry.updatedAt },
+              localContent,
+              remoteContent,
+              detectedAt: new Date().toISOString(),
+            });
+          }
           continue;
         }
         const content = await this.readRemoteContent(config, clone, scope, entry.filename);

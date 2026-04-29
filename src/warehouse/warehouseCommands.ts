@@ -7,5 +7,8 @@ export function registerWarehouseCommands(manager: WarehouseManager): vscode.Dis
     vscode.commands.registerCommand('markItDown.warehouse.pull', () => manager.pullCommand()),
     vscode.commands.registerCommand('markItDown.warehouse.openOnGitHub', () => manager.openOnGitHub()),
     vscode.commands.registerCommand('markItDown.warehouse.openLog', () => manager.openLog()),
+    vscode.commands.registerCommand('markItDown.warehouse.openConflicts', () =>
+      manager.conflictPanel.reveal(),
+    ),
   ];
 }
