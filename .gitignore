@@ -7,5 +7,12 @@ coverage/
 .vscode-test/
 .vscode-test-user-data/
 
+# Stray TS-output artifacts (build should always go to out/)
+packages/core/**/*.js
+packages/core/**/*.js.map
+src/**/*.js.map
+apps/electron/**/*.js
+apps/electron/**/*.js.map
+
 # Claude Code session metadata — local only
 .claude/
