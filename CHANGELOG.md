@@ -4,6 +4,14 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.1 hardening: VSCode Marketplace publisher setup runbook (#34)
+
+- `package.json` extended with marketplace-friendly metadata: `bugs.url`, `categories` adds "Notebooks", `keywords` adds preview/publish/slideshow/github-pages, `galleryBanner` (`#0d1117` dark), `qna: marketplace`
+- `media/marketplace/` placeholder directory with a README documenting the 6 screenshots needed for the listing (filename convention, size budget, capture instructions)
+- `docs/releasing.md` gains a 7-step "Setting up the VSCode Marketplace publisher" section: publisher creation at marketplace.visualstudio.com → Azure DevOps PAT → repo secret → first manual `vsce publish` → Open VSX mirror recommendation → screenshot guidance → token rotation cadence
+- The release workflow's `vsce publish` step is already conditional on `VSCE_PAT` being set (from F14 #28) — gracefully no-ops until the user adds the secret
+- **User action required** to actually go live: create the publisher account + add `VSCE_PAT` secret + first manual publish per the runbook
+
 ### Added — v1.1 hardening: macOS code signing + notarization wired (#33)
 
 - `.github/workflows/release.yml` env block now references `MAC_CERTS`, `MAC_CERTS_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` secrets — populated only on macOS runners that have them, electron-builder gracefully falls back to unsigned builds when absent
