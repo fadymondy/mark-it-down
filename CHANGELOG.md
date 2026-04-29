@@ -4,6 +4,17 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: ePub export (#48)
+
+- Two new commands: `Mark It Down: Export to ePub` (single-file, one chapter per book) and `Mark It Down: Export Category as ePub` (multi-chapter book bundling every note under a category path, sorted oldest-first by `updatedAt`)
+- Bundled minimal EPUB 3.0 generator in `packages/core/src/epub/` — zero new runtime deps, just Node's `zlib`. Ships a 110-line ZIP writer (stored + deflate, precomputed CRC32 table, valid EOCD) plus a templated builder (container.xml, content.opf, nav.xhtml, toc.ncx, styles.css, chapter XHTML)
+- XHTML hardening for marked output: self-closes `<br>`, `<hr>`, `<img>` so EPUB-strict readers parse cleanly
+- Frontmatter is stripped before each chapter renders (reuses the parser from #46)
+- New settings: `markItDown.epub.author`, `markItDown.epub.publisher`, `markItDown.epub.coverImage` (absolute or workspace-relative path to a PNG/JPEG cover; missing → silently dropped)
+- Category bundler reuses the nested-categories prefix-match (`Reference` collects `Reference` + `Reference/Postgres` + `Reference/Networking/CIDR` + …)
+- Explorer-context menu and command-palette entries; `markItDown.exportEpub` keyed off `.md`/`.markdown`/`.mdx`
+- 13 new unit tests across the zip writer (CRC32 known value, empty-input, single stored entry, deflate round-trip, mimetype-first ordering, EOCD record) and the builder (mimetype first, all required structural files, one chapter file per chapter, chapter content, content.opf manifest entries + metadata, optional cover image embedding, XML escaping in titles)
+
 ### Added — v2.0: Multi-warehouse routing (#47)
 
 - New `markItDown.warehouse.routes` setting accepts an array of `{categoryPrefix, repo, branch?, subdir?}` rules; notes whose category matches a prefix sync to that route's repo, everything else falls through to the default `markItDown.warehouse.repo`

@@ -13,6 +13,11 @@ import { THEMES } from './themes/themes';
 import { markdownToTxt } from './exporters/exportTxt';
 import { markdownToDocx } from './exporters/exportDocx';
 import { markdownToPdf } from './exporters/exportPdf';
+import {
+  markdownToEpubBytes,
+  notesForCategory,
+  notesToEpubBytes,
+} from './exporters/exportEpub';
 import { registerMcpInstallCommands } from './mcp/installCommand';
 import { McpIpcServer } from './mcp/ipcServer';
 import { PublishManager } from './publish/publishManager';
@@ -112,6 +117,63 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('markItDown.exportTxt', async (uri?: vscode.Uri) => {
       await runFileExport(uri, 'txt', async md => Buffer.from(markdownToTxt(md), 'utf8'));
     }),
+    vscode.commands.registerCommand('markItDown.exportEpub', async (uri?: vscode.Uri) => {
+      await runFileExport(uri, 'epub', async (md, title) =>
+        markdownToEpubBytes(md, {
+          title,
+          author: epubAuthor(),
+          publisher: epubPublisher(),
+          cover: await resolveEpubCover(),
+        }),
+      );
+    }),
+    vscode.commands.registerCommand('markItDown.exportCategoryEpub', async () => {
+      const allCategories = notesStore.categoriesInUse();
+      if (allCategories.length === 0) {
+        vscode.window.showInformationMessage('Mark It Down: no notes yet — create some first.');
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(allCategories, {
+        placeHolder: 'Pick a category to bundle as ePub',
+      });
+      if (!picked) return;
+      const chapters = notesForCategory(notesStore, undefined, picked);
+      if (chapters.length === 0) {
+        vscode.window.showInformationMessage(`Mark It Down: no notes under "${picked}".`);
+        return;
+      }
+      const fileTitle = picked.replace(/[^A-Za-z0-9._-]+/g, '-');
+      const defaultUri = vscode.Uri.joinPath(
+        notesStore.hasWorkspaceStorage()
+          ? vscode.workspace.workspaceFolders?.[0]?.uri ?? context.globalStorageUri
+          : context.globalStorageUri,
+        `${fileTitle}.epub`,
+      );
+      const save = await vscode.window.showSaveDialog({
+        defaultUri,
+        filters: { ePub: ['epub'] },
+        title: `Mark It Down: export "${picked}" as ePub`,
+      });
+      if (!save) return;
+      try {
+        const bytes = await notesToEpubBytes(notesStore, chapters, {
+          title: picked,
+          author: epubAuthor(),
+          publisher: epubPublisher(),
+          cover: await resolveEpubCover(),
+        });
+        await vscode.workspace.fs.writeFile(save, bytes);
+        const choice = await vscode.window.showInformationMessage(
+          `Mark It Down: bundled ${chapters.length} note(s) → ${save.fsPath.split('/').pop()}`,
+          'Open',
+          'Reveal',
+        );
+        if (choice === 'Open') await vscode.commands.executeCommand('vscode.open', save);
+        else if (choice === 'Reveal') await vscode.commands.executeCommand('revealFileInOS', save);
+      } catch (err) {
+        vscode.window.showErrorMessage(`Mark It Down: ePub export failed — ${(err as Error).message}`);
+      }
+    }),
     vscode.commands.registerCommand('markItDown.pickTheme', async () => {
       const cfg = vscode.workspace.getConfiguration('markItDown');
       const current = cfg.get<string>('theme') ?? 'auto';
@@ -141,7 +203,27 @@ export function deactivate() {
   disposeLogChannel();
 }
 
-type ExportExt = 'pdf' | 'docx' | 'txt';
+type ExportExt = 'pdf' | 'docx' | 'txt' | 'epub';
+
+function epubAuthor(): string {
+  return (vscode.workspace.getConfiguration('markItDown.epub').get<string>('author') ?? '').trim() || 'Mark It Down';
+}
+
+function epubPublisher(): string | undefined {
+  const v = (vscode.workspace.getConfiguration('markItDown.epub').get<string>('publisher') ?? '').trim();
+  return v.length > 0 ? v : undefined;
+}
+
+async function resolveEpubCover(): Promise<{ uri: vscode.Uri } | undefined> {
+  const raw = (vscode.workspace.getConfiguration('markItDown.epub').get<string>('coverImage') ?? '').trim();
+  if (!raw) return undefined;
+  if (raw.startsWith('/') || /^[A-Za-z]:[/\\]/.test(raw)) {
+    return { uri: vscode.Uri.file(raw) };
+  }
+  const ws = vscode.workspace.workspaceFolders?.[0]?.uri;
+  if (!ws) return undefined;
+  return { uri: vscode.Uri.joinPath(ws, raw) };
+}
 
 async function runFileExport(
   uri: vscode.Uri | undefined,
@@ -159,7 +241,14 @@ async function runFileExport(
     const baseName = target.path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? 'document';
     const dir = vscode.Uri.joinPath(target, '..');
     const defaultUri = vscode.Uri.joinPath(dir, `${baseName}.${ext}`);
-    const filterLabel = ext === 'pdf' ? 'PDF' : ext === 'docx' ? 'Word document' : 'Plain text';
+    const filterLabel =
+      ext === 'pdf'
+        ? 'PDF'
+        : ext === 'docx'
+          ? 'Word document'
+          : ext === 'epub'
+            ? 'ePub'
+            : 'Plain text';
     const save = await vscode.window.showSaveDialog({
       defaultUri,
       filters: { [filterLabel]: [ext] },
