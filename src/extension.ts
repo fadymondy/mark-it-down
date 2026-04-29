@@ -17,6 +17,7 @@ import { registerPublishCommands } from './publish/publishCommands';
 import { SlideshowManager } from './slideshow/slideshowManager';
 import { registerSlideshowCommands } from './slideshow/slideshowCommands';
 import { UpdateChecker } from './updates/updateChecker';
+import { TelemetryClient } from './telemetry/telemetryClient';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -38,6 +39,7 @@ export function activate(context: vscode.ExtensionContext) {
   const publish = new PublishManager(context, notesStore);
   const slideshow = new SlideshowManager(context);
   const updates = new UpdateChecker(context);
+  const telemetry = new TelemetryClient(context);
   context.subscriptions.push(
     notesStore,
     notesTree,
@@ -50,8 +52,16 @@ export function activate(context: vscode.ExtensionContext) {
     ...registerPublishCommands(publish),
     ...registerSlideshowCommands(slideshow),
     vscode.commands.registerCommand('markItDown.updates.checkNow', () => updates.checkNow()),
+    telemetry,
+    vscode.commands.registerCommand('markItDown.telemetry.sendTestEvent', () => {
+      telemetry.captureMessage('Mark It Down test event from command palette', 'info');
+      vscode.window.showInformationMessage(
+        'Mark It Down: test event queued. If telemetry is enabled and a DSN is configured, it will appear in your Sentry project within ~30s.',
+      );
+    }),
   );
   updates.start();
+  void telemetry.start();
   warehouse.start();
   void notesStore.writeMcpIndexSnapshot();
   const ipcServer = new McpIpcServer(context);
