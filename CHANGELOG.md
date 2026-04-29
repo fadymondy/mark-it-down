@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.13: Claude Code plugin (mark-it-down-claude) (#14)
+
+- New `plugins/mark-it-down-claude/` packages the bundled MCP server, 6 user-invocable skills, and 3 specialist sub-agents into a single Claude Code plugin
+- Skills: `/mid:new-note`, `/mid:list-notes`, `/mid:open`, `/mid:slideshow`, `/mid:publish`, `/mid:warehouse-status`
+- Agents: `notes-curator` (audit + organize warehouse), `slideshow-designer` (restructure markdown into talk-ready decks), `note-summarizer` (single-note / category / theme digests)
+- `.mcp.json` ships the bundled server entry — `${CLAUDE_PLUGIN_ROOT}/bin/server.js --notes-dir ${MID_NOTES_DIR}` — defaults `MID_NOTES_DIR` to `~/.mark-it-down/notes` for standalone use; users with the VSCode extension override to point at the extension's globalStorage notes dir so both clients see the same store
+- New `npm run build:claude-plugin` script: re-runs `compile:mcp` and copies `out/mcp/server.js` → `plugins/mark-it-down-claude/bin/server.js`
+- README in the plugin dir covers install (local + marketplace), per-OS notes-dir defaults, skill/agent reference
+- Plugin version is independent of the VSCode extension (manifest at `0.1.0`); for marketplace distribution, the plugin directory is intended to be synced to its own repo `fadymondy/mark-it-down-claude`
+
 ### Added — Phase 0.12: Standalone Electron app — first cut (#13)
 
 - New `apps/electron/` ships a working standalone desktop app: main process + sandboxed renderer + preload IPC bridge + native menus

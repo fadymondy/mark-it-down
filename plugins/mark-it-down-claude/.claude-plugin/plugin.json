@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schemas.claude.com/claude-code/plugin.json",
+  "name": "mark-it-down",
+  "description": "Mark It Down — markdown notes warehouse + slideshow + publish, wrapped as Claude Code skills + agents on top of the bundled MCP server.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Fady Mondy",
+    "email": "info@3x1.io",
+    "url": "https://github.com/fadymondy"
+  },
+  "homepage": "https://github.com/fadymondy/mark-it-down",
+  "repository": "https://github.com/fadymondy/mark-it-down",
+  "license": "MIT",
+  "keywords": [
+    "markdown",
+    "notes",
+    "slideshow",
+    "publish",
+    "mcp",
+    "mark-it-down"
+  ]
+}
