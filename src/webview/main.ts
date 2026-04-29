@@ -8,11 +8,8 @@
 //   mermaid        — live diagram rendering
 //   dompurify      — sanitize HTML before injecting
 
-import { marked } from 'marked';
-import { markedHighlight } from 'marked-highlight';
-import hljs from 'highlight.js/lib/common';
+import { renderMarkdown as coreRenderMarkdown, applyMermaidPlaceholders } from '../../packages/core/src/markdown/renderer';
 import mermaid from 'mermaid';
-import DOMPurify from 'dompurify';
 import { toPng } from 'html-to-image';
 import * as XLSX from 'xlsx';
 import { EditorState } from '@codemirror/state';
@@ -68,44 +65,11 @@ function initMermaid(themeKind: number) {
   mermaidThemeKind = themeKind;
 }
 
-marked.use(
-  markedHighlight({
-    langPrefix: 'hljs language-',
-    highlight(code, lang) {
-      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-      return hljs.highlight(code, { language }).value;
-    },
-  }),
-);
-marked.setOptions({ gfm: true, breaks: false });
-
 function renderMarkdown(md: string): string {
-  // Pre-process mermaid blocks: replace ```mermaid <code> ``` with a placeholder div
-  const mermaidBlocks: string[] = [];
-  const withMermaidPlaceholders = md.replace(
-    /```mermaid\s*\n([\s\S]*?)\n```/g,
-    (_, code) => {
-      const idx = mermaidBlocks.push(code) - 1;
-      return `<div class="mermaid" data-mermaid-index="${idx}"></div>`;
-    },
-  );
-
-  const rawHtml = marked.parse(withMermaidPlaceholders, { async: false }) as string;
-  const safeHtml = DOMPurify.sanitize(rawHtml, {
-    ADD_TAGS: ['mermaid'],
-    ADD_ATTR: ['data-mermaid-index', 'class', 'target'],
-  });
-
-  // Re-inject the original mermaid source into the placeholders (post-sanitize)
+  const { html, mermaidBlocks } = coreRenderMarkdown(md);
   const container = document.createElement('div');
-  container.innerHTML = safeHtml;
-  container.querySelectorAll<HTMLDivElement>('.mermaid[data-mermaid-index]').forEach(el => {
-    const idx = Number(el.dataset.mermaidIndex);
-    if (!isNaN(idx) && mermaidBlocks[idx]) {
-      el.textContent = mermaidBlocks[idx];
-      delete el.dataset.mermaidIndex;
-    }
-  });
+  container.innerHTML = html;
+  applyMermaidPlaceholders(container, mermaidBlocks);
   return container.innerHTML;
 }
 

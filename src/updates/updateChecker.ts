@@ -1,5 +1,6 @@
 import * as https from 'https';
 import * as vscode from 'vscode';
+import { compareSemver } from '../../packages/core/src/semver';
 
 const REPO_OWNER = 'fadymondy';
 const REPO_NAME = 'mark-it-down';
@@ -171,17 +172,6 @@ function fetchLatestRelease(): Promise<UpdateInfo | undefined> {
   });
 }
 
-export function compareSemver(a: string, b: string): number {
-  const pa = parseSemver(a);
-  const pb = parseSemver(b);
-  for (let i = 0; i < 3; i++) {
-    if (pa[i] !== pb[i]) return pa[i] - pb[i];
-  }
-  return 0;
-}
-
-export function parseSemver(v: string): [number, number, number] {
-  const cleaned = v.replace(/^v/, '').split('-')[0];
-  const parts = cleaned.split('.').map(p => Number.parseInt(p, 10));
-  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
-}
+// Re-export from packages/core so existing tests (tests/unit/semver.test.ts)
+// keep passing without import-path churn.
+export { compareSemver, parseSemver } from '../../packages/core/src/semver';
