@@ -4,6 +4,15 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.2 polish: search across notes (#41)
+
+- New `packages/core/src/search/searcher.ts` — pure-function fuzzy search (no deps), shared by sidebar + MCP. Per-token scoring: exact title (+10), partial title (+5), category (+3), body occurrences (+1, capped at 5). Tie-breaks by recency.
+- **Sidebar search**: `Mark It Down: Search Notes` command — input box → fuzzy match → Quick Pick → Enter opens the chosen note. Wired into the Notes view title bar.
+- **MCP `search_notes` tool**: `{ query, limit? }` → ranked hits with `id`, `title`, `category`, `scope`, `updatedAt`, `score`, `snippet`.
+- **Claude plugin**: new `/mid:search` skill (7 skills total in the bundle now).
+- **Published-site search**: each site ships `assets/search-index.json` (Lunr 2 + a doc map with title + 200-char snippet). Header search input lazy-loads the index on first keystroke; debounces 200ms; up to 12 hits.
+- 11 new unit tests covering the searcher (tokenize, title/body/category scoring, exact vs partial title boost, multi-token sum, limit, recency tie-break, no-match, snippet length cap)
+
 ### Added — v1.2 polish: pre-release / beta channel (#40)
 
 - New `markItDown.updates.channel` setting (`"stable"` default, `"beta"` opt-in)

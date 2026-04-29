@@ -7,6 +7,7 @@ import {
 } from './notesTreeProvider';
 import { NoteMetadata, NoteScope, NotesStore } from './notesStore';
 import { MarkdownEditorProvider } from '../editor/markdownEditorProvider';
+import { searchNotes, SearchableNote } from '../../packages/core/src/search';
 
 export function registerNotesCommands(
   context: vscode.ExtensionContext,
@@ -74,6 +75,42 @@ export function registerNotesCommands(
 
     vscode.commands.registerCommand('markItDown.notes.refresh', () => {
       store.dispatchRefresh();
+    }),
+
+    vscode.commands.registerCommand('markItDown.notes.search', async () => {
+      const query = await vscode.window.showInputBox({
+        prompt: 'Search notes (title + category + body, fuzzy)',
+        placeHolder: 'e.g. "postgres tuning"',
+      });
+      if (!query) return;
+      const all = store.listAll();
+      const searchable: SearchableNote[] = await Promise.all(
+        all.map(async note => ({
+          id: note.id,
+          title: note.title,
+          category: note.category,
+          scope: note.scope,
+          updatedAt: note.updatedAt,
+          body: await store.readContent(note).catch(() => ''),
+        })),
+      );
+      const hits = searchNotes(searchable, query, 25);
+      if (hits.length === 0) {
+        vscode.window.showInformationMessage(`Mark It Down: no notes match "${query}".`);
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        hits.map(h => ({
+          label: h.title,
+          description: `${h.scope}/${h.category} · score ${h.score}`,
+          detail: h.snippet,
+          id: h.id,
+        })),
+        { placeHolder: `${hits.length} matching note(s)` },
+      );
+      if (picked) {
+        await vscode.commands.executeCommand('markItDown.notes.open', picked.id);
+      }
     }),
 
     vscode.commands.registerCommand('markItDown.notes.revealStorage', async (node?: NoteTreeNode) => {

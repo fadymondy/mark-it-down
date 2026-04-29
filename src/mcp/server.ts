@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { NotesAdapter } from './notesAdapter';
 import { IpcClient } from './ipcClient';
+import { searchNotes, SearchableNote } from '../../packages/core/src/search';
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.notesDir) {
@@ -125,6 +126,37 @@ server.registerTool(
       };
     }
     return { content: [{ type: 'text', text: `deleted ${removed.id} (${removed.title})` }] };
+  },
+);
+
+server.registerTool(
+  'search_notes',
+  {
+    description: 'Fuzzy search across all global notes (title + category + body). Returns ranked hits with snippet + score.',
+    inputSchema: {
+      query: z.string().describe('Search query — words/phrases separated by whitespace'),
+      limit: z.number().optional().describe('Max hits to return (default 25)'),
+    },
+  },
+  async ({ query, limit }) => {
+    const all = await adapter.listNotes();
+    const searchable: SearchableNote[] = await Promise.all(
+      all.map(async meta => {
+        const note = await adapter.getNote(meta.id);
+        return {
+          id: meta.id,
+          title: meta.title,
+          category: meta.category,
+          scope: 'global' as const,
+          updatedAt: meta.updatedAt,
+          body: note?.content ?? '',
+        };
+      }),
+    );
+    const hits = searchNotes(searchable, query, limit ?? 25);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(hits, null, 2) }],
+    };
   },
 );
 

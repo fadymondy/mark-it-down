@@ -70,16 +70,19 @@ export function renderPage(input: PageInput, indexPages: { title: string; pathFr
 <title>${escapeHtml(input.title)}</title>
 <link rel="stylesheet" href="${rel(input.pathFromRoot, 'assets/style.css')}" />
 </head>
-<body>
+<body data-assets-base="${rel(input.pathFromRoot, 'assets/')}">
 <header class="mid-header">
   <a class="mid-home" href="${rel(input.pathFromRoot, 'index.html')}">Mark It Down</a>
   <span class="mid-doc-title">${escapeHtml(input.title)}</span>
+  <input type="search" id="mid-search" placeholder="Search…" aria-label="Search notes" />
 </header>
 <aside class="mid-nav">
   <h2>Pages</h2>
   <ul>${navItems}</ul>
+  <div id="mid-search-results" hidden></div>
 </aside>
 <main class="mid-body">${body}</main>
+<script src="https://cdn.jsdelivr.net/npm/lunr@2/lunr.min.js"></script>
 <script src="${rel(input.pathFromRoot, 'assets/site.js')}"></script>
 </body>
 </html>`;
@@ -101,11 +104,14 @@ export function renderIndex(pages: { title: string; pathFromRoot: string }[]): s
 <body>
 <header class="mid-header">
   <a class="mid-home" href="index.html">Mark It Down</a>
+  <input type="search" id="mid-search" placeholder="Search…" aria-label="Search notes" />
 </header>
 <main class="mid-body">
   <h1>Pages</h1>
   <ul class="mid-index">${items}</ul>
+  <div id="mid-search-results" hidden></div>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/lunr@2/lunr.min.js"></script>
 <script src="assets/site.js"></script>
 </body>
 </html>`;
@@ -154,6 +160,26 @@ body {
 }
 .mid-home { color: var(--accent); font-weight: 600; text-decoration: none; }
 .mid-doc-title { color: var(--fg-muted); font-size: 0.92em; }
+#mid-search {
+  margin-left: auto;
+  padding: 5px 10px;
+  font-size: 0.92em;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  min-width: 180px;
+}
+#mid-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#mid-search-results {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.mid-search-hit { margin: 8px 0; }
+.mid-search-hit a { color: var(--link); text-decoration: none; }
+.mid-search-hit a:hover { text-decoration: underline; }
+.mid-search-snippet { color: var(--fg-muted); font-size: 0.88em; line-height: 1.4; }
 .mid-nav {
   grid-area: nav;
   background: var(--code-bg);
@@ -261,6 +287,48 @@ const CLIENT_JS = `
       window.mermaid.initialize({ startOnLoad: true, theme: bgIsDark || isDark ? 'dark' : 'default', securityLevel: 'strict' });
     };
     document.head.appendChild(s);
+  }
+  // Search — lazy-load the index on first input, then run lunr queries.
+  var searchInput = document.getElementById('mid-search');
+  var searchResults = document.getElementById('mid-search-results');
+  if (searchInput && searchResults) {
+    var indexPromise = null;
+    function loadIndex() {
+      if (indexPromise) return indexPromise;
+      var assetsBase = document.body.getAttribute('data-assets-base') || 'assets/';
+      indexPromise = fetch(assetsBase + 'search-index.json').then(function(r){ return r.json(); }).then(function(data){
+        return { idx: window.lunr.Index.load(data.index), docs: data.docs };
+      }).catch(function(err){
+        console.warn('search index load failed:', err);
+        return null;
+      });
+      return indexPromise;
+    }
+    var debounce;
+    searchInput.addEventListener('input', function(){
+      clearTimeout(debounce);
+      var q = searchInput.value.trim();
+      if (!q) {
+        searchResults.hidden = true;
+        searchResults.innerHTML = '';
+        return;
+      }
+      debounce = setTimeout(function(){
+        loadIndex().then(function(bundle){
+          if (!bundle) return;
+          var hits;
+          try { hits = bundle.idx.search(q); } catch (_e) { hits = []; }
+          var byId = {};
+          bundle.docs.forEach(function(d){ byId[d.id] = d; });
+          searchResults.hidden = hits.length === 0;
+          searchResults.innerHTML = hits.slice(0, 12).map(function(h){
+            var d = byId[h.ref] || { id: h.ref, title: h.ref, snippet: '' };
+            return '<div class="mid-search-hit"><a href="' + d.id + '"><strong>' + escapeHtml(d.title) + '</strong></a><div class="mid-search-snippet">' + escapeHtml(d.snippet) + '</div></div>';
+          }).join('');
+        });
+      }, 200);
+    });
+    function escapeHtml(s){ return s.replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
   }
 })();
 `;
