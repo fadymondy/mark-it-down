@@ -1,8 +1,9 @@
 {
   "name": "mark-it-down",
-  "displayName": "Mark It Down",
-  "description": "A beautiful markdown viewer + editor for VSCode — rich rendering, live mermaid, sortable tables, code-block exports, notes sidebar, and an MCP server for AI agents.",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "version": "0.1.0",
+  "l10n": "./l10n",
   "publisher": "fadymondy",
   "engines": {
     "vscode": "^1.85.0"
@@ -114,7 +115,7 @@
       "activitybar": [
         {
           "id": "markItDown",
-          "title": "Mark It Down",
+          "title": "%viewsContainer.title%",
           "icon": "media/notes-sidebar.svg"
         }
       ]
@@ -123,22 +124,22 @@
       "markItDown": [
         {
           "id": "markItDown.notes",
-          "name": "Notes",
+          "name": "%view.notes.name%",
           "icon": "media/notes-sidebar.svg",
-          "contextualTitle": "Mark It Down"
+          "contextualTitle": "%viewsContainer.title%"
         },
         {
           "id": "markItDown.backlinks",
-          "name": "Backlinks",
+          "name": "%view.backlinks.name%",
           "icon": "media/notes-sidebar.svg",
-          "contextualTitle": "Mark It Down"
+          "contextualTitle": "%viewsContainer.title%"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "markItDown.notes",
-        "contents": "No notes yet.\n[New Note](command:markItDown.notes.create)\n\nNotes are stored privately in VSCode's workspace or global storage. Cloud sync to a GitHub repo arrives in a future release."
+        "contents": "%view.welcome.notes%"
       }
     ],
     "customEditors": [
@@ -162,205 +163,205 @@
     "commands": [
       {
         "command": "markItDown.toggleMode",
-        "title": "Mark It Down: Toggle View / Edit",
+        "title": "%command.toggleMode%",
         "icon": "$(edit)"
       },
       {
         "command": "markItDown.openWithDefaultEditor",
-        "title": "Mark It Down: Open with VSCode Default Editor"
+        "title": "%command.openWithDefaultEditor%"
       },
       {
         "command": "markItDown.exportPdf",
-        "title": "Mark It Down: Export to PDF",
+        "title": "%command.exportPdf%",
         "icon": "$(file-pdf)"
       },
       {
         "command": "markItDown.exportDocx",
-        "title": "Mark It Down: Export to DOCX"
+        "title": "%command.exportDocx%"
       },
       {
         "command": "markItDown.exportTxt",
-        "title": "Mark It Down: Export to TXT"
+        "title": "%command.exportTxt%"
       },
       {
         "command": "markItDown.exportEpub",
-        "title": "Mark It Down: Export to ePub",
+        "title": "%command.exportEpub%",
         "icon": "$(book)"
       },
       {
         "command": "markItDown.exportCategoryEpub",
-        "title": "Mark It Down: Export Category as ePub",
+        "title": "%command.exportCategoryEpub%",
         "icon": "$(book)"
       },
       {
         "command": "markItDown.notes.create",
-        "title": "New Note",
-        "category": "Mark It Down",
+        "title": "%command.notes.create%",
+        "category": "%viewsContainer.title%",
         "icon": "$(add)"
       },
       {
         "command": "markItDown.notes.open",
-        "title": "Open Note",
-        "category": "Mark It Down"
+        "title": "%command.notes.open%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.notes.rename",
-        "title": "Rename Note",
-        "category": "Mark It Down",
+        "title": "%command.notes.rename%",
+        "category": "%viewsContainer.title%",
         "icon": "$(edit)"
       },
       {
         "command": "markItDown.notes.move",
-        "title": "Move to Category…",
-        "category": "Mark It Down"
+        "title": "%command.notes.move%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.notes.delete",
-        "title": "Delete Note",
-        "category": "Mark It Down",
+        "title": "%command.notes.delete%",
+        "category": "%viewsContainer.title%",
         "icon": "$(trash)"
       },
       {
         "command": "markItDown.notes.refresh",
-        "title": "Refresh",
-        "category": "Mark It Down",
+        "title": "%command.notes.refresh%",
+        "category": "%viewsContainer.title%",
         "icon": "$(refresh)"
       },
       {
         "command": "markItDown.notes.search",
-        "title": "Search Notes",
-        "category": "Mark It Down",
+        "title": "%command.notes.search%",
+        "category": "%viewsContainer.title%",
         "icon": "$(search)"
       },
       {
         "command": "markItDown.notes.editTags",
-        "title": "Edit Tags",
-        "category": "Mark It Down",
+        "title": "%command.notes.editTags%",
+        "category": "%viewsContainer.title%",
         "icon": "$(tag)"
       },
       {
         "command": "markItDown.notes.filterByTag",
-        "title": "Filter by Tag",
-        "category": "Mark It Down",
+        "title": "%command.notes.filterByTag%",
+        "category": "%viewsContainer.title%",
         "icon": "$(filter)"
       },
       {
         "command": "markItDown.notes.createWithTitle",
-        "title": "New Note with Title",
-        "category": "Mark It Down"
+        "title": "%command.notes.createWithTitle%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.backlinks.refresh",
-        "title": "Refresh Backlinks",
-        "category": "Mark It Down",
+        "title": "%command.backlinks.refresh%",
+        "category": "%viewsContainer.title%",
         "icon": "$(refresh)"
       },
       {
         "command": "markItDown.notes.revealStorage",
-        "title": "Reveal Notes Folder",
-        "category": "Mark It Down",
+        "title": "%command.notes.revealStorage%",
+        "category": "%viewsContainer.title%",
         "icon": "$(folder-opened)"
       },
       {
         "command": "markItDown.warehouse.syncNow",
-        "title": "Warehouse: Sync Now",
-        "category": "Mark It Down",
+        "title": "%command.warehouse.syncNow%",
+        "category": "%viewsContainer.title%",
         "icon": "$(cloud)"
       },
       {
         "command": "markItDown.warehouse.pull",
-        "title": "Warehouse: Pull",
-        "category": "Mark It Down",
+        "title": "%command.warehouse.pull%",
+        "category": "%viewsContainer.title%",
         "icon": "$(cloud-download)"
       },
       {
         "command": "markItDown.warehouse.openOnGitHub",
-        "title": "Warehouse: Open on GitHub",
-        "category": "Mark It Down",
+        "title": "%command.warehouse.openOnGitHub%",
+        "category": "%viewsContainer.title%",
         "icon": "$(github)"
       },
       {
         "command": "markItDown.warehouse.openLog",
-        "title": "Warehouse: Show Sync Log",
-        "category": "Mark It Down",
+        "title": "%command.warehouse.openLog%",
+        "category": "%viewsContainer.title%",
         "icon": "$(output)"
       },
       {
         "command": "markItDown.warehouse.openConflicts",
-        "title": "Warehouse: Resolve Conflicts",
-        "category": "Mark It Down",
+        "title": "%command.warehouse.openConflicts%",
+        "category": "%viewsContainer.title%",
         "icon": "$(warning)"
       },
       {
         "command": "markItDown.pickTheme",
-        "title": "Pick Theme",
-        "category": "Mark It Down",
+        "title": "%command.pickTheme%",
+        "category": "%viewsContainer.title%",
         "icon": "$(symbol-color)"
       },
       {
         "command": "markItDown.mcp.install",
-        "title": "Install MCP for Claude Desktop / Code",
-        "category": "Mark It Down",
+        "title": "%command.mcp.install%",
+        "category": "%viewsContainer.title%",
         "icon": "$(plug)"
       },
       {
         "command": "markItDown.mcp.revealServer",
-        "title": "Show MCP Server Path (copy to clipboard)",
-        "category": "Mark It Down"
+        "title": "%command.mcp.revealServer%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.publish.deploy",
-        "title": "Publish: Deploy Site",
-        "category": "Mark It Down",
+        "title": "%command.publish.deploy%",
+        "category": "%viewsContainer.title%",
         "icon": "$(rocket)"
       },
       {
         "command": "markItDown.publish.deployCurrent",
-        "title": "Publish: Deploy Current Page",
-        "category": "Mark It Down"
+        "title": "%command.publish.deployCurrent%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.publish.copyUrl",
-        "title": "Publish: Copy Public URL",
-        "category": "Mark It Down"
+        "title": "%command.publish.copyUrl%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.publish.openSite",
-        "title": "Publish: Open Site in Browser",
-        "category": "Mark It Down",
+        "title": "%command.publish.openSite%",
+        "category": "%viewsContainer.title%",
         "icon": "$(globe)"
       },
       {
         "command": "markItDown.slideshow.previewLocal",
-        "title": "Slideshow: Preview Local",
-        "category": "Mark It Down",
+        "title": "%command.slideshow.previewLocal%",
+        "category": "%viewsContainer.title%",
         "icon": "$(play)"
       },
       {
         "command": "markItDown.slideshow.publish",
-        "title": "Slideshow: Publish",
-        "category": "Mark It Down"
+        "title": "%command.slideshow.publish%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.slideshow.copyShareUrl",
-        "title": "Slideshow: Copy Share URL",
-        "category": "Mark It Down"
+        "title": "%command.slideshow.copyShareUrl%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.slideshow.exportPdf",
-        "title": "Slideshow: Export to PDF",
-        "category": "Mark It Down"
+        "title": "%command.slideshow.exportPdf%",
+        "category": "%viewsContainer.title%"
       },
       {
         "command": "markItDown.updates.checkNow",
-        "title": "Check for Updates",
-        "category": "Mark It Down",
+        "title": "%command.updates.checkNow%",
+        "category": "%viewsContainer.title%",
         "icon": "$(cloud-download)"
       },
       {
         "command": "markItDown.telemetry.sendTestEvent",
-        "title": "Telemetry: Send Test Event",
-        "category": "Mark It Down"
+        "title": "%command.telemetry.sendTestEvent%",
+        "category": "%viewsContainer.title%"
       }
     ],
     "menus": {
@@ -492,7 +493,7 @@
       ]
     },
     "configuration": {
-      "title": "Mark It Down",
+      "title": "%viewsContainer.title%",
       "properties": {
         "markItDown.theme": {
           "type": "string",
@@ -525,7 +526,7 @@
             "snazzy",
             "rose-pine"
           ],
-          "description": "Theme for the markdown renderer. 'auto' follows VSCode's active theme; any other value applies a bundled palette (25 themes). Use the 'Pick Theme' command for a previewable picker."
+          "description": "%config.theme.description%"
         },
         "markItDown.startMode": {
           "type": "string",
@@ -534,12 +535,12 @@
             "view",
             "edit"
           ],
-          "description": "Default mode when opening a markdown file."
+          "description": "%config.startMode.description%"
         },
         "markItDown.mermaid.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Render ```mermaid code blocks as live diagrams."
+          "description": "%config.mermaid.enabled.description%"
         },
         "markItDown.notes.categories": {
           "type": "array",
@@ -552,12 +553,12 @@
           "items": {
             "type": "string"
           },
-          "description": "Categories shown in the Notes sidebar. Empty entries are ignored."
+          "description": "%config.notes.categories.description%"
         },
         "markItDown.notes.defaultCategory": {
           "type": "string",
           "default": "Drafts",
-          "description": "Pre-selected category when creating a new note."
+          "description": "%config.notes.defaultCategory.description%"
         },
         "markItDown.notes.defaultScope": {
           "type": "string",
@@ -566,22 +567,22 @@
             "workspace",
             "global"
           ],
-          "description": "Where new notes go by default. Falls back to 'global' when no folder is open."
+          "description": "%config.notes.defaultScope.description%"
         },
         "markItDown.warehouse.repo": {
           "type": "string",
           "default": "",
-          "markdownDescription": "GitHub repo to use as your notes warehouse, in `owner/repo` form. Leave empty to disable cloud sync."
+          "markdownDescription": "%config.warehouse.repo.description%"
         },
         "markItDown.warehouse.branch": {
           "type": "string",
           "default": "main",
-          "description": "Branch on the warehouse repo to sync against."
+          "description": "%config.warehouse.branch.description%"
         },
         "markItDown.warehouse.subdir": {
           "type": "string",
           "default": "notes",
-          "description": "Subdirectory inside the warehouse repo where notes are stored."
+          "description": "%config.warehouse.subdir.description%"
         },
         "markItDown.warehouse.transport": {
           "type": "string",
@@ -594,24 +595,24 @@
             "Use the `gh` CLI's existing auth (runs `gh auth setup-git` to wire git credentials).",
             "Use plain `git` with whatever credential helper you have configured."
           ],
-          "description": "How to authenticate with GitHub for warehouse operations."
+          "description": "%config.warehouse.transport.description%"
         },
         "markItDown.warehouse.autoPush": {
           "type": "boolean",
           "default": true,
-          "description": "Push to the warehouse automatically after a note save (debounced)."
+          "description": "%config.warehouse.autoPush.description%"
         },
         "markItDown.warehouse.autoPushDebounceMs": {
           "type": "number",
           "default": 5000,
           "minimum": 1000,
           "maximum": 60000,
-          "description": "Debounce window for auto-push, in milliseconds. Multiple saves within this window batch into one push."
+          "description": "%config.warehouse.autoPushDebounceMs.description%"
         },
         "markItDown.warehouse.workspaceId": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Override the workspace folder name used as a subfolder in the warehouse. Leave empty to derive from the workspace name."
+          "markdownDescription": "%config.warehouse.workspaceId.description%"
         },
         "markItDown.warehouse.routes": {
           "type": "array",
@@ -638,32 +639,32 @@
               }
             }
           },
-          "markdownDescription": "Multi-warehouse routing. Each rule sends notes whose category matches `categoryPrefix` to a different repo. Notes that match no rule fall through to the default `markItDown.warehouse.repo`. First match wins; longer prefixes are preferred. Invalid rules are logged + ignored. See [docs/multi-warehouse-routing.md](https://github.com/fadymondy/mark-it-down/blob/main/docs/multi-warehouse-routing.md)."
+          "markdownDescription": "%config.warehouse.routes.description%"
         },
         "markItDown.publish.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Allow Publish commands to push a generated static site to the warehouse repo."
+          "description": "%config.publish.enabled.description%"
         },
         "markItDown.publish.branch": {
           "type": "string",
           "default": "gh-pages",
-          "description": "Branch on the warehouse repo to publish to."
+          "description": "%config.publish.branch.description%"
         },
         "markItDown.publish.path": {
           "type": "string",
           "default": "",
-          "description": "Subdirectory under the publish branch root where the site lives. Empty = repo root."
+          "description": "%config.publish.path.description%"
         },
         "markItDown.publish.includeGlob": {
           "type": "string",
           "default": "**/*.md",
-          "description": "Glob (relative to source) of files included in a full Deploy Site run."
+          "description": "%config.publish.includeGlob.description%"
         },
         "markItDown.publish.theme": {
           "type": "string",
           "default": "github-light",
-          "description": "Theme baked into the published site (any markItDown.theme value except 'auto')."
+          "description": "%config.publish.theme.description%"
         },
         "markItDown.slideshow.theme": {
           "type": "string",
@@ -682,7 +683,7 @@
             "sky",
             "blood"
           ],
-          "description": "Reveal.js theme used by the slideshow preview and published slides."
+          "description": "%config.slideshow.theme.description%"
         },
         "markItDown.slideshow.transition": {
           "type": "string",
@@ -695,17 +696,17 @@
             "concave",
             "zoom"
           ],
-          "description": "Slide-to-slide transition style."
+          "description": "%config.slideshow.transition.description%"
         },
         "markItDown.slideshow.includeSpeakerNotes": {
           "type": "boolean",
           "default": true,
-          "description": "Render lines after a `Notes:` block on each slide as Reveal speaker notes."
+          "description": "%config.slideshow.includeSpeakerNotes.description%"
         },
         "markItDown.updates.checkOnLaunch": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Check for newer Mark It Down releases on GitHub once per launch (and every 6 hours after). Only used by users on a self-installed `.vsix`; Marketplace installs use VSCode's native update mechanism."
+          "markdownDescription": "%config.updates.checkOnLaunch.description%"
         },
         "markItDown.updates.channel": {
           "type": "string",
@@ -714,32 +715,32 @@
             "stable",
             "beta"
           ],
-          "markdownDescription": "Update channel. `stable` follows the GitHub `releases/latest` endpoint (skips pre-releases). `beta` opts into pre-release tags (e.g. `v0.3.0-rc.1`) — useful for dogfooding before stable. The Electron app respects `MID_CHANNEL=beta` for the same effect."
+          "markdownDescription": "%config.updates.channel.description%"
         },
         "markItDown.telemetry.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Send anonymized error reports to help improve Mark It Down. **Default off**. When on, sends only stack traces + error messages with file paths anonymized; never note content. See [docs/telemetry.md](https://github.com/fadymondy/mark-it-down/blob/main/docs/telemetry.md)."
+          "markdownDescription": "%config.telemetry.enabled.description%"
         },
         "markItDown.epub.author": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Author name baked into ePub metadata (`<dc:creator>`). Empty falls back to `Mark It Down`."
+          "markdownDescription": "%config.epub.author.description%"
         },
         "markItDown.epub.publisher": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Publisher baked into ePub metadata (`<dc:publisher>`). Empty falls back to `Mark It Down`."
+          "markdownDescription": "%config.epub.publisher.description%"
         },
         "markItDown.epub.coverImage": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to a PNG or JPEG used as the ePub cover. Absolute path, or relative to the workspace root. Leave empty for no cover."
+          "markdownDescription": "%config.epub.coverImage.description%"
         },
         "markItDown.telemetry.dsn": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Sentry DSN endpoint to receive telemetry events. Empty = no events sent regardless of `enabled`. The official Mark It Down build doesn't ship a DSN; set this to point at your own Sentry project, or leave empty to keep telemetry fully local even when `enabled: true`."
+          "markdownDescription": "%config.telemetry.dsn.description%"
         }
       }
     }
@@ -759,6 +760,7 @@
     "dev:electron": "npm run compile && npm run compile:electron && env -u ELECTRON_RUN_AS_NODE -u ELECTRON_NO_ATTACH_CONSOLE MID_DEV=1 electron out/electron/main.js",
     "dist:electron": "npm run compile && npm run compile:electron && electron-builder --mac --win --linux",
     "lint": "eslint src apps/electron",
+    "check-i18n": "node scripts/check-i18n.mjs",
     "lint:fix": "eslint --fix src apps/electron",
     "test": "vitest run",
     "test:watch": "vitest",

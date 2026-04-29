@@ -1,0 +1,11 @@
+{
+  "warehouse.statusBar.idle": "{0}@{1}",
+  "warehouse.statusBar.idle.multi": "{0} warehouses",
+  "warehouse.statusBar.disabled": "Notes warehouse off",
+  "warehouse.statusBar.syncing": "Syncing…",
+  "warehouse.statusBar.conflict": "{0} note(s) diverged. Click to resolve.",
+  "warehouse.statusBar.error": "Sync error",
+  "notes.empty.openFirst": "Open a note to see what links to it.",
+  "notes.empty.noBacklinks": "No notes link to this one yet.",
+  "epub.exported": "Mark It Down: bundled {0} note(s) → {1}"
+}

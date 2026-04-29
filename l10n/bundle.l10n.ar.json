@@ -1,0 +1,11 @@
+{
+  "warehouse.statusBar.idle": "{0}@{1}",
+  "warehouse.statusBar.idle.multi": "{0} مستودعات",
+  "warehouse.statusBar.disabled": "مستودع الملاحظات معطل",
+  "warehouse.statusBar.syncing": "يتم المزامنة…",
+  "warehouse.statusBar.conflict": "{0} ملاحظة متعارضة. انقر للحل.",
+  "warehouse.statusBar.error": "خطأ في المزامنة",
+  "notes.empty.openFirst": "افتح ملاحظة لرؤية ما يرتبط بها.",
+  "notes.empty.noBacklinks": "لا توجد ملاحظات ترتبط بهذه بعد.",
+  "epub.exported": "Mark It Down: تم تجميع {0} ملاحظة → {1}"
+}

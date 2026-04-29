@@ -31,6 +31,8 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      - name: i18n parity check
+        run: node scripts/check-i18n.mjs
       - name: Unit tests
         run: npm test
       - name: Coverage report
