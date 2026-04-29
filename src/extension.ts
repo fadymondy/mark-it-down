@@ -13,6 +13,8 @@ import { markdownToPdf } from './exporters/exportPdf';
 import { registerMcpInstallCommands } from './mcp/installCommand';
 import { PublishManager } from './publish/publishManager';
 import { registerPublishCommands } from './publish/publishCommands';
+import { SlideshowManager } from './slideshow/slideshowManager';
+import { registerSlideshowCommands } from './slideshow/slideshowCommands';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -32,6 +34,7 @@ export function activate(context: vscode.ExtensionContext) {
   const notesTree = new NotesTreeProvider(notesStore);
   const warehouse = new WarehouseManager(context, notesStore);
   const publish = new PublishManager(context, notesStore);
+  const slideshow = new SlideshowManager(context);
   context.subscriptions.push(
     notesStore,
     notesTree,
@@ -41,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
     ...registerWarehouseCommands(warehouse),
     ...registerMcpInstallCommands(context),
     ...registerPublishCommands(publish),
+    ...registerSlideshowCommands(slideshow),
   );
   warehouse.start();
   void notesStore.writeMcpIndexSnapshot();
