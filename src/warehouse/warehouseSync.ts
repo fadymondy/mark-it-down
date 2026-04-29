@@ -6,6 +6,7 @@ import { log } from './warehouseLog';
 import { scanForSecrets, SecretFinding } from './secretScanner';
 import { WarehouseClone, WarehouseTransport } from './warehouseTransport';
 import { ConflictRegistry } from './conflictRegistry';
+import { attachmentDirName } from '../../packages/core/src/attachments';
 
 export interface SyncSummary {
   pulled: { added: number; updated: number; conflicts: number };
@@ -28,6 +29,8 @@ interface WarehouseIndexEntry {
   createdAt: string;
   updatedAt: string;
   filename: string;
+  /** Sorted list of attachment filenames (just basenames; no slashes). */
+  attachments?: string[];
 }
 
 interface WarehouseIndex {
@@ -69,7 +72,8 @@ export class WarehouseSync {
         if (!local) {
           const content = await this.readRemoteContent(config, clone, scope, entry.filename);
           if (content === undefined) continue;
-          await this.store.importNote(toMetadata(entry, scope), content);
+          const attachments = await this.readRemoteAttachments(config, clone, scope, entry);
+          await this.store.importNote(toMetadata(entry, scope), content, attachments);
           added++;
           continue;
         }
@@ -103,7 +107,8 @@ export class WarehouseSync {
         }
         const content = await this.readRemoteContent(config, clone, scope, entry.filename);
         if (content === undefined) continue;
-        await this.store.importNote(toMetadata(entry, scope), content);
+        const attachments = await this.readRemoteAttachments(config, clone, scope, entry);
+        await this.store.importNote(toMetadata(entry, scope), content, attachments);
         updated++;
       }
     }
@@ -139,14 +144,21 @@ export class WarehouseSync {
       }
     }
 
-    plan.files = [
-      ...new Set([
-        ...plan.added.flatMap(n => this.filesForNote(config, n)),
-        ...plan.updated.flatMap(n => this.filesForNote(config, n)),
-        ...plan.deleted.map(e => `${scopeDir(config, e.scope)}/${e.filename}`),
-        ...this.indexFiles(config),
-      ]),
-    ];
+    const fileSet = new Set<string>();
+    for (const n of plan.added) {
+      for (const f of await this.filesForNote(config, n)) fileSet.add(f);
+    }
+    for (const n of plan.updated) {
+      for (const f of await this.filesForNote(config, n)) fileSet.add(f);
+    }
+    for (const e of plan.deleted) {
+      fileSet.add(`${scopeDir(config, e.scope)}/${e.filename}`);
+      for (const att of e.attachments ?? []) {
+        fileSet.add(`${scopeDir(config, e.scope)}/${attachmentDirName(e.id)}/${att}`);
+      }
+    }
+    for (const f of this.indexFiles(config)) fileSet.add(f);
+    plan.files = [...fileSet];
     return plan;
   }
 
@@ -182,6 +194,12 @@ export class WarehouseSync {
         await vscode.workspace.fs.delete(vscode.Uri.file(abs));
       } catch {
         // already gone — fine
+      }
+      const attDir = path.join(clone.root, scopeDir(config, entry.scope), attachmentDirName(entry.id));
+      try {
+        await vscode.workspace.fs.delete(vscode.Uri.file(attDir), { recursive: true, useTrash: false });
+      } catch {
+        // didn't exist — fine
       }
     }
 
@@ -219,16 +237,30 @@ export class WarehouseSync {
     const dir = path.join(clone.root, scopeDir(config, scope));
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
     const notes = this.store.listByScope(scope);
+    const attachmentsByNote = new Map<string, string[]>();
     for (const note of notes) {
       const content = await this.store.readContent(note);
       const target = vscode.Uri.file(path.join(dir, note.filename));
       await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(content));
+      const attachments = await this.store.listAttachments(note);
+      attachmentsByNote.set(note.id, attachments.map(a => a.filename));
+      if (attachments.length > 0) {
+        const subdir = path.join(dir, attachmentDirName(note.id));
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(subdir));
+        for (const att of attachments) {
+          const bytes = await vscode.workspace.fs.readFile(this.store.attachmentUri(note, att.filename));
+          await vscode.workspace.fs.writeFile(vscode.Uri.file(path.join(subdir, att.filename)), bytes);
+        }
+      }
     }
     const index: WarehouseIndex = {
       scope,
       workspaceId: scope === 'global' ? PERSONAL_WORKSPACE_ID : config.workspaceId,
       generatedAt: new Date().toISOString(),
-      notes: notes.map(toIndexEntry),
+      notes: notes.map(n => ({
+        ...toIndexEntry(n),
+        attachments: attachmentsByNote.get(n.id)?.length ? attachmentsByNote.get(n.id) : undefined,
+      })),
     };
     const indexUri = vscode.Uri.file(path.join(dir, '_index.json'));
     await vscode.workspace.fs.writeFile(
@@ -237,9 +269,14 @@ export class WarehouseSync {
     );
   }
 
-  private filesForNote(config: WarehouseConfig, note: NoteMetadata): string[] {
+  private async filesForNote(config: WarehouseConfig, note: NoteMetadata): Promise<string[]> {
     const dir = scopeDir(config, note.scope);
-    return [`${dir}/${note.filename}`, `${dir}/_index.json`];
+    const out = [`${dir}/${note.filename}`, `${dir}/_index.json`];
+    const attachments = await this.store.listAttachments(note);
+    for (const att of attachments) {
+      out.push(`${dir}/${attachmentDirName(note.id)}/${att.filename}`);
+    }
+    return out;
   }
 
   private indexFiles(config: WarehouseConfig): string[] {
@@ -283,6 +320,28 @@ export class WarehouseSync {
     }
     const buf = await vscode.workspace.fs.readFile(vscode.Uri.file(this.transport.absolute(clone, rel)));
     return new TextDecoder().decode(buf);
+  }
+
+  private async readRemoteAttachments(
+    config: WarehouseConfig,
+    clone: WarehouseClone,
+    scope: NoteScope,
+    entry: WarehouseIndexEntry,
+  ): Promise<{ filename: string; bytes: Uint8Array }[]> {
+    const list = entry.attachments ?? [];
+    if (list.length === 0) return [];
+    const dir = `${scopeDir(config, scope)}/${attachmentDirName(entry.id)}`;
+    const out: { filename: string; bytes: Uint8Array }[] = [];
+    for (const filename of list) {
+      const rel = `${dir}/${filename}`;
+      if (!(await this.transport.fileExists(clone, rel))) {
+        log('warn', `attachment listed in index but missing on disk: ${rel}`);
+        continue;
+      }
+      const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(this.transport.absolute(clone, rel)));
+      out.push({ filename, bytes });
+    }
+    return out;
   }
 
   private async scanPlan(plan: PushPlan): Promise<Map<string, SecretFinding[]>> {

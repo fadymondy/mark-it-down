@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { buildWebviewHtml } from './webviewBuilder';
+import { attachmentMarkdown } from '../../packages/core/src/attachments';
 
 type Mode = 'view' | 'edit';
 
@@ -31,14 +32,37 @@ export interface NoteIndexProvider {
   createFromTitle(title: string): Promise<string | undefined>;
 }
 
+export interface AttachmentUploader {
+  /**
+   * Save an attachment for the note backing the supplied document URI.
+   * Returns the resolved on-disk filename, or undefined if the document
+   * is not a note managed by the store.
+   */
+  save(
+    documentUri: vscode.Uri,
+    rawName: string,
+    bytes: Uint8Array,
+  ): Promise<{ noteId: string; filename: string } | undefined>;
+}
+
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'markItDown.editor';
 
   private readonly panels = new Map<string, { panel: vscode.WebviewPanel; state: PanelState }>();
   private noteIndexProvider?: NoteIndexProvider;
   private noteIndexSub?: vscode.Disposable;
+  private attachmentUploader?: AttachmentUploader;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
+
+  public attachAttachmentUploader(uploader: AttachmentUploader): vscode.Disposable {
+    this.attachmentUploader = uploader;
+    return new vscode.Disposable(() => {
+      if (this.attachmentUploader === uploader) {
+        this.attachmentUploader = undefined;
+      }
+    });
+  }
 
   public attachNoteIndex(provider: NoteIndexProvider): vscode.Disposable {
     this.noteIndexProvider = provider;
@@ -172,8 +196,51 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         case 'openWikilink':
           await this.handleWikilinkClick(msg);
           return;
+        case 'attachUpload':
+          await this.handleAttachmentUpload(document, msg);
+          return;
       }
     });
+  }
+
+  private async handleAttachmentUpload(
+    document: vscode.TextDocument,
+    msg: { name?: unknown; bytesBase64?: unknown; insert?: unknown },
+  ): Promise<void> {
+    const uploader = this.attachmentUploader;
+    if (!uploader) {
+      vscode.window.showWarningMessage('Mark It Down: attachments require a managed note. Save this file as a note first.');
+      return;
+    }
+    const name = typeof msg.name === 'string' ? msg.name : 'attachment';
+    const b64 = typeof msg.bytesBase64 === 'string' ? msg.bytesBase64 : undefined;
+    if (!b64) {
+      vscode.window.showErrorMessage('Mark It Down: dropped file payload was empty.');
+      return;
+    }
+    const bytes = Buffer.from(b64, 'base64');
+    let result;
+    try {
+      result = await uploader.save(document.uri, name, bytes);
+    } catch (err) {
+      vscode.window.showErrorMessage(`Mark It Down: attachment upload failed — ${(err as Error).message}`);
+      return;
+    }
+    if (!result) {
+      vscode.window.showWarningMessage('Mark It Down: this file is not a managed note — drag-drop is only supported inside the notes warehouse.');
+      return;
+    }
+    const insertMd = msg.insert === false
+      ? null
+      : attachmentMarkdown(result.noteId, result.filename);
+    if (insertMd) {
+      const edit = new vscode.WorkspaceEdit();
+      const text = document.getText();
+      const trailing = text.length > 0 && !text.endsWith('\n') ? '\n' : '';
+      edit.insert(document.uri, document.positionAt(text.length), `${trailing}\n${insertMd}\n`);
+      await vscode.workspace.applyEdit(edit);
+    }
+    vscode.window.setStatusBarMessage(`Mark It Down: attached ${result.filename}`, 2500);
   }
 
   private async handleWikilinkClick(msg: {

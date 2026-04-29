@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Note attachments (#44)
+
+- Each note can carry binary attachments stored at `<storage>/notes/<id>-attachments/<filename>`; the dir is created lazily on first attachment and removed when the note is deleted
+- Drag-drop one or many files onto the editor (view or edit mode) — webview reads each via FileReader, base64-encodes, posts `attachUpload` to the host, store sanitises + de-duplicates the filename, then a relative markdown reference (`![]()` for images, `[]()` otherwise) is appended at the end of the note
+- New `packages/core/src/attachments/` package: pure helpers for filename sanitisation (path-traversal safe, alphanumeric+dot+dash+underscore only, 96-char cap that preserves extension), collision resolution (`a.png` → `a-1.png`, `a-2.png`, …), image-extension detection, markdown-reference emission
+- `NotesStore` extensions: `attachmentsDirUri`, `attachmentUri`, `listAttachments`, `addAttachment`, `deleteAttachment`; `importNote` now accepts an optional `attachments` payload so warehouse pull can materialise binaries
+- Warehouse sync: `materializeScope` copies each note's attachment dir verbatim, indexes filenames as `attachments?: string[]` in `_index.json`, and deletes the dir on note removal; pull side calls `readRemoteAttachments` and threads them through `importNote`
+- Publish: `collectAll` returns `{ pages, attachments }`; `runBuildAndPush` copies each attachment to `notes/<id>-attachments/<filename>` next to its rendered page so relative links resolve naturally on GitHub Pages
+- 19 new unit tests across the pure helpers (sanitisation incl. path traversal, length cap with extension preservation, collision resolution with + without extension, image detection across 7 cases, markdown emission for image / non-image / aliased)
+
 ### Added — v2.0: Wiki-links + backlinks (#43)
 
 - Markdown gets `[[note title]]`, `[[note title|alias]]`, and `[[note title#anchor]]` syntax — resolved against the live notes corpus

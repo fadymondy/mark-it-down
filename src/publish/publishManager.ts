@@ -7,7 +7,13 @@ import { log } from '../warehouse/warehouseLog';
 import { findTheme } from '../themes/themes';
 import { PublishConfig, readPublishConfig } from './publishConfig';
 import { buildSiteAssets, PageInput, renderIndex, renderPage } from './staticGenerator';
+import { attachmentDirName } from '../../packages/core/src/attachments';
 import lunr from 'lunr';
+
+interface AttachmentToCopy {
+  srcUri: vscode.Uri;
+  destPathFromRoot: string;
+}
 
 export interface PublishResult {
   pages: number;
@@ -36,12 +42,12 @@ export class PublishManager {
       }
       return undefined;
     }
-    const sources = await this.collectAll(wh, pub);
-    if (sources.length === 0) {
+    const { pages, attachments } = await this.collectAll(wh, pub);
+    if (pages.length === 0) {
       vscode.window.showInformationMessage('Mark It Down: nothing to publish.');
       return undefined;
     }
-    return this.runBuildAndPush(wh, pub, sources);
+    return this.runBuildAndPush(wh, pub, pages, attachments);
   }
 
   public async publishCurrent(): Promise<PublishResult | undefined> {
@@ -66,7 +72,7 @@ export class PublishManager {
       pathFromRoot: `${baseName}.html`,
       markdown,
     };
-    return this.runBuildAndPush(wh, pub, [page]);
+    return this.runBuildAndPush(wh, pub, [page], []);
   }
 
   public async copyShareUrl(uri?: vscode.Uri): Promise<void> {
@@ -103,26 +109,39 @@ export class PublishManager {
     return false;
   }
 
-  private async collectAll(wh: WarehouseConfig, _pub: PublishConfig): Promise<PageInput[]> {
+  private async collectAll(
+    wh: WarehouseConfig,
+    _pub: PublishConfig,
+  ): Promise<{ pages: PageInput[]; attachments: AttachmentToCopy[] }> {
+    void wh;
     // For v1 we publish all global notes. Workspace notes per workspace are out of scope here.
     const notes = this.notesStore.listByScope('global');
-    const out: PageInput[] = [];
+    const pages: PageInput[] = [];
+    const attachments: AttachmentToCopy[] = [];
     for (const note of notes) {
       const content = await this.notesStore.readContent(note);
       const slug = slugify(note.title);
-      out.push({
+      pages.push({
         title: note.title,
         pathFromRoot: `notes/${slug}-${note.id}.html`,
         markdown: content,
       });
+      const noteAttachments = await this.notesStore.listAttachments(note);
+      for (const att of noteAttachments) {
+        attachments.push({
+          srcUri: this.notesStore.attachmentUri(note, att.filename),
+          destPathFromRoot: `notes/${attachmentDirName(note.id)}/${att.filename}`,
+        });
+      }
     }
-    return out;
+    return { pages, attachments };
   }
 
   private async runBuildAndPush(
     wh: WarehouseConfig,
     pub: PublishConfig,
     pages: PageInput[],
+    attachments: AttachmentToCopy[],
   ): Promise<PublishResult> {
     const cloneRoot = path.join(this.context.globalStorageUri.fsPath, 'warehouse', repoSlug(wh));
     const worktreeRoot = path.join(this.context.globalStorageUri.fsPath, 'publish', repoSlug(wh));
@@ -177,6 +196,18 @@ export class PublishManager {
       const out = path.join(subRoot, rendered.pathFromRoot);
       await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(out)));
       await vscode.workspace.fs.writeFile(vscode.Uri.file(out), new TextEncoder().encode(rendered.html));
+    }
+
+    // Copy note attachments next to their owning notes
+    for (const att of attachments) {
+      const dest = path.join(subRoot, att.destPathFromRoot);
+      await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(dest)));
+      try {
+        const bytes = await vscode.workspace.fs.readFile(att.srcUri);
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(dest), bytes);
+      } catch (err) {
+        log('warn', `failed to copy attachment ${att.destPathFromRoot}: ${(err as Error).message}`);
+      }
     }
 
     // index.html (overrides any same-named page from the page set; that's fine)

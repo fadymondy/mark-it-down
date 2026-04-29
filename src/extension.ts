@@ -5,6 +5,7 @@ import { NotesTreeProvider } from './notes/notesTreeProvider';
 import { registerNotesCommands } from './notes/notesCommands';
 import { BacklinksIndex } from './notes/backlinksIndex';
 import { BacklinksTreeProvider, buildNoteIndexProvider } from './notes/backlinksProvider';
+import { buildAttachmentUploader } from './notes/notesAttachmentUploader';
 import { WarehouseManager } from './warehouse/warehouseManager';
 import { registerWarehouseCommands } from './warehouse/warehouseCommands';
 import { disposeLogChannel } from './warehouse/warehouseLog';
@@ -43,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     provider.attachNoteIndex(noteIndexProviderHandle.provider),
     new vscode.Disposable(() => noteIndexProviderHandle.dispose()),
+    provider.attachAttachmentUploader(buildAttachmentUploader(notesStore)),
   );
   const warehouse = new WarehouseManager(context, notesStore);
   const publish = new PublishManager(context, notesStore);
