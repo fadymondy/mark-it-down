@@ -4,6 +4,15 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Per-page slug overrides via frontmatter (#46)
+
+- Notes can declare a `slug:` in a YAML frontmatter block at the top of the body — published page goes to `notes/<slug>.html` instead of the default `notes/<slug-from-title>-<id>.html`
+- New `packages/core/src/frontmatter/index.ts` — tiny zero-dep parser for `---`-fenced blocks, supports scalars (string / number / boolean), inline lists, quoted strings, comment lines, BOM, missing-fence safety
+- `validateSlug` rules: `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$` and ≤48 chars; anything else (uppercase, whitespace, slashes, leading/trailing dash, over-length) silently falls back to the title-derived id-suffixed URL
+- Slug collision detection in `PublishManager.collectAll`: first claimant keeps the clean URL, conflicting note(s) fall back to id-suffixed URL, warehouse log gets a `slug collision` entry, and a one-shot `showWarningMessage` surfaces it
+- `publishCurrent` (the per-file path) also strips frontmatter + honours slug override for arbitrary markdown files
+- 15 new unit tests across the parser (no-fence, fenced + stripped, scalar types, lists, comments, missing closing fence, BOM tolerance, leading blank line) and `validateSlug` (lowercase-dash, digits, rejected patterns, length cap, non-string input)
+
 ### Added — v2.0: Nested category hierarchies (#45)
 
 - Category names accept `/` as a hierarchy separator — `Reference/Postgres`, `Reference/Postgres/Indexing`, `Daily/2026-04` all coexist as plain category strings (no schema migration)

@@ -8,6 +8,7 @@ import { findTheme } from '../themes/themes';
 import { PublishConfig, readPublishConfig } from './publishConfig';
 import { buildSiteAssets, PageInput, renderIndex, renderPage } from './staticGenerator';
 import { attachmentDirName } from '../../packages/core/src/attachments';
+import { parseFrontmatter, validateSlug } from '../../packages/core/src/frontmatter';
 import lunr from 'lunr';
 
 interface AttachmentToCopy {
@@ -65,12 +66,15 @@ export class PublishManager {
       return undefined;
     }
     const buf = await vscode.workspace.fs.readFile(uri);
-    const markdown = new TextDecoder().decode(buf);
+    const raw = new TextDecoder().decode(buf);
+    const fm = parseFrontmatter(raw);
+    const overrideSlug = fm.found ? validateSlug(fm.data.slug) : undefined;
     const baseName = (uri.path.split('/').pop() ?? 'page').replace(/\.[^.]+$/, '');
+    const slug = overrideSlug ?? baseName;
     const page: PageInput = {
       title: baseName,
-      pathFromRoot: `${baseName}.html`,
-      markdown,
+      pathFromRoot: `${slug}.html`,
+      markdown: fm.body,
     };
     return this.runBuildAndPush(wh, pub, [page], []);
   }
@@ -118,14 +122,40 @@ export class PublishManager {
     const notes = this.notesStore.listByScope('global');
     const pages: PageInput[] = [];
     const attachments: AttachmentToCopy[] = [];
+    const slugByPath = new Map<string, string>();
     for (const note of notes) {
-      const content = await this.notesStore.readContent(note);
-      const slug = slugify(note.title);
-      pages.push({
-        title: note.title,
-        pathFromRoot: `notes/${slug}-${note.id}.html`,
-        markdown: content,
-      });
+      const raw = await this.notesStore.readContent(note);
+      const fm = parseFrontmatter(raw);
+      const overrideSlug = fm.found ? validateSlug(fm.data.slug) : undefined;
+      const fallbackSlug = slugify(note.title);
+      const slug = overrideSlug ?? fallbackSlug;
+      const pathFromRoot = overrideSlug
+        ? `notes/${slug}.html`
+        : `notes/${slug}-${note.id}.html`;
+      const existing = slugByPath.get(pathFromRoot);
+      if (existing && existing !== note.id) {
+        log(
+          'warn',
+          `slug collision: notes ${existing} and ${note.id} both publish to ${pathFromRoot}; appending id to disambiguate.`,
+        );
+        const safePath = `notes/${slug}-${note.id}.html`;
+        pages.push({
+          title: note.title,
+          pathFromRoot: safePath,
+          markdown: fm.body,
+        });
+        slugByPath.set(safePath, note.id);
+        void vscode.window.showWarningMessage(
+          `Mark It Down: slug "${slug}" is used by another note — falling back to id-suffixed URL for "${note.title}".`,
+        );
+      } else {
+        pages.push({
+          title: note.title,
+          pathFromRoot,
+          markdown: fm.body,
+        });
+        slugByPath.set(pathFromRoot, note.id);
+      }
       const noteAttachments = await this.notesStore.listAttachments(note);
       for (const att of noteAttachments) {
         attachments.push({
