@@ -32,6 +32,33 @@
   },
   "icon": "media/icon.png",
   "main": "./out/extension.js",
+  "build": {
+    "appId": "io.markitdown.app",
+    "productName": "Mark It Down",
+    "directories": {
+      "buildResources": "media",
+      "output": "dist/electron"
+    },
+    "files": [
+      "out/electron/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraMetadata": {
+      "main": "out/electron/main.js"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }]
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "linux": {
+      "target": [{ "target": "AppImage", "arch": ["x64"] }, { "target": "deb", "arch": ["x64"] }],
+      "category": "Office"
+    }
+  },
   "activationEvents": [],
   "contributes": {
     "viewsContainers": {
@@ -479,13 +506,33 @@
         "markItDown.slideshow.theme": {
           "type": "string",
           "default": "black",
-          "enum": ["black", "white", "league", "beige", "night", "serif", "simple", "solarized", "moon", "dracula", "sky", "blood"],
+          "enum": [
+            "black",
+            "white",
+            "league",
+            "beige",
+            "night",
+            "serif",
+            "simple",
+            "solarized",
+            "moon",
+            "dracula",
+            "sky",
+            "blood"
+          ],
           "description": "Reveal.js theme used by the slideshow preview and published slides."
         },
         "markItDown.slideshow.transition": {
           "type": "string",
           "default": "slide",
-          "enum": ["none", "fade", "slide", "convex", "concave", "zoom"],
+          "enum": [
+            "none",
+            "fade",
+            "slide",
+            "convex",
+            "concave",
+            "zoom"
+          ],
           "description": "Slide-to-slide transition style."
         },
         "markItDown.slideshow.includeSpeakerNotes": {
@@ -502,9 +549,13 @@
     "compile:extension": "tsc -p ./",
     "compile:webview": "esbuild src/webview/main.ts --bundle --outfile=out/webview/main.js --format=iife --target=es2020 --platform=browser",
     "compile:mcp": "esbuild src/mcp/server.ts --bundle --outfile=out/mcp/server.js --format=cjs --platform=node --target=node18 --external:vscode",
+    "compile:electron": "tsc -p apps/electron/tsconfig.json && esbuild apps/electron/renderer/renderer.ts --bundle --outfile=out/electron/renderer/renderer.js --format=iife --target=es2020 --platform=browser && node -e \"const fs=require('fs'),p=require('path');fs.mkdirSync('out/electron/renderer',{recursive:true});['index.html','renderer.css'].forEach(f=>fs.copyFileSync(p.join('apps/electron/renderer',f),p.join('out/electron/renderer',f)));\"",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "publish": "vsce publish",
+    "dev:vscode": "echo 'Press F5 in VSCode to launch the Extension Development Host.'",
+    "dev:electron": "npm run compile && npm run compile:electron && MID_DEV=1 electron out/electron/main.js",
+    "dist:electron": "npm run compile && npm run compile:electron && electron-builder --mac --win --linux",
     "lint": "eslint src --ext ts"
   },
   "dependencies": {
@@ -532,6 +583,8 @@
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.0",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
   }

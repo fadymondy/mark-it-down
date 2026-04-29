@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self';" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mark It Down</title>
+<link rel="stylesheet" href="renderer.css" />
+</head>
+<body>
+<header class="mid-titlebar" role="toolbar">
+  <div class="mid-titlebar-left">
+    <button id="open-btn" title="Open markdown file">📂 Open</button>
+    <button id="save-btn" title="Save current file">💾 Save</button>
+  </div>
+  <div class="mid-titlebar-center">
+    <span id="filename" class="mid-filename">Untitled</span>
+  </div>
+  <div class="mid-titlebar-right">
+    <button id="mode-view" class="active">📖 View</button>
+    <button id="mode-edit">✏️ Edit</button>
+  </div>
+</header>
+<main id="root" class="viewing">
+  <div class="empty-state">
+    <h1>Mark It Down</h1>
+    <p>Open a markdown file with <kbd>Cmd/Ctrl+O</kbd> to begin.</p>
+  </div>
+</main>
+<script src="renderer.js"></script>
+</body>
+</html>
