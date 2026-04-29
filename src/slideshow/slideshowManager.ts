@@ -5,7 +5,19 @@ import { readConfig as readWarehouseConfig, repoSlug, repoUrl, WarehouseConfig }
 import { readPublishConfig } from '../publish/publishConfig';
 import { buildSlideshow, DEFAULT_OPTIONS, SlideshowOptions } from './slideshowGenerator';
 
-export class SlideshowManager {
+interface PreviewSession {
+  panel: vscode.WebviewPanel;
+  documentUri: vscode.Uri;
+  index: { h: number; v: number; f?: number };
+  rebuildTimer?: NodeJS.Timeout;
+  subs: vscode.Disposable[];
+}
+
+const REBUILD_DEBOUNCE_MS = 120;
+
+export class SlideshowManager implements vscode.Disposable {
+  private readonly sessions = new Map<string, PreviewSession>();
+
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   public async previewLocal(): Promise<void> {
@@ -14,25 +26,97 @@ export class SlideshowManager {
       vscode.window.showErrorMessage('Mark It Down: open a markdown file to preview as slideshow.');
       return;
     }
-    const built = buildSlideshow(
-      { markdown: editor.document.getText(), fallbackTitle: this.titleFor(editor.document.uri) },
-      this.optionsFromSettings(),
-    );
+    const documentUri = editor.document.uri;
+    const key = documentUri.toString();
+    const existing = this.sessions.get(key);
+    if (existing) {
+      existing.panel.reveal(vscode.ViewColumn.Beside);
+      this.rebuild(existing, editor.document.getText());
+      return;
+    }
+    const initialIndex = { h: 0, v: 0, f: 0 };
     const panel = vscode.window.createWebviewPanel(
       'markItDown.slideshow',
-      `Slideshow — ${built.title}`,
+      `Slideshow — ${this.titleFor(documentUri)}`,
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    // The slideshow HTML loads reveal/mermaid from CDNs. Allow https:// in img/style/script via a permissive CSP for the preview panel only.
-    panel.webview.html = built.html.replace(
+    const session: PreviewSession = {
+      panel,
+      documentUri,
+      index: initialIndex,
+      subs: [],
+    };
+    session.subs.push(
+      panel.webview.onDidReceiveMessage(msg => this.handleWebviewMessage(session, msg)),
+      vscode.workspace.onDidChangeTextDocument(e => {
+        if (e.document.uri.toString() === key) {
+          this.scheduleRebuild(session, e.document.getText());
+        }
+      }),
+      vscode.workspace.onDidSaveTextDocument(doc => {
+        if (doc.uri.toString() === key) {
+          // Skip the debounce on explicit save — rebuild immediately.
+          this.rebuild(session, doc.getText());
+        }
+      }),
+    );
+    panel.onDidDispose(() => this.disposeSession(key));
+    this.sessions.set(key, session);
+    this.rebuild(session, editor.document.getText(), { firstPaint: true });
+  }
+
+  private scheduleRebuild(session: PreviewSession, text: string): void {
+    if (session.rebuildTimer) clearTimeout(session.rebuildTimer);
+    session.rebuildTimer = setTimeout(() => {
+      session.rebuildTimer = undefined;
+      this.rebuild(session, text);
+    }, REBUILD_DEBOUNCE_MS);
+  }
+
+  private rebuild(session: PreviewSession, markdown: string, opts: { firstPaint?: boolean } = {}): void {
+    if (session.panel.visible === false && !opts.firstPaint) {
+      // Still rebuild — when the user reveals the panel, the freshest content greets them.
+    }
+    const built = buildSlideshow(
+      { markdown, fallbackTitle: this.titleFor(session.documentUri) },
+      {
+        ...this.optionsFromSettings(),
+        liveReload: { initialIndex: session.index },
+      },
+    );
+    session.panel.title = `Slideshow — ${built.title}`;
+    session.panel.webview.html = built.html.replace(
       '<head>',
       `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' https: 'unsafe-inline'; script-src 'self' https: 'unsafe-inline' 'unsafe-eval'; img-src 'self' https: data:; font-src 'self' https: data:; connect-src https:;">`,
     );
-    vscode.window.setStatusBarMessage(
-      `Mark It Down: previewing ${built.slideCount} slide(s) — theme=${built.options.theme}`,
-      4000,
-    );
+    if (opts.firstPaint) {
+      vscode.window.setStatusBarMessage(
+        `Mark It Down: live-preview ${built.slideCount} slide(s) — theme=${built.options.theme}`,
+        4000,
+      );
+    }
+  }
+
+  private handleWebviewMessage(session: PreviewSession, msg: { type?: unknown; h?: unknown; v?: unknown; f?: unknown }): void {
+    if (msg?.type === 'slideshow.position') {
+      const h = typeof msg.h === 'number' ? msg.h : 0;
+      const v = typeof msg.v === 'number' ? msg.v : 0;
+      const f = typeof msg.f === 'number' ? msg.f : 0;
+      session.index = { h, v, f };
+    }
+  }
+
+  private disposeSession(key: string): void {
+    const session = this.sessions.get(key);
+    if (!session) return;
+    if (session.rebuildTimer) clearTimeout(session.rebuildTimer);
+    session.subs.forEach(s => s.dispose());
+    this.sessions.delete(key);
+  }
+
+  public dispose(): void {
+    for (const key of [...this.sessions.keys()]) this.disposeSession(key);
   }
 
   public async publish(): Promise<void> {
