@@ -133,8 +133,11 @@ function categoryItem(scope: NoteScope, category: string): vscode.TreeItem {
 
 function noteItem(note: NoteMetadata, store: NotesStore): vscode.TreeItem {
   const item = new vscode.TreeItem(note.title || 'Untitled note', vscode.TreeItemCollapsibleState.None);
-  item.description = formatTimestamp(note.updatedAt);
-  item.tooltip = `${note.title}\n${note.category} · ${note.scope}\nupdated ${note.updatedAt}`;
+  const ts = formatTimestamp(note.updatedAt);
+  const tagBadges = (note.tags ?? []).slice(0, 3).map(t => `#${t}`).join(' ');
+  item.description = tagBadges ? `${tagBadges} · ${ts}` : ts;
+  const tagLine = (note.tags ?? []).length > 0 ? `\ntags: ${(note.tags ?? []).join(', ')}` : '';
+  item.tooltip = `${note.title}\n${note.category} · ${note.scope}${tagLine}\nupdated ${note.updatedAt}`;
   item.contextValue = `markItDown.notes.note.${note.scope}`;
   item.iconPath = new vscode.ThemeIcon('note');
   item.resourceUri = store.uriFor(note);

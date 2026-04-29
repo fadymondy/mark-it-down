@@ -217,6 +217,18 @@
         "icon": "$(search)"
       },
       {
+        "command": "markItDown.notes.editTags",
+        "title": "Edit Tags",
+        "category": "Mark It Down",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "markItDown.notes.filterByTag",
+        "title": "Filter by Tag",
+        "category": "Mark It Down",
+        "icon": "$(filter)"
+      },
+      {
         "command": "markItDown.notes.revealStorage",
         "title": "Reveal Notes Folder",
         "category": "Mark It Down",
@@ -416,6 +428,11 @@
           "command": "markItDown.notes.move",
           "when": "view == markItDown.notes && viewItem =~ /^markItDown.notes.note./",
           "group": "modify@1"
+        },
+        {
+          "command": "markItDown.notes.editTags",
+          "when": "view == markItDown.notes && viewItem =~ /^markItDown.notes.note./",
+          "group": "modify@2"
         }
       ],
       "commandPalette": [
