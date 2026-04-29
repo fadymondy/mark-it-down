@@ -605,7 +605,10 @@
     "dev:electron": "npm run compile && npm run compile:electron && env -u ELECTRON_RUN_AS_NODE -u ELECTRON_NO_ATTACH_CONSOLE MID_DEV=1 electron out/electron/main.js",
     "dist:electron": "npm run compile && npm run compile:electron && electron-builder --mac --win --linux",
     "lint": "eslint src apps/electron",
-    "lint:fix": "eslint --fix src apps/electron"
+    "lint:fix": "eslint --fix src apps/electron",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -635,11 +638,13 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.59.1",
     "@typescript-eslint/parser": "^8.59.1",
+    "@vitest/coverage-v8": "^4.1.5",
     "@vscode/vsce": "^3.2.0",
     "electron": "^41.3.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.24.0",
     "eslint": "^10.2.1",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.5"
   }
 }
