@@ -1,0 +1,11 @@
+{
+  "warehouse.statusBar.idle": "{0}@{1}",
+  "warehouse.statusBar.idle.multi": "{0} almacenes",
+  "warehouse.statusBar.disabled": "Almacén de notas desactivado",
+  "warehouse.statusBar.syncing": "Sincronizando…",
+  "warehouse.statusBar.conflict": "{0} nota(s) divergente(s). Haz clic para resolver.",
+  "warehouse.statusBar.error": "Error de sincronización",
+  "notes.empty.openFirst": "Abre una nota para ver qué la enlaza.",
+  "notes.empty.noBacklinks": "Ninguna nota enlaza con esta todavía.",
+  "epub.exported": "Mark It Down: empaquetadas {0} nota(s) → {1}"
+}

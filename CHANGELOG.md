@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Internationalization (#49)
+
+- Manifest strings (command titles, view names, settings descriptions, the activity-bar container, the welcome message) externalised into `package.nls.json` (English source) + `package.nls.<lang>.json` per locale; runtime strings (status bar labels, empty-state hints, exporter notifications) externalised into `l10n/bundle.l10n.json` + `l10n/bundle.l10n.<lang>.json`
+- 4 locales beyond English shipped: **es** (Spanish), **fr** (French), **de** (German), **ar** (Arabic — RTL handled natively by VSCode)
+- Thin `src/i18n/t.ts` wrapper around `vscode.l10n.t()` for stable call sites
+- New `scripts/check-i18n.mjs` parity checker — verifies every locale file has exactly the same keys as the English source; wired into `.github/workflows/ci.yml` so missing/stale translations fail the build
+- New `npm run check-i18n` script for local use
+- `package.json` `l10n` field points at `./l10n` so VSCode resolves the runtime bundle automatically
+- 11 new unit tests in `tests/unit/i18n/parity.test.ts`: at-least-4 locales beyond English (per family), per-file exact-key parity, every value is a non-empty string
+
 ### Added — v2.0: ePub export (#48)
 
 - Two new commands: `Mark It Down: Export to ePub` (single-file, one chapter per book) and `Mark It Down: Export Category as ePub` (multi-chapter book bundling every note under a category path, sorted oldest-first by `updatedAt`)

@@ -1,0 +1,11 @@
+{
+  "warehouse.statusBar.idle": "{0}@{1}",
+  "warehouse.statusBar.idle.multi": "{0} Warehouses",
+  "warehouse.statusBar.disabled": "Notiz-Warehouse aus",
+  "warehouse.statusBar.syncing": "Synchronisiere…",
+  "warehouse.statusBar.conflict": "{0} abweichende Notiz(en). Klicken zum Lösen.",
+  "warehouse.statusBar.error": "Sync-Fehler",
+  "notes.empty.openFirst": "Öffne eine Notiz, um zu sehen, was darauf verweist.",
+  "notes.empty.noBacklinks": "Keine Notiz verweist noch auf diese.",
+  "epub.exported": "Mark It Down: {0} Notiz(en) gebündelt → {1}"
+}
