@@ -15,6 +15,7 @@ import { PublishManager } from './publish/publishManager';
 import { registerPublishCommands } from './publish/publishCommands';
 import { SlideshowManager } from './slideshow/slideshowManager';
 import { registerSlideshowCommands } from './slideshow/slideshowCommands';
+import { UpdateChecker } from './updates/updateChecker';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -35,17 +36,21 @@ export function activate(context: vscode.ExtensionContext) {
   const warehouse = new WarehouseManager(context, notesStore);
   const publish = new PublishManager(context, notesStore);
   const slideshow = new SlideshowManager(context);
+  const updates = new UpdateChecker(context);
   context.subscriptions.push(
     notesStore,
     notesTree,
     warehouse,
+    updates,
     vscode.window.registerTreeDataProvider('markItDown.notes', notesTree),
     ...registerNotesCommands(context, notesStore),
     ...registerWarehouseCommands(warehouse),
     ...registerMcpInstallCommands(context),
     ...registerPublishCommands(publish),
     ...registerSlideshowCommands(slideshow),
+    vscode.commands.registerCommand('markItDown.updates.checkNow', () => updates.checkNow()),
   );
+  updates.start();
   warehouse.start();
   void notesStore.writeMcpIndexSnapshot();
   context.subscriptions.push(

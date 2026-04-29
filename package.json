@@ -49,15 +49,51 @@
     },
     "mac": {
       "category": "public.app-category.productivity",
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }]
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "linux": {
-      "target": [{ "target": "AppImage", "arch": ["x64"] }, { "target": "deb", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "category": "Office"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "fadymondy",
+        "repo": "mark-it-down",
+        "releaseType": "release"
+      }
+    ]
   },
   "activationEvents": [],
   "contributes": {
@@ -250,6 +286,12 @@
         "command": "markItDown.slideshow.exportPdf",
         "title": "Slideshow: Export to PDF",
         "category": "Mark It Down"
+      },
+      {
+        "command": "markItDown.updates.checkNow",
+        "title": "Check for Updates",
+        "category": "Mark It Down",
+        "icon": "$(cloud-download)"
       }
     ],
     "menus": {
@@ -539,6 +581,11 @@
           "type": "boolean",
           "default": true,
           "description": "Render lines after a `Notes:` block on each slide as Reveal speaker notes."
+        },
+        "markItDown.updates.checkOnLaunch": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Check for newer Mark It Down releases on GitHub once per launch (and every 6 hours after). Only used by users on a self-installed `.vsix`; Marketplace installs use VSCode's native update mechanism."
         }
       }
     }
@@ -555,7 +602,7 @@
     "package": "vsce package",
     "publish": "vsce publish",
     "dev:vscode": "echo 'Press F5 in VSCode to launch the Extension Development Host.'",
-    "dev:electron": "npm run compile && npm run compile:electron && MID_DEV=1 electron out/electron/main.js",
+    "dev:electron": "npm run compile && npm run compile:electron && env -u ELECTRON_RUN_AS_NODE -u ELECTRON_NO_ATTACH_CONSOLE MID_DEV=1 electron out/electron/main.js",
     "dist:electron": "npm run compile && npm run compile:electron && electron-builder --mac --win --linux",
     "lint": "eslint src --ext ts"
   },
@@ -571,6 +618,7 @@
     "codemirror": "^6.0.2",
     "docx": "^9.6.1",
     "dompurify": "^3.2.3",
+    "electron-updater": "^6.8.3",
     "highlight.js": "^11.10.0",
     "html-to-image": "^1.11.13",
     "marked": "^14.1.3",
