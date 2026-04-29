@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "mark-it-down": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/bin/server.js",
+        "--notes-dir",
+        "${MID_NOTES_DIR}"
+      ],
+      "env": {
+        "MID_NOTES_DIR": "${HOME}/.mark-it-down/notes"
+      }
+    }
+  }
+}
