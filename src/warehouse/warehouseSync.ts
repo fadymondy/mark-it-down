@@ -50,7 +50,11 @@ export class WarehouseSync {
     private readonly conflicts: ConflictRegistry,
   ) {}
 
-  public async pull(config: WarehouseConfig): Promise<SyncSummary['pulled']> {
+  public async pull(
+    config: WarehouseConfig,
+    opts: { predicate?: (category: string) => boolean } = {},
+  ): Promise<SyncSummary['pulled']> {
+    const predicate = opts.predicate ?? (() => true);
     const clone = await this.transport.ensureClone(config);
     if (!clone.freshlyCloned) {
       await this.transport.pull(config, clone);
@@ -68,6 +72,7 @@ export class WarehouseSync {
       if (!remote) continue;
       const localById = new Map(this.store.listByScope(scope).map(n => [n.id, n]));
       for (const entry of remote.notes) {
+        if (!predicate(entry.category)) continue;
         const local = localById.get(entry.id);
         if (!local) {
           const content = await this.readRemoteContent(config, clone, scope, entry.filename);
@@ -116,7 +121,11 @@ export class WarehouseSync {
     return { added, updated, conflicts };
   }
 
-  public async planPush(config: WarehouseConfig): Promise<PushPlan> {
+  public async planPush(
+    config: WarehouseConfig,
+    opts: { predicate?: (category: string) => boolean } = {},
+  ): Promise<PushPlan> {
+    const predicate = opts.predicate ?? (() => true);
     const clone = await this.transport.ensureClone(config);
     const plan: PushPlan = { added: [], updated: [], deleted: [], files: [] };
     const scopes: NoteScope[] = this.store.hasWorkspaceStorage()
@@ -124,7 +133,7 @@ export class WarehouseSync {
       : ['global'];
 
     for (const scope of scopes) {
-      const local = this.store.listByScope(scope);
+      const local = this.store.listByScope(scope).filter(n => predicate(n.category));
       const remote = (await this.readRemoteIndex(config, clone, scope))?.notes ?? [];
       const remoteById = new Map(remote.map(e => [e.id, e]));
       const localById = new Map(local.map(n => [n.id, n]));
@@ -138,7 +147,9 @@ export class WarehouseSync {
         }
       }
       for (const r of remote) {
-        if (!localById.has(r.id)) {
+        // Note disappeared locally OR moved to a category that no longer
+        // belongs to this route → mark for deletion in this repo.
+        if (!localById.has(r.id) || !predicate(r.category)) {
           plan.deleted.push(r);
         }
       }
@@ -169,8 +180,9 @@ export class WarehouseSync {
   public async push(
     config: WarehouseConfig,
     plan: PushPlan,
-    opts: { allowSecrets?: boolean } = {},
+    opts: { allowSecrets?: boolean; predicate?: (category: string) => boolean } = {},
   ): Promise<SyncSummary['pushed']> {
+    const predicate = opts.predicate ?? (() => true);
     const clone = await this.transport.ensureClone(config);
 
     if (!opts.allowSecrets) {
@@ -186,7 +198,7 @@ export class WarehouseSync {
       : ['global'];
 
     for (const scope of scopes) {
-      await this.materializeScope(config, clone, scope);
+      await this.materializeScope(config, clone, scope, predicate);
     }
     for (const entry of plan.deleted) {
       const abs = path.join(clone.root, scopeDir(config, entry.scope), entry.filename);
@@ -233,10 +245,11 @@ export class WarehouseSync {
     config: WarehouseConfig,
     clone: WarehouseClone,
     scope: NoteScope,
+    predicate: (category: string) => boolean = () => true,
   ): Promise<void> {
     const dir = path.join(clone.root, scopeDir(config, scope));
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
-    const notes = this.store.listByScope(scope);
+    const notes = this.store.listByScope(scope).filter(n => predicate(n.category));
     const attachmentsByNote = new Map<string, string[]>();
     for (const note of notes) {
       const content = await this.store.readContent(note);
