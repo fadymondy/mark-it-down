@@ -17,7 +17,7 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | F9 — Notes warehouse repo | shipped | [notes-warehouse.md](notes-warehouse.md) |
 | F10 — Publish any markdown to GitHub Pages | shipped | [publish.md](publish.md) |
 | F11 — Slideshow export | shipped | [slideshow.md](slideshow.md) |
-| F12 — Standalone Electron app | planned | — |
+| F12 — Standalone Electron app | shipped (first-cut) | [electron-app.md](electron-app.md) |
 | F13 — Claude Code plugin | planned | — |
 
 Each feature gets its own page when it ships. New pages should follow the [notes-sidebar.md](notes-sidebar.md) shape: at-a-glance table, settings, workflows, edge cases, and a "what it unblocks" section.

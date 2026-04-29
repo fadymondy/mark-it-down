@@ -4,6 +4,16 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Phase 0.12: Standalone Electron app — first cut (#13)
+
+- New `apps/electron/` ships a working standalone desktop app: main process + sandboxed renderer + preload IPC bridge + native menus
+- Renderer reuses marked + marked-highlight + highlight.js + mermaid + DOMPurify (same versions as the VSCode webview); standalone palette with system light/dark switch via `nativeTheme`
+- File menu: Open Markdown… (Cmd/Ctrl+O), Save (Cmd/Ctrl+S); standard Edit, View, Help menus; macOS app menu when running on macOS
+- External links open in the OS default browser via `shell.openExternal`
+- New npm scripts: `compile:electron` (tsc main+preload + esbuild renderer + copy HTML/CSS), `dev:electron` (compile + launch with DevTools), `dist:electron` (electron-builder for mac DMG + win NSIS + linux AppImage/deb)
+- electron-builder config under `package.json#build` with `extraMetadata.main` override so the same package.json works for both VSCode and Electron
+- **Deferred and documented in [docs/electron-app.md#whats-deferred-and-why](docs/electron-app.md#whats-deferred-and-why)**: full `packages/core/` extraction, CodeMirror in Edit mode, notes sidebar, warehouse, publish, slideshow, MCP install command on the Electron side, file watching, multi-tab/window, code signing/notarization, CI matrix. v0.12 is a parallel renderer with ~200 LOC of intentional duplication; the extraction is its own multi-day refactor tracked separately.
+
 ### Added — Phase 0.11: Slideshow export (#12)
 
 - Convert any markdown into a [reveal.js](https://revealjs.com) slideshow — `---` for horizontal slide breaks, `--` for vertical sub-slides, optional YAML frontmatter for `theme` / `transition` / `title` / `speakerNotes`
