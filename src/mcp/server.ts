@@ -28,14 +28,19 @@ const server = new McpServer(
 server.registerTool(
   'list_notes',
   {
-    description: 'List notes in the Mark It Down warehouse. Optionally filter by category and/or tag.',
+    description:
+      'List notes in the Mark It Down warehouse. Optionally filter by category (exact), categoryPrefix (matches the path or anything underneath), and/or tag.',
     inputSchema: {
-      category: z.string().optional().describe('Restrict to notes in this category'),
+      category: z.string().optional().describe('Restrict to notes whose category equals this exact path'),
+      categoryPrefix: z
+        .string()
+        .optional()
+        .describe('Restrict to notes whose category equals this path or sits underneath it (e.g. "Reference" matches "Reference/Postgres")'),
       tag: z.string().optional().describe('Restrict to notes carrying this tag (lowercase)'),
     },
   },
-  async ({ category, tag }) => {
-    const notes = await adapter.listNotes({ category, tag });
+  async ({ category, categoryPrefix, tag }) => {
+    const notes = await adapter.listNotes({ category, categoryPrefix, tag });
     return {
       content: [
         {
