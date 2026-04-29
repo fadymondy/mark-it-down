@@ -4,6 +4,15 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.2 polish: pre-release / beta channel (#40)
+
+- New `markItDown.updates.channel` setting (`"stable"` default, `"beta"` opt-in)
+- VSCode poller: stable channel hits `/repos/.../releases/latest` (GitHub auto-skips pre-releases); beta channel hits `/repos/.../releases?per_page=20` and picks the newest non-draft including pre-releases
+- Electron `autoUpdater.channel` / `allowPrerelease` driven by the `MID_CHANNEL=beta` env var (mirror of the VSCode setting)
+- Release workflow now matches both `v*.*.*` (stable) and `v*.*.*-*` (pre-release: `-rc.1` / `-beta.2` / etc.) tag patterns
+- Workflow's release-notes job auto-flips the GitHub release's `prerelease` flag based on whether the tag has a hyphen — stable tags get `prerelease: false`, pre-release tags get `prerelease: true`
+- New "Pre-release / beta channel" section in `docs/auto-update.md` walking through how the two channels diverge
+
 ### Added — v1.2 polish: side-by-side conflict-resolution UI for warehouse (#39)
 
 - New `ConflictRegistry` collects diverged notes during sync (was previously just a log warning)

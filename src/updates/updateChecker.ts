@@ -4,7 +4,8 @@ import { compareSemver } from '../../packages/core/src/semver';
 
 const REPO_OWNER = 'fadymondy';
 const REPO_NAME = 'mark-it-down';
-const RELEASE_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+const ALL_RELEASES_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=20`;
 const STATE_KEYS = {
   lastCheckedAt: 'markItDown.updates.lastCheckedAt',
   lastSeenVersion: 'markItDown.updates.lastSeenVersion',
@@ -45,11 +46,16 @@ export class UpdateChecker {
     return vscode.workspace.getConfiguration('markItDown.updates').get<boolean>('checkOnLaunch') ?? true;
   }
 
+  private channel(): 'stable' | 'beta' {
+    const v = vscode.workspace.getConfiguration('markItDown.updates').get<string>('channel') ?? 'stable';
+    return v === 'beta' ? 'beta' : 'stable';
+  }
+
   private async runCheck(opts: { trigger: 'launch' | 'interval' | 'manual' }): Promise<void> {
     const installed = this.installedVersion();
     let release: UpdateInfo | undefined;
     try {
-      release = await fetchLatestRelease();
+      release = await fetchLatestRelease(this.channel());
     } catch (err) {
       if (opts.trigger === 'manual') {
         vscode.window.showErrorMessage(`Mark It Down: update check failed — ${(err as Error).message}`);
@@ -114,10 +120,47 @@ export class UpdateChecker {
   }
 }
 
-function fetchLatestRelease(): Promise<UpdateInfo | undefined> {
+interface RawRelease {
+  tag_name?: string;
+  name?: string;
+  html_url?: string;
+  body?: string;
+  published_at?: string;
+  draft?: boolean;
+  prerelease?: boolean;
+}
+
+function fetchLatestRelease(channel: 'stable' | 'beta'): Promise<UpdateInfo | undefined> {
+  // For stable users we can use the cheap /releases/latest endpoint that
+  // already filters out drafts + pre-releases. For beta users we have to
+  // fetch the full list and pick the newest non-draft (pre-release OR stable).
+  if (channel === 'stable') {
+    return fetchSingle(LATEST_RELEASE_API, raw => {
+      if (raw.draft || raw.prerelease) return undefined;
+      return toUpdateInfo(raw);
+    });
+  }
+  return fetchList(ALL_RELEASES_API, list => {
+    const candidate = list.find(r => !r.draft);
+    return candidate ? toUpdateInfo(candidate) : undefined;
+  });
+}
+
+function toUpdateInfo(raw: RawRelease): UpdateInfo | undefined {
+  if (!raw.tag_name) return undefined;
+  const version = raw.tag_name.replace(/^v/, '');
+  return {
+    version,
+    htmlUrl: raw.html_url ?? `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/${raw.tag_name}`,
+    bodyMarkdown: raw.body ?? '',
+    publishedAt: raw.published_at ?? '',
+  };
+}
+
+function fetchSingle(url: string, pick: (raw: RawRelease) => UpdateInfo | undefined): Promise<UpdateInfo | undefined> {
   return new Promise((resolve, reject) => {
     const req = https.request(
-      RELEASE_API,
+      url,
       {
         method: 'GET',
         headers: {
@@ -131,7 +174,6 @@ function fetchLatestRelease(): Promise<UpdateInfo | undefined> {
         res.on('data', chunk => (body += chunk.toString()));
         res.on('end', () => {
           if (res.statusCode === 404) {
-            // No releases published yet — silently no-op.
             resolve(undefined);
             return;
           }
@@ -140,26 +182,47 @@ function fetchLatestRelease(): Promise<UpdateInfo | undefined> {
             return;
           }
           try {
-            const json = JSON.parse(body) as {
-              tag_name?: string;
-              name?: string;
-              html_url?: string;
-              body?: string;
-              published_at?: string;
-              draft?: boolean;
-              prerelease?: boolean;
-            };
-            if (!json || json.draft || json.prerelease || !json.tag_name) {
-              resolve(undefined);
-              return;
-            }
-            const version = json.tag_name.replace(/^v/, '');
-            resolve({
-              version,
-              htmlUrl: json.html_url ?? `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/${json.tag_name}`,
-              bodyMarkdown: json.body ?? '',
-              publishedAt: json.published_at ?? '',
-            });
+            const json = JSON.parse(body) as RawRelease;
+            resolve(json ? pick(json) : undefined);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('request timed out')));
+    req.end();
+  });
+}
+
+function fetchList(url: string, pick: (list: RawRelease[]) => UpdateInfo | undefined): Promise<UpdateInfo | undefined> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'mark-it-down-vscode-extension',
+          Accept: 'application/vnd.github+json',
+        },
+        timeout: 10_000,
+      },
+      res => {
+        let body = '';
+        res.on('data', chunk => (body += chunk.toString()));
+        res.on('end', () => {
+          if (res.statusCode === 404) {
+            resolve(undefined);
+            return;
+          }
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`GitHub API ${res.statusCode}: ${body.slice(0, 200)}`));
+            return;
+          }
+          try {
+            const json = JSON.parse(body) as RawRelease[];
+            resolve(Array.isArray(json) ? pick(json) : undefined);
           } catch (err) {
             reject(err);
           }

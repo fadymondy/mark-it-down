@@ -611,6 +611,12 @@
           "default": true,
           "markdownDescription": "Check for newer Mark It Down releases on GitHub once per launch (and every 6 hours after). Only used by users on a self-installed `.vsix`; Marketplace installs use VSCode's native update mechanism."
         },
+        "markItDown.updates.channel": {
+          "type": "string",
+          "default": "stable",
+          "enum": ["stable", "beta"],
+          "markdownDescription": "Update channel. `stable` follows the GitHub `releases/latest` endpoint (skips pre-releases). `beta` opts into pre-release tags (e.g. `v0.3.0-rc.1`) — useful for dogfooding before stable. The Electron app respects `MID_CHANNEL=beta` for the same effect."
+        },
         "markItDown.telemetry.enabled": {
           "type": "boolean",
           "default": false,
