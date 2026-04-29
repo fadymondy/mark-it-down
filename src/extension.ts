@@ -62,6 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
     backlinksIndex,
     backlinksTree,
     warehouse,
+    slideshow,
     updates,
     vscode.window.registerTreeDataProvider('markItDown.notes', notesTree),
     vscode.window.registerTreeDataProvider('markItDown.backlinks', backlinksTree),

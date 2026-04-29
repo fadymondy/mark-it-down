@@ -4,6 +4,14 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Slideshow live reload (#50)
+
+- `Mark It Down: Slideshow: Preview Local` no longer needs to be re-run on each edit — the preview panel hot-reloads on every keystroke (debounced 120 ms) and on explicit save (no debounce); slide position is preserved across rebuilds
+- New `liveReload?: { initialIndex? }` option on `slideshowGenerator` injects a small bridge script: `acquireVsCodeApi`, `Reveal.on('slidechanged' / 'fragmentshown' / 'fragmenthidden')` posts `slideshow.position` back to host; `Reveal.on('ready')` calls `Reveal.slide(h, v, f)` with the baked-in initial index
+- `SlideshowManager` now tracks open preview panels in a `Map<docUri, PreviewSession>`; first call creates the panel + wires document/save listeners, subsequent calls reveal + rebuild the existing one (no duplicate panels per file)
+- Reveal's URL hash routing is disabled in live mode (it would conflict with the position-restore script); still honoured outside live mode (publish path, embed)
+- 5 new unit tests covering bridge presence/absence, hash toggle, initial-index baking, missing-index fallback to null
+
 ### Added — v2.0: Internationalization (#49)
 
 - Manifest strings (command titles, view names, settings descriptions, the activity-bar container, the welcome message) externalised into `package.nls.json` (English source) + `package.nls.<lang>.json` per locale; runtime strings (status bar labels, empty-state hints, exporter notifications) externalised into `l10n/bundle.l10n.json` + `l10n/bundle.l10n.<lang>.json`

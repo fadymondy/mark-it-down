@@ -32,6 +32,8 @@ export interface SlideshowOptions {
   transition: string;
   /** Render speaker notes from `Notes:` blocks at the end of each slide body. */
   speakerNotes: boolean;
+  /** When set, slideshow restores to this slide on load + posts position changes back to the host. */
+  liveReload?: { initialIndex?: { h: number; v: number; f?: number } };
 }
 
 export const DEFAULT_OPTIONS: SlideshowOptions = {
@@ -58,6 +60,7 @@ export function buildSlideshow(input: SlideshowBuildInput, base: SlideshowOption
     theme: frontmatter.theme ?? base.theme,
     transition: frontmatter.transition ?? base.transition,
     speakerNotes: frontmatter.speakerNotes ?? base.speakerNotes,
+    liveReload: base.liveReload,
   };
   const title = frontmatter.title ?? input.fallbackTitle;
 
@@ -137,6 +140,35 @@ function template(title: string, opts: SlideshowOptions, sections: string): stri
   const notesPlugin = 'https://cdn.jsdelivr.net/npm/reveal.js@5/plugin/notes/notes.js';
   const highlightCss = 'https://cdn.jsdelivr.net/npm/highlight.js@11/styles/atom-one-dark.min.css';
   const mermaidJs = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
+  const liveReload = opts.liveReload;
+  const initialIndex = liveReload?.initialIndex;
+  const liveReloadScript = liveReload
+    ? `
+  (function(){
+    var vscode = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : undefined;
+    if (!vscode) return;
+    var initial = ${JSON.stringify(initialIndex ?? null)};
+    if (initial) {
+      Reveal.on('ready', function () {
+        Reveal.slide(initial.h, initial.v || 0, initial.f || 0);
+      });
+    }
+    Reveal.on('slidechanged', function () {
+      var ix = Reveal.getIndices();
+      vscode.postMessage({ type: 'slideshow.position', h: ix.h, v: ix.v, f: ix.f });
+    });
+    Reveal.on('fragmentshown', function () {
+      var ix = Reveal.getIndices();
+      vscode.postMessage({ type: 'slideshow.position', h: ix.h, v: ix.v, f: ix.f });
+    });
+    Reveal.on('fragmenthidden', function () {
+      var ix = Reveal.getIndices();
+      vscode.postMessage({ type: 'slideshow.position', h: ix.h, v: ix.v, f: ix.f });
+    });
+    vscode.postMessage({ type: 'slideshow.ready' });
+  })();
+`
+    : '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -158,7 +190,7 @@ function template(title: string, opts: SlideshowOptions, sections: string): stri
 <script src="${mermaidJs}"></script>
 <script>
   Reveal.initialize({
-    hash: true,
+    hash: ${liveReload ? 'false' : 'true'},
     transition: ${JSON.stringify(opts.transition)},
     plugins: [RevealNotes],
   });
@@ -166,6 +198,7 @@ function template(title: string, opts: SlideshowOptions, sections: string): stri
     var isDark = ${JSON.stringify(isDarkTheme(opts.theme))};
     mermaid.initialize({ startOnLoad: true, theme: isDark ? 'dark' : 'default', securityLevel: 'strict' });
   }
+${liveReloadScript}
 </script>
 </body>
 </html>`;
