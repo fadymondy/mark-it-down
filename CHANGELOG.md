@@ -4,6 +4,15 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Nested category hierarchies (#45)
+
+- Category names accept `/` as a hierarchy separator — `Reference/Postgres`, `Reference/Postgres/Indexing`, `Daily/2026-04` all coexist as plain category strings (no schema migration)
+- Notes sidebar renders categories as a true tree: each scope shows root segments, expanding a category shows its child segments first then notes that live at the exact path; tooltip surfaces the full path on hover
+- New `packages/core/src/categories/` package: pure helpers `parseCategoryPath`, `joinCategoryPath`, `categoryHasPrefix`, `rootCategories`, `childCategoriesAt` — segment-aware so siblings don't bleed together (`References/Foo` does not match prefix `Reference`)
+- MCP `list_notes` accepts `categoryPrefix` (matches the path itself or anything underneath it); existing `category` filter still does exact match. Trailing slashes on the prefix are stripped before comparison.
+- Tree provider uses the new helpers — flat categories render unchanged (a one-segment path is just a leaf folder)
+- 14 new unit tests covering parse / join / prefix matching (exact, descendant, sibling rejection, empty wildcard) / root collection / child collection at root + at depth + grandchild de-dup + parent-skip
+
 ### Added — v2.0: Note attachments (#44)
 
 - Each note can carry binary attachments stored at `<storage>/notes/<id>-attachments/<filename>`; the dir is created lazily on first attachment and removed when the note is deleted

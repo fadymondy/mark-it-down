@@ -1,11 +1,18 @@
 import * as vscode from 'vscode';
 import { NoteMetadata, NoteScope, NotesStore } from './notesStore';
+import {
+  childCategoriesAt,
+  hasNotesAtPath,
+  parseCategoryPath,
+  rootCategories,
+} from '../../packages/core/src/categories';
 
 type NodeKind = 'scope' | 'category' | 'note' | 'empty';
 
 export interface NoteTreeNode {
   kind: NodeKind;
   scope?: NoteScope;
+  /** Full category path from the root (e.g. `Reference/Postgres`). */
   category?: string;
   note?: NoteMetadata;
   emptyMessage?: string;
@@ -57,7 +64,7 @@ export class NotesTreeProvider implements vscode.TreeDataProvider<NoteTreeNode> 
       return this.childrenForScope(node.scope!);
     }
     if (node.kind === 'category') {
-      return this.notesIn(node.scope!, node.category!).map(note => ({ kind: 'note', note }));
+      return this.childrenForCategory(node.scope!, node.category!);
     }
     return [];
   }
@@ -67,21 +74,30 @@ export class NotesTreeProvider implements vscode.TreeDataProvider<NoteTreeNode> 
     this.subs.forEach(s => s.dispose());
   }
 
-  private childrenForScope(scope: NoteScope): NoteTreeNode[] {
-    const notes = this.store.listByScope(scope);
+  private allKnownCategories(scope: NoteScope): string[] {
     const configured = configuredCategories();
     const used = this.store.categoriesInUse(scope);
-    const all = [...new Set([...configured, ...used])];
+    return [...new Set([...configured, ...used])];
+  }
+
+  private childrenForScope(scope: NoteScope): NoteTreeNode[] {
+    const all = this.allKnownCategories(scope);
     if (all.length === 0) {
       return [{ kind: 'empty', scope, emptyMessage: 'No categories configured.' }];
     }
-    const nodes = all
-      .filter(cat => configured.includes(cat) || notes.some(n => n.category === cat))
-      .map<NoteTreeNode>(category => ({ kind: 'category', scope, category }));
-    if (nodes.length === 0) {
+    const roots = rootCategories(all);
+    if (roots.length === 0) {
       return [{ kind: 'empty', scope, emptyMessage: 'No categories configured.' }];
     }
-    return nodes;
+    return roots.map<NoteTreeNode>(node => ({ kind: 'category', scope, category: node.path }));
+  }
+
+  private childrenForCategory(scope: NoteScope, category: string): NoteTreeNode[] {
+    const all = this.allKnownCategories(scope);
+    const subCats = childCategoriesAt(all, category)
+      .map<NoteTreeNode>(node => ({ kind: 'category', scope, category: node.path }));
+    const notes = this.notesIn(scope, category).map<NoteTreeNode>(note => ({ kind: 'note', note }));
+    return [...subCats, ...notes];
   }
 
   private notesIn(scope: NoteScope, category: string): NoteMetadata[] {
@@ -124,12 +140,19 @@ function scopeItem(scope: NoteScope): vscode.TreeItem {
 }
 
 function categoryItem(scope: NoteScope, category: string): vscode.TreeItem {
-  const item = new vscode.TreeItem(category, vscode.TreeItemCollapsibleState.Collapsed);
+  const segments = parseCategoryPath(category);
+  const label = segments[segments.length - 1] ?? category;
+  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Collapsed);
   item.contextValue = `markItDown.notes.category.${scope}`;
   item.iconPath = new vscode.ThemeIcon('folder');
   item.id = `${scope}::${category}`;
+  if (segments.length > 1) {
+    item.tooltip = category;
+  }
   return item;
 }
+
+void hasNotesAtPath; // exported so the wikilinks panel can re-use it later
 
 function noteItem(note: NoteMetadata, store: NotesStore): vscode.TreeItem {
   const item = new vscode.TreeItem(note.title || 'Untitled note', vscode.TreeItemCollapsibleState.None);

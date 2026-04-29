@@ -22,11 +22,17 @@ const INDEX_FILENAME = '_mcp-index.json';
 export class NotesAdapter {
   constructor(private readonly notesDir: string) {}
 
-  async listNotes(filter: { category?: string; tag?: string } = {}): Promise<MdNote[]> {
+  async listNotes(
+    filter: { category?: string; categoryPrefix?: string; tag?: string } = {},
+  ): Promise<MdNote[]> {
     const idx = await this.readIndex();
     let out = idx.notes;
     const cat = filter.category?.trim();
     if (cat) out = out.filter(n => n.category === cat);
+    const prefix = filter.categoryPrefix?.trim().replace(/\/+$/, '');
+    if (prefix) {
+      out = out.filter(n => n.category === prefix || n.category.startsWith(prefix + '/'));
+    }
     const tag = filter.tag?.trim().toLowerCase();
     if (tag) out = out.filter(n => (n.tags ?? []).includes(tag));
     return out;
