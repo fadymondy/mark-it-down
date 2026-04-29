@@ -10,7 +10,7 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | F2 — Mermaid polish | shipped | [mermaid-polish.md](mermaid-polish.md) |
 | F3 — Code-block image export | shipped | [code-block-image-export.md](code-block-image-export.md) |
 | F4 — Sortable DataTable + table exports | shipped | [datatable.md](datatable.md) |
-| F5 — File export pipeline (PDF / DOCX / TXT) | planned | — |
+| F5 — File export pipeline (PDF / DOCX / TXT) | shipped | [file-export.md](file-export.md) |
 | F6 — Notes sidebar | shipped (0.7) | [notes-sidebar.md](notes-sidebar.md) |
 | F7 — 25-theme bridge | shipped | [themes.md](themes.md) |
 | F8 — MCP server | planned | — |

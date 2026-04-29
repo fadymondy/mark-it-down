@@ -12,7 +12,7 @@ A beautiful markdown viewer + editor for VSCode — rich rendering, live mermaid
 |---------|--------|-------|
 | Markdown viewer (rich rendering) | ✅ shipped | 0.1 |
 | File starts in viewer; toggle to editor | ✅ shipped (CodeMirror 6 editor) | 0.1 / 0.2 |
-| Context-menu export → DOC, DOCX, PDF, TXT | 🚧 stubs registered | 0.6 |
+| Context-menu export → DOC, DOCX, PDF, TXT | ✅ shipped (TXT + real DOCX via `docx`, PDF via `pdfkit`) | 0.6 |
 | Mermaid live preview (GitHub-style) | ✅ shipped (zoom/pan/error UX in 0.3) | 0.1 / 0.3 |
 | Code blocks with copy / export image | ✅ shipped (PNG export 0.4) | 0.1 / 0.4 |
 | Tables → DataTable with sort + Excel/CSV export | ✅ shipped | 0.5 |
