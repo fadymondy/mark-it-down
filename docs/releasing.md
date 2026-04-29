@@ -117,6 +117,82 @@ If a released version is broken:
 2. Bump the version (e.g. `0.2.0` → `0.2.1`), fix the bug on a hotfix branch, repeat the release flow. Don't rewrite or delete the bad tag — semver says versions are immutable.
 3. Note the broken version in the CHANGELOG of the new release: "Fixes a regression in v0.2.0 that caused X."
 
+## Setting up macOS code signing
+
+Required for Electron auto-update to work on macOS. Without these, the release workflow still produces a `.dmg` that installs fine on first download, but `electron-updater` can't apply updates to it (Apple Gatekeeper rejects the differential update on unsigned apps). Linux + Windows updates work without any of this.
+
+You'll need:
+
+- An **Apple Developer Program** membership ($99/year)
+- A Mac with Xcode installed (to export the cert; the actual signing happens on the GitHub macOS runner)
+- ~30 minutes for the first-time setup
+
+### 1. Create a Developer ID Application certificate
+
+In Xcode:
+
+1. **Settings → Accounts** → sign in with your Apple ID
+2. Pick your team → **Manage Certificates…**
+3. Click `+` → **Developer ID Application** (NOT "Apple Development" — that one is for development builds only)
+4. The cert appears in your Mac's Keychain Access under **My Certificates**
+
+### 2. Export the cert as a `.p12`
+
+In Keychain Access:
+
+1. Find the new "Developer ID Application: Your Name (TEAMID)" entry under **My Certificates**
+2. Right-click → **Export** → save as `mark-it-down-signing.p12` somewhere temporary
+3. **Set a strong password** when prompted — this becomes `MAC_CERTS_PASSWORD`
+
+### 3. Base64-encode the `.p12`
+
+```bash
+base64 -i mark-it-down-signing.p12 | pbcopy
+```
+
+The encoded blob is now in your clipboard — that's `MAC_CERTS`.
+
+### 4. Generate an app-specific password for notarization
+
+At [appleid.apple.com](https://appleid.apple.com):
+
+1. **Sign-In and Security** → **App-Specific Passwords**
+2. Generate one for "Mark It Down releases"
+3. Copy the value — that's `APPLE_APP_SPECIFIC_PASSWORD`
+
+### 5. Find your Apple Team ID
+
+In the Xcode Accounts pane (or at [developer.apple.com](https://developer.apple.com/account)), grab the 10-character `TEAMID` (e.g. `ABCD123456`). That's `APPLE_TEAM_ID`.
+
+### 6. Add all 5 secrets to the repo
+
+Repo → **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret name | Value |
+|---|---|
+| `MAC_CERTS` | The base64 blob from step 3 |
+| `MAC_CERTS_PASSWORD` | The .p12 password from step 2 |
+| `APPLE_ID` | The Apple ID email you signed in with |
+| `APPLE_APP_SPECIFIC_PASSWORD` | The app-specific password from step 4 |
+| `APPLE_TEAM_ID` | The 10-char team id from step 5 |
+
+### 7. Verify on the next release
+
+Cut a `v0.X.Y` tag. The `release.yml` `electron` job's macOS runner picks up the secrets via the env block, signs the DMG, and notarizes it. Smoke-test:
+
+1. Download the new DMG from the release
+2. Open it on a fresh Mac (or one that's never had Mark It Down installed)
+3. The first-launch dialog should say "Mark It Down is from an identified developer" — NOT "from an unidentified developer"
+4. From a previous version, the auto-updater should successfully prompt + install the new one
+
+### Cert rotation
+
+Developer ID Application certs are valid for ~5 years. Repeat steps 1–3 + 6 (`MAC_CERTS` + `MAC_CERTS_PASSWORD`) before the cert expires. The Apple ID + team ID don't change.
+
+### When you're not ready yet
+
+Leave the secrets unset. The workflow's env block still references them, but electron-builder gracefully degrades — the build still succeeds, just produces an unsigned DMG. The release won't crash.
+
 ## Common failures
 
 | Symptom | Cause | Fix |

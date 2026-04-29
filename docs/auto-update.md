@@ -91,7 +91,9 @@ A `Help → Check for Updates…` menu item lets users force a check and surface
 
 ### Code signing
 
-For macOS auto-updates to work, the DMG **must be signed AND notarized**. An unsigned DMG installs fine on first download, but `electron-updater` refuses to apply updates to it (Apple's Gatekeeper rejects the differential update). Wire credentials into `.github/workflows/release.yml` via these env vars:
+For macOS auto-updates to work, the DMG **must be signed AND notarized**. An unsigned DMG installs fine on first download, but `electron-updater` refuses to apply updates to it (Apple's Gatekeeper rejects the differential update).
+
+The release workflow's env block already references the right secrets:
 
 ```yaml
 env:
@@ -102,7 +104,9 @@ env:
   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 ```
 
-Without those, builds still succeed and Linux/Windows updates work fine. macOS users on unsigned builds will see "you're on the latest" indefinitely from `electron-updater`'s perspective.
+Add the 5 secrets in the repo's **Settings → Secrets and variables → Actions** following the step-by-step in [docs/releasing.md → Setting up macOS code signing](releasing.md#setting-up-macos-code-signing).
+
+Without those secrets, builds still succeed and Linux/Windows updates work fine. macOS users on unsigned builds will see "you're on the latest" indefinitely from `electron-updater`'s perspective.
 
 ## Release flow (shared)
 

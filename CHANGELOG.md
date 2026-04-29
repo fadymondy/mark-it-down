@@ -4,6 +4,13 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.1 hardening: macOS code signing + notarization wired (#33)
+
+- `.github/workflows/release.yml` env block now references `MAC_CERTS`, `MAC_CERTS_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` secrets — populated only on macOS runners that have them, electron-builder gracefully falls back to unsigned builds when absent
+- `docs/releasing.md` gains a complete "Setting up macOS code signing" section walking through cert creation in Xcode → `.p12` export → base64 → app-specific password → team ID → repo secrets, plus a verification + cert-rotation note
+- `docs/auto-update.md` Code Signing section updated to point at the new releasing.md flow
+- **User action required after merge** to actually enable signing: add the 5 GitHub repo secrets per the runbook. Until then, releases still ship unsigned macOS DMGs (functional but no auto-update on Mac).
+
 ### Added — v1.1 hardening: VSCode integration tests via @vscode/test-electron (#32)
 
 - New `tests/integration/` with the runner (`runTest.ts`), Mocha test-suite loader (`suite/index.ts`), and 5 happy-path tests covering: extension presence, activation without errors, every contributed command registered after activation, custom-editor `openWith` for a `.md` file resolves cleanly, configuration namespaces (`theme`, `startMode`, `mermaid.enabled`, `notes.categories`) all readable.
