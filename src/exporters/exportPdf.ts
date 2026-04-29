@@ -125,7 +125,7 @@ function renderBlock(doc: PDFKit.PDFDocument, token: MdToken, indent: number): v
       const tableWidth = doc.page.width - 2 * STYLES.margin - indentLeft;
       const colWidth = tableWidth / colCount;
       doc.font('Helvetica-Bold').fontSize(STYLES.base).fillColor('#111');
-      let y = doc.y;
+      const y = doc.y;
       headers.forEach((h, i) => {
         doc.text(h, STYLES.margin + indentLeft + i * colWidth, y, {
           width: colWidth - 8,

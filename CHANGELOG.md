@@ -4,6 +4,14 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v1.1 hardening: ESLint flat config + PR-time CI (#30)
+
+- New `eslint.config.mjs` (flat config, ESLint 10) covering `src/`, `apps/electron/`, with separate Node + browser global sets per file group
+- `npm run lint` and `npm run lint:fix` scripts wired and pass on `main` HEAD (0 errors, 3 minor warnings)
+- New `.github/workflows/ci.yml` — runs `npm ci && npm run lint && npm run compile && npm run compile:electron && npm run build:claude-plugin` on every PR + push to main, on a `[ubuntu-latest, macos-latest]` matrix
+- Cancels superseded runs via `concurrency.cancel-in-progress: true`
+- 3 case-block scope errors fixed in the export pipeline (`exportTxt.ts`, `exportDocx.ts` x2)
+
 ### Added — Phase 0.14: Auto-update for both surfaces (#28)
 
 - **VSCode extension**: in-extension `UpdateChecker` polls `GET /repos/fadymondy/mark-it-down/releases/latest` once per launch + every 6h; surfaces a notification with `Open Release` / `View Changes` / `Later` actions when a newer version is published. Doesn't re-notify for the same version. Never auto-installs (security smell).

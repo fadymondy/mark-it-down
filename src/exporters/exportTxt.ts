@@ -75,7 +75,7 @@ function renderBlock(token: MdToken, indent: number): string[] {
       return [];
     case 'html':
       return [pad + ((t as { text?: string }).text ?? ''), ''];
-    default:
+    default: {
       if ((t as Tokens.Generic).tokens) {
         return ((t as Tokens.Generic).tokens as Token[]).flatMap(tok =>
           renderBlock(tok as MdToken, indent),
@@ -83,5 +83,6 @@ function renderBlock(token: MdToken, indent: number): string[] {
       }
       const txt = ((t as Tokens.Generic).text as string) ?? '';
       return txt ? [pad + txt, ''] : [];
+    }
   }
 }
