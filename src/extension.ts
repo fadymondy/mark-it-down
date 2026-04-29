@@ -10,6 +10,7 @@ import { THEMES } from './themes/themes';
 import { markdownToTxt } from './exporters/exportTxt';
 import { markdownToDocx } from './exporters/exportDocx';
 import { markdownToPdf } from './exporters/exportPdf';
+import { registerMcpInstallCommands } from './mcp/installCommand';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new MarkdownEditorProvider(context);
@@ -35,8 +36,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerTreeDataProvider('markItDown.notes', notesTree),
     ...registerNotesCommands(context, notesStore),
     ...registerWarehouseCommands(warehouse),
+    ...registerMcpInstallCommands(context),
   );
   warehouse.start();
+  void notesStore.writeMcpIndexSnapshot();
+  context.subscriptions.push(
+    notesStore.onDidChange(() => {
+      void notesStore.writeMcpIndexSnapshot();
+    }),
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('markItDown.toggleMode', () => {
