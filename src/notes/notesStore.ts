@@ -1,6 +1,17 @@
 import * as vscode from 'vscode';
+import {
+  attachmentDirName,
+  resolveCollision,
+  sanitizeAttachmentName,
+} from '../../packages/core/src/attachments';
 
 export type NoteScope = 'workspace' | 'global';
+
+export interface AttachmentInfo {
+  filename: string;
+  size: number;
+  mtime: number;
+}
 
 export interface NoteMetadata {
   id: string;
@@ -56,6 +67,63 @@ export class NotesStore {
     return vscode.Uri.joinPath(root, NOTES_SUBDIR, note.filename);
   }
 
+  public attachmentsDirUri(note: NoteMetadata): vscode.Uri {
+    const root = this.storageRoot(note.scope);
+    return vscode.Uri.joinPath(root, NOTES_SUBDIR, attachmentDirName(note.id));
+  }
+
+  public attachmentUri(note: NoteMetadata, filename: string): vscode.Uri {
+    return vscode.Uri.joinPath(this.attachmentsDirUri(note), filename);
+  }
+
+  public async listAttachments(note: NoteMetadata): Promise<AttachmentInfo[]> {
+    const dir = this.attachmentsDirUri(note);
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(dir);
+    } catch {
+      return [];
+    }
+    const out: AttachmentInfo[] = [];
+    for (const [name, kind] of entries) {
+      if (kind !== vscode.FileType.File) continue;
+      try {
+        const stat = await vscode.workspace.fs.stat(vscode.Uri.joinPath(dir, name));
+        out.push({ filename: name, size: stat.size, mtime: stat.mtime });
+      } catch {
+        // skipped — listed but no longer there
+      }
+    }
+    out.sort((a, b) => a.filename.localeCompare(b.filename));
+    return out;
+  }
+
+  public async addAttachment(
+    note: NoteMetadata,
+    rawName: string,
+    bytes: Uint8Array,
+  ): Promise<{ filename: string; uri: vscode.Uri }> {
+    const dir = this.attachmentsDirUri(note);
+    await vscode.workspace.fs.createDirectory(dir);
+    const existing = (await this.listAttachments(note)).map(a => a.filename);
+    const safe = sanitizeAttachmentName(rawName);
+    const filename = resolveCollision(safe, existing);
+    const uri = vscode.Uri.joinPath(dir, filename);
+    await vscode.workspace.fs.writeFile(uri, bytes);
+    await this.touch(this.uriFor(note));
+    return { filename, uri };
+  }
+
+  public async deleteAttachment(note: NoteMetadata, filename: string): Promise<void> {
+    const uri = this.attachmentUri(note, filename);
+    try {
+      await vscode.workspace.fs.delete(uri, { useTrash: false });
+    } catch {
+      // already gone
+    }
+    await this.touch(this.uriFor(note));
+  }
+
   public async create(input: CreateNoteInput): Promise<NoteMetadata> {
     if (input.scope === 'workspace' && !this.hasWorkspaceStorage()) {
       throw new Error('Workspace notes require an open workspace folder.');
@@ -82,7 +150,11 @@ export class NotesStore {
     return note;
   }
 
-  public async importNote(meta: NoteMetadata, content: string): Promise<NoteMetadata> {
+  public async importNote(
+    meta: NoteMetadata,
+    content: string,
+    attachments?: { filename: string; bytes: Uint8Array }[],
+  ): Promise<NoteMetadata> {
     if (meta.scope === 'workspace' && !this.hasWorkspaceStorage()) {
       throw new Error('Workspace storage unavailable; cannot import workspace note.');
     }
@@ -92,6 +164,16 @@ export class NotesStore {
     const index = this.read(meta.scope).filter(n => n.id !== meta.id);
     index.push({ ...meta });
     await this.write(meta.scope, index);
+    if (attachments && attachments.length > 0) {
+      const dir = this.attachmentsDirUri(meta);
+      await vscode.workspace.fs.createDirectory(dir);
+      for (const att of attachments) {
+        await vscode.workspace.fs.writeFile(
+          vscode.Uri.joinPath(dir, att.filename),
+          att.bytes,
+        );
+      }
+    }
     return meta;
   }
 
@@ -132,6 +214,14 @@ export class NotesStore {
       await vscode.workspace.fs.delete(this.uriFor(note));
     } catch {
       // file already gone — index update is what matters
+    }
+    try {
+      await vscode.workspace.fs.delete(this.attachmentsDirUri(note), {
+        recursive: true,
+        useTrash: false,
+      });
+    } catch {
+      // dir didn't exist — fine
     }
     return note;
   }

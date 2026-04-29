@@ -602,6 +602,45 @@ window.addEventListener('message', evt => {
   }
 });
 
+function bindDragDropAttachments() {
+  const stop = (evt: DragEvent) => {
+    if (!evt.dataTransfer) return;
+    const types = evt.dataTransfer.types;
+    if (!types || ![...types].includes('Files')) return;
+    evt.preventDefault();
+  };
+  document.addEventListener('dragenter', stop);
+  document.addEventListener('dragover', stop);
+  document.addEventListener('drop', evt => {
+    if (!evt.dataTransfer || evt.dataTransfer.files.length === 0) return;
+    evt.preventDefault();
+    const files = Array.from(evt.dataTransfer.files);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result !== 'string') return;
+        const commaIdx = result.indexOf(',');
+        const bytesBase64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
+        vscode.postMessage({
+          type: 'attachUpload',
+          name: file.name,
+          bytesBase64,
+        });
+      };
+      reader.onerror = () => {
+        vscode.postMessage({
+          type: 'showError',
+          message: `Mark It Down: failed to read ${file.name}`,
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+}
+
+bindDragDropAttachments();
+
 // Tell the host we're ready
 vscode.postMessage({ type: 'ready' });
 
