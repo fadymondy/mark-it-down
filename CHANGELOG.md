@@ -4,6 +4,17 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+### Added — v2.0: Per-token highlight.js theme mapping (#51)
+
+- All 25 bundled themes now ship with a coherent code-highlight palette tuned against their chrome (keyword, built-in, string, number, comment, fn, type, variable, operator, params, meta, regex, title, tag, attribute)
+- New `packages/core/src/themes/hljsCss.ts`: pure helpers `deriveHljsTokens` (algorithmic mapping from chrome palette → token colours), `hljsTokensFor` (curated overrides + derived fallback), `hljsCssFor` (emits the CSS rules)
+- Curated palettes for the marquee themes: github-light/dark, dracula, one-dark/light, monokai, solarized-light/dark, tokyo-night, nord, gruvbox-light/dark, rose-pine, cobalt2 — using each ecosystem's canonical token colours
+- Algorithmic mapping for the rest (Ayu, Material, Night Owl, Oceanic Next, Snazzy, Palenight, Tokyo Night Light, Nord Light) — derived from the theme's own link / accent / fgMuted so the highlight palette never fights the chrome
+- Webview pipeline (`webviewBuilder.ts`) emits the per-theme hljs CSS right after the existing `:root[data-theme=…]` chrome override
+- Published static site (`buildSiteAssets`) appends the same per-theme rules after the bundled hljs base stylesheet so deployed sites match local rendering
+- Updated `docs/themes.md` with a new "Per-token highlight.js palette (#51)" section explaining derivation, curation, where it lands, and what's still up for grabs
+- 9 new unit tests across `deriveHljsTokens` (link → keyword, accent → built-in, fgMuted → comment), `hljsTokensFor` (curated overrides for github-light + dracula, derived fallback), `hljsCssFor` (every standard hljs class present, .hljs base color uses fg, every bundled theme emits valid CSS), and parity (every theme resolves to a fully-populated HljsTokens object)
+
 ### Added — v2.0: Slideshow live reload (#50)
 
 - `Mark It Down: Slideshow: Preview Local` no longer needs to be re-run on each edit — the preview panel hot-reloads on every keystroke (debounced 120 ms) and on explicit save (no debounce); slide position is preserved across rebuilds

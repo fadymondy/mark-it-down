@@ -38,5 +38,6 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | #48 — ePub export (single + category bundle) | shipped | [epub-export.md](epub-export.md) |
 | #49 — i18n (es / fr / de / ar with RTL + parity CI) | shipped | [i18n.md](i18n.md) |
 | #50 — Slideshow preview live reload | shipped | [slideshow-live-reload.md](slideshow-live-reload.md) |
+| #51 — Per-token highlight.js theme mapping for the 25 themes | shipped | [themes.md](themes.md#per-token-highlightjs-palette-51) |
 
 Each feature gets its own page when it ships. New pages should follow the [notes-sidebar.md](notes-sidebar.md) shape: at-a-glance table, settings, workflows, edge cases, and a "what it unblocks" section.

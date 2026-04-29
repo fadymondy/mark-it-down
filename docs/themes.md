@@ -116,7 +116,48 @@ When `auto` is selected, mermaid follows the VSCode color theme directly via the
 - **Theme switch resets cursor**: changing the theme reloads the webview HTML, which destroys the CodeMirror EditorView. Cursor and selection in Edit mode are reset to position 0. Future work: live-swap CSS variables without rebuilding the HTML.
 - **High-contrast themes**: not yet bundled — VSCode's high-contrast modes are followed in `auto`. Adding `hc-light` / `hc-dark` palettes is a future addition.
 - **Mermaid in light themes**: mermaid's `default` theme looks fine on most light backgrounds; if a specific light bundled theme has poor contrast with mermaid edges, it's tracked as polish (not a blocker).
-- **Theme syntax-highlighting tokens**: the bundled themes only define the renderer palette, not highlight.js token colors. highlight.js uses its own dark/light common stylesheet; per-theme highlight tokens are a future addition.
+- **Theme syntax-highlighting tokens**: as of #51, every theme also gets a per-token highlight.js palette. See the section below for how it's wired.
+
+## Per-token highlight.js palette (#51)
+
+Every bundled theme gets a coherent code-highlight palette tuned against
+its chrome — keywords, strings, comments, types, fn names, regex, etc.
+all match the surrounding theme rather than sitting on top of a generic
+`atom-one-dark` base.
+
+### How it's derived
+
+- Default mapping from `packages/core/src/themes/hljsCss.ts`:
+  `keyword → palette.link`, `built-in → palette.accent`,
+  `comment → palette.fgMuted`, `fn → palette.link`,
+  `string → palette.linkHover`, `variable → palette.fg`, etc.
+- Curated overrides per theme — github-light/dark, dracula, one-dark/light,
+  monokai, solarized-light/dark, tokyo-night, nord, gruvbox-light/dark,
+  rose-pine, cobalt2 — use the well-known community palettes for those
+  ecosystems instead of the derived defaults.
+- All 25 themes resolve to a fully-populated `HljsTokens` object via
+  `hljsTokensFor(theme)`; `hljsCssFor(theme)` emits the matching CSS.
+
+### Where it lands
+
+- **Webview**: `webviewBuilder.ts` emits the per-theme block right after
+  the existing chrome `:root[data-theme=…]` override. Marked still
+  produces `<span class="hljs-keyword">` etc.; our CSS overrides paint
+  them.
+- **Published site**: `buildSiteAssets(palette, kindIsDark, theme)`
+  appends the same per-theme rules after the bundled hljs base
+  stylesheet, so deployed sites match local rendering.
+
+### Tradeoffs
+
+- 25 themes ship hand-tuned for the marquee ones + algorithmic for the
+  rest. The algorithmic mapping is correct but conservative — PRs to
+  curate Ayu, Material, Night Owl, Oceanic Next, Snazzy, Palenight,
+  Tokyo Night Light, Nord Light against their canonical token palettes
+  are welcome.
+- The bundled hljs stylesheet (`atom-one-dark` for dark-kind, `github`
+  for light-kind) still loads as a base; our per-theme rules override
+  it. This costs ~2KB extra CSS but keeps the load path simple.
 
 ## Why not `@orchestra-mcp/theme`?
 

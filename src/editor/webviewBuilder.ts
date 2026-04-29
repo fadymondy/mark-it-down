@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { findTheme, paletteToCss } from '../themes/themes';
+import { hljsCssFor } from '../../packages/core/src/themes/hljsCss';
 
 const NONCE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
@@ -24,6 +25,7 @@ export function buildWebviewHtml(
   const themeOverride = themeDef
     ? `:root[data-theme="${theme}"] { ${paletteToCss(themeDef.palette)} color-scheme: ${themeDef.kind}; }`
     : '';
+  const hljsOverride = themeDef ? hljsCssFor(themeDef) : '';
 
   return /* html */ `<!DOCTYPE html>
 <html lang="en" data-theme="${theme}" data-theme-kind="${themeDef?.kind ?? 'auto'}">
@@ -53,6 +55,7 @@ export function buildWebviewHtml(
       --accent: var(--vscode-textLink-foreground);
     }
     ${themeOverride}
+    ${hljsOverride}
     html, body { margin: 0; padding: 0; height: 100%; }
     body {
       font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
