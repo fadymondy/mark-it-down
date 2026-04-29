@@ -7,6 +7,7 @@ import { log } from '../warehouse/warehouseLog';
 import { findTheme } from '../themes/themes';
 import { PublishConfig, readPublishConfig } from './publishConfig';
 import { buildSiteAssets, PageInput, renderIndex, renderPage } from './staticGenerator';
+import lunr from 'lunr';
 
 export interface PublishResult {
   pages: number;
@@ -191,6 +192,28 @@ export class PublishManager {
       vscode.Uri.file(path.join(assetsDir, 'style.css')),
       new TextEncoder().encode(assets.pageCss),
     );
+
+    // Lunr search index — built from page title + plain-text body
+    const docs = pages.map(p => ({
+      id: p.pathFromRoot,
+      title: p.title,
+      body: stripMarkdown(p.markdown),
+    }));
+    const index = lunr(function () {
+      this.ref('id');
+      this.field('title', { boost: 5 });
+      this.field('body');
+      docs.forEach(d => this.add(d));
+    });
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.file(path.join(assetsDir, 'search-index.json')),
+      new TextEncoder().encode(
+        JSON.stringify({
+          index: index.toJSON(),
+          docs: docs.map(d => ({ id: d.id, title: d.title, snippet: d.body.slice(0, 200) })),
+        }),
+      ),
+    );
     await vscode.workspace.fs.writeFile(
       vscode.Uri.file(path.join(assetsDir, 'site.js')),
       new TextEncoder().encode(assets.clientJs),
@@ -231,6 +254,19 @@ export class PublishManager {
   private pageUrl(wh: WarehouseConfig, pub: PublishConfig, relative: string): string {
     return `${this.siteUrl(wh, pub).replace(/\/?$/, '/')}${relative}`;
   }
+}
+
+function stripMarkdown(md: string): string {
+  // Cheap text extractor — strip code fences, mermaid blocks, html tags,
+  // and link / heading / emphasis markers so the search index is on prose.
+  return md
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[#>*_`~|-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function slugify(input: string): string {
