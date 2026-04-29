@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { ipcEndpoint } from './ipcProtocol';
 
 interface ClientTarget {
   id: 'claude-desktop' | 'claude-code';
@@ -65,9 +66,10 @@ async function applyInstall(
     return;
   }
   const notesDir = path.join(context.globalStorageUri.fsPath, 'notes');
+  const ipcSock = ipcEndpoint(context.globalStorageUri.fsPath);
   const entry = {
     command: process.execPath,
-    args: [serverPath, '--notes-dir', notesDir],
+    args: [serverPath, '--notes-dir', notesDir, '--ipc-sock', ipcSock],
   };
   let raw = '{}';
   try {

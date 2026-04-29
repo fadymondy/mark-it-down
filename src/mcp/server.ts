@@ -3,22 +3,24 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { NotesAdapter } from './notesAdapter';
+import { IpcClient } from './ipcClient';
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.notesDir) {
   console.error('mark-it-down-mcp: missing required --notes-dir <path>');
-  console.error('usage: mark-it-down-mcp --notes-dir <path-to-globalStorage/notes>');
+  console.error('usage: mark-it-down-mcp --notes-dir <path-to-globalStorage/notes> [--ipc-sock <path>]');
   process.exit(2);
 }
 
 const adapter = new NotesAdapter(args.notesDir);
+const ipcClient = args.ipcSock ? new IpcClient(args.ipcSock) : undefined;
 
 const server = new McpServer(
-  { name: 'mark-it-down', version: '0.9.0' },
+  { name: 'mark-it-down', version: '0.9.1' },
   {
     capabilities: { tools: {} },
     instructions:
-      'Mark It Down — markdown notes from the VSCode extension. Use list_notes to discover, get_note to read, create/update/delete_note to mutate. Active-editor introspection (get_active_markdown / list_open_md) requires the extension to be running and is not available in this transport.',
+      'Mark It Down — markdown notes from the VSCode extension. Use list_notes to discover, get_note to read, create/update/delete_note to mutate. get_active_markdown + list_open_md introspect the running VSCode editor when --ipc-sock points at a live extension; otherwise they degrade to a clear error.',
   },
 );
 
@@ -130,39 +132,74 @@ server.registerTool(
   'get_active_markdown',
   {
     description:
-      'Return the markdown currently open in the active Mark It Down editor. ' +
-      'Requires the VSCode extension to be running with IPC enabled (not yet implemented in v0.9).',
+      'Return the markdown currently open in the active Mark It Down editor. Requires --ipc-sock to be set + the VSCode extension to be running.',
     inputSchema: {},
   },
-  async () => ({
-    isError: true,
-    content: [
-      {
-        type: 'text',
-        text: 'get_active_markdown requires extension IPC — not available in v0.9 stdio mode. Use list_notes / get_note for warehouse access instead.',
-      },
-    ],
-  }),
+  async () => {
+    if (!ipcClient) {
+      return ipcUnavailable('get_active_markdown');
+    }
+    try {
+      const result = await ipcClient.getActiveMarkdown();
+      if (!result) {
+        return {
+          content: [{ type: 'text', text: 'No markdown editor is currently active.' }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (err) {
+      return ipcError('get_active_markdown', err as Error);
+    }
+  },
 );
 
 server.registerTool(
   'list_open_md',
   {
     description:
-      'List all open .md tabs in the running VSCode. ' +
-      'Requires the VSCode extension to be running with IPC enabled (not yet implemented in v0.9).',
+      'List all open .md / .mdx tabs in the running VSCode. Requires --ipc-sock to be set + the VSCode extension to be running.',
     inputSchema: {},
   },
-  async () => ({
+  async () => {
+    if (!ipcClient) {
+      return ipcUnavailable('list_open_md');
+    }
+    try {
+      const result = await ipcClient.listOpenMarkdown();
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (err) {
+      return ipcError('list_open_md', err as Error);
+    }
+  },
+);
+
+function ipcUnavailable(tool: string) {
+  return {
     isError: true,
     content: [
       {
-        type: 'text',
-        text: 'list_open_md requires extension IPC — not available in v0.9 stdio mode.',
+        type: 'text' as const,
+        text: `${tool} requires --ipc-sock to be set when the MCP server is launched. The Mark It Down extension passes this automatically when you run "Install MCP for Claude Desktop / Code" from a workspace where the extension is loaded.`,
       },
     ],
-  }),
-);
+  };
+}
+
+function ipcError(tool: string, err: Error) {
+  return {
+    isError: true,
+    content: [
+      {
+        type: 'text' as const,
+        text: `${tool} failed to reach the VSCode extension: ${err.message}. The extension may not be running, or the socket path is stale. Try restarting VSCode.`,
+      },
+    ],
+  };
+}
 
 const transport = new StdioServerTransport();
 server.connect(transport).then(
@@ -177,6 +214,7 @@ server.connect(transport).then(
 
 interface CliArgs {
   notesDir?: string;
+  ipcSock?: string;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -184,6 +222,9 @@ function parseArgs(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--notes-dir' && argv[i + 1]) {
       out.notesDir = argv[i + 1];
+      i++;
+    } else if (argv[i] === '--ipc-sock' && argv[i + 1]) {
+      out.ipcSock = argv[i + 1];
       i++;
     }
   }
