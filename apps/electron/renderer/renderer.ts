@@ -53,6 +53,16 @@ interface NoteEntry {
   tags: string[];
   created: string;
   updated: string;
+  warehouse?: string;
+  pushedAt?: string;
+}
+
+interface Warehouse {
+  id: string;
+  name: string;
+  repo: string;
+  branch?: string;
+  subdir?: string;
 }
 
 interface Mid {
@@ -68,6 +78,9 @@ interface Mid {
   notesRename(workspace: string, id: string, title: string): Promise<NoteEntry | null>;
   notesDelete(workspace: string, id: string): Promise<boolean>;
   notesTag(workspace: string, id: string, tags: string[]): Promise<NoteEntry | null>;
+  warehousesList(workspace: string): Promise<Warehouse[]>;
+  notesAttachWarehouse(workspace: string, id: string, warehouseId: string | null): Promise<NoteEntry | null>;
+  notesMarkPushed(workspace: string, id: string): Promise<NoteEntry | null>;
   ghAuthStatus(): Promise<{ authenticated: boolean; output: string }>;
   repoStatus(workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }>;
   repoConnect(workspace: string, repoSlug: string): Promise<{ url: string }>;
@@ -125,6 +138,7 @@ let sidebarMode: 'files' | 'notes' = 'files';
 let notes: NoteEntry[] = [];
 let notesFilterText = '';
 let recentFiles: string[] = [];
+let warehouses: Warehouse[] = [];
 const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
 
@@ -1619,6 +1633,7 @@ async function loadNotes(): Promise<void> {
     return;
   }
   notes = await window.mid.notesList(currentFolder);
+  warehouses = await window.mid.warehousesList(currentFolder);
   renderNotes();
 }
 
@@ -1647,6 +1662,13 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
   meta.className = 'mid-note-meta';
   const updated = new Date(note.updated).toLocaleDateString();
   meta.textContent = updated;
+  if (note.warehouse) {
+    const wh = warehouses.find(w => w.id === note.warehouse);
+    const chip = document.createElement('span');
+    chip.className = 'mid-note-tag mid-note-warehouse';
+    chip.textContent = `↗ ${wh?.name ?? note.warehouse}`;
+    meta.appendChild(chip);
+  }
   if (note.tags.length > 0) {
     const tags = document.createElement('div');
     tags.className = 'mid-note-tags';
@@ -1671,9 +1693,15 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
   row.addEventListener('contextmenu', e => {
     e.preventDefault();
     e.stopPropagation();
+    const warehouseLabel = note.warehouse
+      ? `Warehouse: ${(warehouses.find(w => w.id === note.warehouse)?.name) ?? note.warehouse}`
+      : 'Connect to warehouse…';
     openContextMenu([
       { icon: 'show', label: 'Open', action: () => void openNote(note) },
       { icon: 'edit', label: 'Rename…', action: () => void renameNote(note) },
+      { separator: true, label: '' },
+      { icon: 'github', label: 'Push to GitHub now', action: () => void pushNote(note) },
+      { icon: 'link', label: warehouseLabel, action: () => void promptAttachWarehouse(note) },
       { separator: true, label: '' },
       { icon: 'markdown', label: 'Export Markdown', action: () => void exportNote(note, 'md') },
       { icon: 'html5', label: 'Export HTML', action: () => void exportNote(note, 'html') },
@@ -1686,6 +1714,54 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
     ], e.clientX, e.clientY);
   });
   return row;
+}
+
+async function pushNote(note: NoteEntry): Promise<void> {
+  if (!currentFolder) return;
+  const status = await window.mid.repoStatus(currentFolder);
+  if (!status.initialized || !status.remote) {
+    flashStatus('No GitHub repo connected — use the status bar');
+    return;
+  }
+  const result = await window.mid.repoSync(currentFolder, `notes: ${note.title}`);
+  if (result.ok) {
+    await window.mid.notesMarkPushed(currentFolder, note.id);
+    const updated = notes.find(n => n.id === note.id);
+    if (updated) updated.pushedAt = new Date().toISOString();
+    flashStatus(`Pushed "${note.title}"`);
+  } else {
+    flashStatus(`Push failed: ${result.error?.split('\n')[0] ?? 'unknown'}`);
+  }
+  await refreshRepoStatus();
+}
+
+async function promptAttachWarehouse(note: NoteEntry): Promise<void> {
+  if (!currentFolder) return;
+  if (warehouses.length === 0) {
+    const ok = await midConfirm(
+      'No warehouses configured',
+      'Add warehouses by editing <workspace>/.mid/warehouse.json with shape:\n\n{ "warehouses": [{ "id": "personal", "name": "Personal", "repo": "owner/repo" }] }\n\nReload notes after editing.',
+    );
+    if (!ok) return;
+    warehouses = await window.mid.warehousesList(currentFolder);
+    if (warehouses.length === 0) return;
+  }
+  const choices = warehouses.map(w => `${w.id} — ${w.name} (${w.repo})`).join('\n');
+  const pick = await midPrompt('Attach to warehouse', `Available:\n${choices}\n\nEnter id (blank to detach):`, note.warehouse ?? '');
+  if (pick === null) return;
+  const picked = pick.trim();
+  if (picked === '') {
+    await window.mid.notesAttachWarehouse(currentFolder, note.id, null);
+    delete note.warehouse;
+  } else {
+    if (!warehouses.find(w => w.id === picked)) {
+      flashStatus(`Unknown warehouse: ${picked}`);
+      return;
+    }
+    await window.mid.notesAttachWarehouse(currentFolder, note.id, picked);
+    note.warehouse = picked;
+  }
+  renderNotes();
 }
 
 async function exportNote(note: NoteEntry, format: ExportFormat): Promise<void> {
