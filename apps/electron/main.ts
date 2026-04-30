@@ -112,7 +112,10 @@ ipcMain.handle('mid:write-file', async (_e, filePath: string, content: string) =
 ipcMain.handle('mid:open-file-dialog', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
-    filters: [{ name: 'Markdown', extensions: ['md', 'mdx', 'markdown'] }],
+    filters: [
+      { name: 'Markdown', extensions: ['md', 'mdx', 'markdown'] },
+      { name: 'Mermaid', extensions: ['mmd', 'mermaid'] },
+    ],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   const filePath = result.filePaths[0];
