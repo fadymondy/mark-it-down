@@ -2,8 +2,11 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, MenuItemConstructorOptions, 
 import { autoUpdater } from 'electron-updater';
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { fork, ChildProcess } from 'child_process';
+import { fork, ChildProcess, execFile } from 'child_process';
 import * as os from 'os';
+import { promisify } from 'util';
+
+const execFileP = promisify(execFile);
 
 const isDev = process.env.MID_DEV === '1' || !app.isPackaged;
 const updateState = {
@@ -213,6 +216,107 @@ ipcMain.handle('mid:notes-tag', async (_e, workspace: string, id: string, tags: 
   note.updated = new Date().toISOString();
   await writeNotes(workspace, notes);
   return note;
+});
+
+async function runGit(workspace: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFileP('git', args, { cwd: workspace });
+}
+
+ipcMain.handle('mid:gh-auth-status', async () => {
+  try {
+    const { stdout } = await execFileP('gh', ['auth', 'status']);
+    return { authenticated: true, output: stdout };
+  } catch (err) {
+    const message = (err as { stderr?: string; message: string }).stderr ?? (err as Error).message;
+    return { authenticated: false, output: message };
+  }
+});
+
+ipcMain.handle('mid:repo-status', async (_e, workspace: string) => {
+  try {
+    const { stdout } = await runGit(workspace, ['status', '--porcelain=v2', '--branch']);
+    let branch = '';
+    let ahead = 0;
+    let behind = 0;
+    let dirty = 0;
+    for (const line of stdout.split('\n')) {
+      if (line.startsWith('# branch.head ')) branch = line.slice('# branch.head '.length);
+      else if (line.startsWith('# branch.ab ')) {
+        const parts = line.slice('# branch.ab '.length).split(' ');
+        ahead = Math.abs(Number(parts[0] ?? 0));
+        behind = Math.abs(Number(parts[1] ?? 0));
+      } else if (line.trim()) dirty++;
+    }
+    let remote = '';
+    try {
+      const r = await runGit(workspace, ['config', '--get', 'remote.origin.url']);
+      remote = r.stdout.trim();
+    } catch { /* no remote — ok */ }
+    return { initialized: true, branch, ahead, behind, dirty, remote };
+  } catch {
+    return { initialized: false, branch: '', ahead: 0, behind: 0, dirty: 0, remote: '' };
+  }
+});
+
+ipcMain.handle('mid:repo-connect', async (_e, workspace: string, repoSlug: string) => {
+  // 1. Ensure git initialized
+  try {
+    await runGit(workspace, ['rev-parse', '--git-dir']);
+  } catch {
+    await runGit(workspace, ['init', '-b', 'main']);
+  }
+  // 2. Build remote URL — prefer https with gh credentials.
+  const url = `https://github.com/${repoSlug}.git`;
+  // 3. Add or update origin
+  try {
+    await runGit(workspace, ['remote', 'set-url', 'origin', url]);
+  } catch {
+    await runGit(workspace, ['remote', 'add', 'origin', url]);
+  }
+  // 4. Initial commit if no HEAD yet
+  try {
+    await runGit(workspace, ['rev-parse', '--verify', 'HEAD']);
+  } catch {
+    await runGit(workspace, ['add', '-A']);
+    try {
+      await runGit(workspace, ['commit', '-m', 'Initial commit from Mark It Down']);
+    } catch { /* nothing staged — fine */ }
+  }
+  return { url };
+});
+
+ipcMain.handle('mid:repo-sync', async (_e, workspace: string, message: string) => {
+  const result: { steps: string[]; ok: boolean; error?: string } = { steps: [], ok: true };
+  try {
+    const { stdout: status } = await runGit(workspace, ['status', '--porcelain']);
+    if (status.trim()) {
+      await runGit(workspace, ['add', '-A']);
+      result.steps.push('staged changes');
+      await runGit(workspace, ['commit', '-m', message || `notes: sync ${new Date().toISOString()}`]);
+      result.steps.push('committed');
+    } else {
+      result.steps.push('clean');
+    }
+    try {
+      await runGit(workspace, ['pull', '--rebase', '--autostash']);
+      result.steps.push('pulled');
+    } catch (err) {
+      result.ok = false;
+      result.error = (err as { stderr?: string }).stderr ?? (err as Error).message;
+      return result;
+    }
+    try {
+      await runGit(workspace, ['push']);
+      result.steps.push('pushed');
+    } catch (err) {
+      result.ok = false;
+      result.error = (err as { stderr?: string }).stderr ?? (err as Error).message;
+    }
+  } catch (err) {
+    result.ok = false;
+    result.error = (err as Error).message;
+  }
+  return result;
 });
 
 ipcMain.handle('mid:patch-app-state', async (_e, patch: Partial<AppState>) => {

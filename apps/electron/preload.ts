@@ -56,6 +56,14 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:notes-delete', workspace, id),
   notesTag: (workspace: string, id: string, tags: string[]): Promise<NoteEntry | null> =>
     ipcRenderer.invoke('mid:notes-tag', workspace, id, tags),
+  ghAuthStatus: (): Promise<{ authenticated: boolean; output: string }> =>
+    ipcRenderer.invoke('mid:gh-auth-status'),
+  repoStatus: (workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }> =>
+    ipcRenderer.invoke('mid:repo-status', workspace),
+  repoConnect: (workspace: string, repoSlug: string): Promise<{ url: string }> =>
+    ipcRenderer.invoke('mid:repo-connect', workspace, repoSlug),
+  repoSync: (workspace: string, message: string): Promise<{ steps: string[]; ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('mid:repo-sync', workspace, message),
   saveAs: (defaultName: string, content: string | ArrayBuffer, filters: { name: string; extensions: string[] }[]): Promise<string | null> =>
     ipcRenderer.invoke('mid:save-as', defaultName, content, filters),
   exportPDF: (defaultName: string): Promise<string | null> =>

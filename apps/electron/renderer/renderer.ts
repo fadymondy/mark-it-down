@@ -63,6 +63,10 @@ interface Mid {
   notesRename(workspace: string, id: string, title: string): Promise<NoteEntry | null>;
   notesDelete(workspace: string, id: string): Promise<boolean>;
   notesTag(workspace: string, id: string, tags: string[]): Promise<NoteEntry | null>;
+  ghAuthStatus(): Promise<{ authenticated: boolean; output: string }>;
+  repoStatus(workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }>;
+  repoConnect(workspace: string, repoSlug: string): Promise<{ url: string }>;
+  repoSync(workspace: string, message: string): Promise<{ steps: string[]; ok: boolean; error?: string }>;
   saveAs(defaultName: string, content: string | ArrayBuffer, filters: { name: string; extensions: string[] }[]): Promise<string | null>;
   exportPDF(defaultName: string): Promise<string | null>;
   saveFileDialog(defaultName: string, content: string): Promise<string | null>;
@@ -97,6 +101,10 @@ const sidebarNotesHeader = document.getElementById('sidebar-notes-header') as HT
 const notesListEl = document.getElementById('notes-list') as HTMLDivElement;
 const notesFilter = document.getElementById('notes-filter') as HTMLInputElement;
 const notesNewBtn = document.getElementById('notes-new') as HTMLButtonElement;
+const repoBar = document.getElementById('repo-bar') as HTMLElement;
+const repoStatusEl = document.getElementById('repo-status') as HTMLSpanElement;
+const repoConnectBtn = document.getElementById('repo-connect') as HTMLButtonElement;
+const repoSyncBtn = document.getElementById('repo-sync') as HTMLButtonElement;
 
 let currentText = '';
 let currentPath: string | null = null;
@@ -835,6 +843,7 @@ function applyFolder(folderPath: string, tree: TreeEntry[]): void {
   currentFolder = folderPath;
   document.body.classList.add('has-sidebar');
   sidebar.hidden = false;
+  repoBar.hidden = false;
   sidebarFolderName.textContent = folderPath.split('/').pop() ?? folderPath;
   sidebarFolderName.title = folderPath;
   treeRoot.replaceChildren(...renderTree(tree));
@@ -844,6 +853,58 @@ function applyFolder(folderPath: string, tree: TreeEntry[]): void {
     empty.textContent = 'No markdown files in this folder.';
     treeRoot.appendChild(empty);
   }
+  void refreshRepoStatus();
+}
+
+async function refreshRepoStatus(): Promise<void> {
+  if (!currentFolder) return;
+  const s = await window.mid.repoStatus(currentFolder);
+  if (!s.initialized || !s.remote) {
+    repoStatusEl.textContent = s.initialized ? 'No remote' : 'No repo connected';
+    repoStatusEl.title = s.remote || '';
+    repoSyncBtn.hidden = true;
+    return;
+  }
+  const slug = parseSlugFromUrl(s.remote);
+  const branch = s.branch || 'detached';
+  const counters: string[] = [];
+  if (s.ahead) counters.push(`↑${s.ahead}`);
+  if (s.behind) counters.push(`↓${s.behind}`);
+  if (s.dirty) counters.push(`±${s.dirty}`);
+  const counterText = counters.length ? ` ${counters.join(' ')}` : '';
+  repoStatusEl.textContent = `${slug} · ${branch}${counterText}`;
+  repoStatusEl.title = s.remote;
+  repoSyncBtn.hidden = false;
+}
+
+function parseSlugFromUrl(url: string): string {
+  const m = /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?\/?$/.exec(url);
+  return m ? m[1] : url;
+}
+
+async function promptConnectRepo(): Promise<void> {
+  if (!currentFolder) return;
+  const auth = await window.mid.ghAuthStatus();
+  if (!auth.authenticated) {
+    const proceed = window.confirm(`gh CLI is not authenticated.\n\n${auth.output}\n\nRun "gh auth login" in a terminal first, then retry.\n\nContinue anyway?`);
+    if (!proceed) return;
+  }
+  const slug = window.prompt('GitHub repo (owner/name):');
+  if (!slug || !/^[^/]+\/[^/]+$/.test(slug)) return;
+  await window.mid.repoConnect(currentFolder, slug);
+  flashStatus(`Connected to ${slug}`);
+  await refreshRepoStatus();
+}
+
+async function syncRepo(): Promise<void> {
+  if (!currentFolder) return;
+  repoSyncBtn.disabled = true;
+  const message = window.prompt('Commit message (leave empty for auto):') ?? '';
+  const result = await window.mid.repoSync(currentFolder, message);
+  repoSyncBtn.disabled = false;
+  if (result.ok) flashStatus(`Synced — ${result.steps.join(', ')}`);
+  else flashStatus(`Sync failed: ${result.error?.split('\n')[0] ?? 'unknown'}`);
+  await refreshRepoStatus();
 }
 
 function renderTree(entries: TreeEntry[]): HTMLElement[] {
@@ -1026,6 +1087,8 @@ notesFilter.addEventListener('input', () => {
   notesFilterText = notesFilter.value.trim().toLowerCase();
   renderNotes();
 });
+repoConnectBtn.addEventListener('click', () => void promptConnectRepo());
+repoSyncBtn.addEventListener('click', () => void syncRepo());
 
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
