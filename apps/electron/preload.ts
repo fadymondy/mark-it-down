@@ -84,6 +84,10 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:gh-repo-list'),
   ghRepoCreate: (slug: string, visibility: 'private' | 'public'): Promise<{ ok: boolean; url?: string; error?: string }> =>
     ipcRenderer.invoke('mid:gh-repo-create', slug, visibility),
+  ghDeviceFlowStart: (): Promise<{ ok: boolean; userCode?: string; verificationUri?: string; deviceCode?: string; interval?: number; error?: string }> =>
+    ipcRenderer.invoke('mid:gh-device-flow-start'),
+  ghDeviceFlowPoll: (deviceCode: string): Promise<{ ok: boolean; token?: string; pending?: boolean; error?: string }> =>
+    ipcRenderer.invoke('mid:gh-device-flow-poll', deviceCode),
   fileHistory: (workspace: string, filePath: string): Promise<{ commits: { hash: string; date: string; author: string; message: string; diff: string }[]; ok: boolean; error?: string }> =>
     ipcRenderer.invoke('mid:file-history', workspace, filePath),
   repoStatus: (workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }> =>

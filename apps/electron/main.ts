@@ -344,6 +344,58 @@ ipcMain.handle('mid:gh-auth-status', async () => {
   }
 });
 
+// GitHub OAuth device flow fallback when `gh` isn't installed.
+// v1: requests device code, returns user_code + verification_uri to the renderer,
+// then polls for the token. The OAuth client_id is a placeholder — registering a
+// real GitHub OAuth app is a follow-up for production builds.
+const MID_GH_CLIENT_ID = process.env.MID_GH_CLIENT_ID || 'Iv1.placeholder-client-id';
+ipcMain.handle('mid:gh-device-flow-start', async (): Promise<{ ok: boolean; userCode?: string; verificationUri?: string; deviceCode?: string; interval?: number; error?: string }> => {
+  try {
+    const res = await fetch('https://github.com/login/device/code', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: MID_GH_CLIENT_ID, scope: 'repo read:user' }),
+    });
+    const data = await res.json() as { user_code?: string; verification_uri?: string; device_code?: string; interval?: number; error_description?: string };
+    if (data.error_description) return { ok: false, error: data.error_description };
+    return {
+      ok: true,
+      userCode: data.user_code,
+      verificationUri: data.verification_uri,
+      deviceCode: data.device_code,
+      interval: data.interval ?? 5,
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('mid:gh-device-flow-poll', async (_e, deviceCode: string): Promise<{ ok: boolean; token?: string; pending?: boolean; error?: string }> => {
+  try {
+    const res = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: MID_GH_CLIENT_ID,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+    });
+    const data = await res.json() as { access_token?: string; error?: string; error_description?: string };
+    if (data.access_token) {
+      // v1: persist alongside app state (a real app should use keytar). Documented as follow-up.
+      await writeAppState({ ghToken: data.access_token } as Partial<AppState>);
+      return { ok: true, token: data.access_token };
+    }
+    if (data.error === 'authorization_pending' || data.error === 'slow_down') {
+      return { ok: true, pending: true };
+    }
+    return { ok: false, error: data.error_description ?? data.error ?? 'unknown' };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('mid:repo-status', async (_e, workspace: string) => {
   try {
     const { stdout } = await runGit(workspace, ['status', '--porcelain=v2', '--branch']);
@@ -591,9 +643,10 @@ interface AppState {
   previewMaxWidth?: number;
   recentFiles?: string[];
   codeExportGradient?: string;
-  pinnedFolders?: { path: string; name: string; icon: string; color: string }[];
+  pinnedFolders?: { path: string; name: string; icon: string; color: string; files?: string[] }[];
   workspaces?: { id: string; name: string; path: string }[];
   activeWorkspace?: string;
+  ghToken?: string;
 }
 
 function resolveMCPServerScript(): string {

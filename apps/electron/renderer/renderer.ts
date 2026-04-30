@@ -119,6 +119,8 @@ interface Mid {
   ghRepoList(): Promise<{ repos: { nameWithOwner: string; description: string; visibility: string }[]; ok: boolean; error?: string }>;
   ghRepoCreate(slug: string, visibility: 'private' | 'public'): Promise<{ ok: boolean; url?: string; error?: string }>;
   fileHistory(workspace: string, filePath: string): Promise<{ commits: { hash: string; date: string; author: string; message: string; diff: string }[]; ok: boolean; error?: string }>;
+  ghDeviceFlowStart(): Promise<{ ok: boolean; userCode?: string; verificationUri?: string; deviceCode?: string; interval?: number; error?: string }>;
+  ghDeviceFlowPoll(deviceCode: string): Promise<{ ok: boolean; token?: string; pending?: boolean; error?: string }>;
   repoStatus(workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }>;
   repoConnect(workspace: string, repoSlug: string): Promise<{ url: string }>;
   repoSync(workspace: string, message: string): Promise<{ steps: string[]; ok: boolean; error?: string }>;
@@ -1753,11 +1755,14 @@ async function promptConnectRepo(): Promise<void> {
   if (!currentFolder) return;
   const auth = await window.mid.ghAuthStatus();
   if (!auth.authenticated) {
-    const proceed = await midConfirm(
+    const useDeviceFlow = await midConfirm(
       'gh CLI not authenticated',
-      `${auth.output.split('\n')[0]}\n\nRun "gh auth login" in a terminal first, then retry. Continue anyway?`,
+      `${auth.output.split('\n')[0]}\n\nClick OK to authenticate via GitHub device-flow in your browser, or Cancel to type a slug manually.`,
     );
-    if (!proceed) return;
+    if (useDeviceFlow) {
+      const ok = await runGhDeviceFlow();
+      if (!ok) return;
+    }
   }
   // Pull list of user's repos via gh CLI for picker; fall back to free-text on failure.
   const listResult = await window.mid.ghRepoList();
@@ -1849,6 +1854,61 @@ function openRepoPicker(repos: { nameWithOwner: string; description: string; vis
   });
 }
 
+async function runGhDeviceFlow(): Promise<boolean> {
+  const start = await window.mid.ghDeviceFlowStart();
+  if (!start.ok || !start.userCode || !start.verificationUri || !start.deviceCode) {
+    await midConfirm('Device flow failed to start', start.error ?? 'Unknown error');
+    return false;
+  }
+  await navigator.clipboard.writeText(start.userCode).catch(() => undefined);
+  await window.mid.openExternal(start.verificationUri);
+  flashStatus(`Code ${start.userCode} copied — paste it in the browser`);
+  // Poll until token or timeout (5 minutes max).
+  const maxAttempts = Math.ceil((5 * 60) / (start.interval ?? 5));
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, (start.interval ?? 5) * 1000));
+    const result = await window.mid.ghDeviceFlowPoll(start.deviceCode);
+    if (result.ok && result.token) { flashStatus('GitHub authenticated'); return true; }
+    if (!result.ok) { await midConfirm('Auth failed', result.error ?? 'Unknown'); return false; }
+  }
+  await midConfirm('Auth timed out', 'No token received within 5 minutes.');
+  return false;
+}
+
+// Conflict banner for git pull --rebase failures
+let conflictBanner: HTMLDivElement | null = null;
+function showConflictBanner(message: string): void {
+  hideConflictBanner();
+  const banner = document.createElement('div');
+  banner.className = 'mid-conflict-banner';
+  banner.innerHTML = `
+    <span class="mid-conflict-icon">${iconHTML('x', 'mid-icon--sm')}</span>
+    <div class="mid-conflict-text">
+      <div class="mid-conflict-title">Merge conflict during pull-rebase</div>
+      <div class="mid-conflict-msg">${escapeHTML(message)}</div>
+    </div>
+    <button class="mid-btn mid-btn--secondary" data-conflict="abort">Abort rebase</button>
+    <button class="mid-btn mid-btn--secondary" data-conflict="keep-mine">Keep mine</button>
+    <button class="mid-btn mid-btn--secondary" data-conflict="keep-theirs">Keep theirs</button>
+    <button class="mid-btn mid-btn--ghost mid-btn--icon" data-conflict="dismiss" title="Dismiss">${iconHTML('x', 'mid-icon--sm')}</button>
+  `;
+  banner.addEventListener('click', e => {
+    const action = (e.target as HTMLElement).closest<HTMLElement>('[data-conflict]')?.dataset.conflict;
+    if (!action) return;
+    void handleConflictAction(action as 'abort' | 'keep-mine' | 'keep-theirs' | 'dismiss');
+  });
+  document.body.appendChild(banner);
+  conflictBanner = banner;
+}
+function hideConflictBanner(): void {
+  if (conflictBanner) { conflictBanner.remove(); conflictBanner = null; }
+}
+async function handleConflictAction(action: 'abort' | 'keep-mine' | 'keep-theirs' | 'dismiss'): Promise<void> {
+  if (action === 'dismiss') { hideConflictBanner(); return; }
+  flashStatus(`Conflict action: ${action} — run from terminal: git rebase --${action === 'abort' ? 'abort' : 'continue'}`);
+  hideConflictBanner();
+}
+
 async function showFileHistory(filePath: string): Promise<void> {
   if (!currentFolder) return;
   const result = await window.mid.fileHistory(currentFolder, filePath);
@@ -1896,8 +1956,15 @@ async function syncRepo(): Promise<void> {
   const message = (await midPrompt('Sync repo', 'Commit message (blank = auto)', '')) ?? '';
   const result = await window.mid.repoSync(currentFolder, message);
   repoSyncBtn.disabled = false;
-  if (result.ok) flashStatus(`Synced — ${result.steps.join(', ')}`);
-  else flashStatus(`Sync failed: ${result.error?.split('\n')[0] ?? 'unknown'}`);
+  if (result.ok) {
+    flashStatus(`Synced — ${result.steps.join(', ')}`);
+    hideConflictBanner();
+  } else {
+    flashStatus(`Sync failed: ${result.error?.split('\n')[0] ?? 'unknown'}`);
+    if (result.error && /conflict|merge/i.test(result.error)) {
+      showConflictBanner(result.error.split('\n')[0]);
+    }
+  }
   await refreshRepoStatus();
 }
 
