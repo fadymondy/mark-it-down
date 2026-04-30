@@ -347,12 +347,96 @@ function renderSpecCardHTML(meta: Record<string, unknown>, kind: SpecKind, icon:
   </aside>`;
 }
 
+interface FootnoteData {
+  defs: Map<string, string>;
+  refs: string[];
+}
+
+function preprocessFootnotes(md: string): { body: string; data: FootnoteData } {
+  const data: FootnoteData = { defs: new Map(), refs: [] };
+  // Strip definitions like `[^id]: text…` (multi-line until a blank line).
+  const lines = md.split('\n');
+  const remaining: string[] = [];
+  let collecting: { id: string; lines: string[] } | null = null;
+  for (const line of lines) {
+    const m = /^\[\^([^\]]+)\]:\s*(.*)$/.exec(line);
+    if (m) {
+      if (collecting) data.defs.set(collecting.id, collecting.lines.join(' ').trim());
+      collecting = { id: m[1], lines: [m[2]] };
+      continue;
+    }
+    if (collecting && /^\s+\S/.test(line)) {
+      collecting.lines.push(line.trim());
+      continue;
+    }
+    if (collecting) {
+      data.defs.set(collecting.id, collecting.lines.join(' ').trim());
+      collecting = null;
+    }
+    remaining.push(line);
+  }
+  if (collecting) data.defs.set(collecting.id, collecting.lines.join(' ').trim());
+  return { body: remaining.join('\n'), data };
+}
+
+function processFootnoteRefs(html: string, data: FootnoteData): string {
+  // Replace inline [^id] with sup anchors (skip occurrences inside code blocks).
+  return html.replace(/\[\^([^\]]+)\]/g, (match, id) => {
+    if (!data.defs.has(id)) return match;
+    if (!data.refs.includes(id)) data.refs.push(id);
+    const num = data.refs.indexOf(id) + 1;
+    return `<sup class="mid-fn-ref"><a href="#fn-${escapeHTML(id)}" id="fnref-${escapeHTML(id)}">${num}</a></sup>`;
+  });
+}
+
+function renderFootnotesSection(data: FootnoteData): string {
+  if (data.refs.length === 0) return '';
+  const items = data.refs.map((id) => {
+    const def = data.defs.get(id) ?? '';
+    return `<li id="fn-${escapeHTML(id)}"><span>${def}</span> <a href="#fnref-${escapeHTML(id)}" class="mid-fn-back" aria-label="Back to text">↩</a></li>`;
+  }).join('');
+  return `<aside class="mid-footnotes" aria-label="Footnotes"><h2>Footnotes</h2><ol>${items}</ol></aside>`;
+}
+
+function processDefinitionLists(scope: HTMLElement): void {
+  // Marked renders `Term\n: Definition` as a single <p> with the literal text.
+  // Detect <p> elements where lines form Term/colon-Definition pairs and
+  // convert into <dl>.
+  const paragraphs = Array.from(scope.querySelectorAll<HTMLParagraphElement>('p'));
+  for (const p of paragraphs) {
+    const text = p.innerText;
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) continue;
+    let valid = true;
+    const pairs: { term: string; def: string }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const term = lines[i];
+      const next = lines[i + 1];
+      if (!next || !next.startsWith(':')) { valid = false; break; }
+      pairs.push({ term, def: next.slice(1).trim() });
+      i++;
+    }
+    if (!valid || pairs.length === 0) continue;
+    const dl = document.createElement('dl');
+    dl.className = 'mid-dl';
+    for (const { term, def } of pairs) {
+      const dt = document.createElement('dt'); dt.textContent = term;
+      const dd = document.createElement('dd'); dd.textContent = def;
+      dl.append(dt, dd);
+    }
+    p.replaceWith(dl);
+  }
+}
+
 function renderMarkdown(md: string): string {
   const { meta, body } = extractFrontmatter(md);
-  const { html, mermaidBlocks } = coreRenderMarkdown(body);
+  const { body: bodyNoFn, data: fnData } = preprocessFootnotes(body);
+  const { html, mermaidBlocks } = coreRenderMarkdown(bodyNoFn);
+  const html2 = processFootnoteRefs(html, fnData);
   const container = document.createElement('div');
-  container.innerHTML = html;
+  container.innerHTML = html2 + renderFootnotesSection(fnData);
   applyMermaidPlaceholders(container, mermaidBlocks);
+  processDefinitionLists(container);
   const spec = detectSpecKind(currentPath);
   if (spec && meta) {
     return renderSpecCardHTML(meta, spec.kind, spec.icon) + container.innerHTML;
