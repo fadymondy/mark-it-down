@@ -13,7 +13,27 @@ const updateState = {
 
 let mainWindow: BrowserWindow | null = null;
 
+function resolveAppIcon(): string | undefined {
+  // In dev: use a 512px PNG so the dock/taskbar shows brand art.
+  // In packaged builds, electron-builder injects the platform icon.
+  if (!isDev) return undefined;
+  const candidates = [
+    path.join(process.cwd(), 'build/icons/512.png'),
+    path.join(__dirname, '../../build/icons/512.png'),
+  ];
+  for (const p of candidates) {
+    try {
+      require('fs').accessSync(p);
+      return p;
+    } catch {
+      // try next
+    }
+  }
+  return undefined;
+}
+
 async function createWindow(): Promise<void> {
+  const iconPath = resolveAppIcon();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -21,6 +41,7 @@ async function createWindow(): Promise<void> {
     minHeight: 480,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d1117' : '#ffffff',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -46,6 +67,12 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIcon = resolveAppIcon();
+    if (dockIcon) {
+      try { app.dock.setIcon(dockIcon); } catch { /* ignore dev convenience */ }
+    }
+  }
   await createWindow();
   Menu.setApplicationMenu(buildMenu());
   app.on('activate', () => {
