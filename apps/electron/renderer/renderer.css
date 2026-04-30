@@ -488,6 +488,39 @@ body.has-sidebar .mid-shell {
   color: var(--mid-fg-muted);
 }
 
+/* Conflict banner — shown above the preview on pull-rebase failures (#221) */
+.mid-conflict-banner {
+  position: fixed;
+  bottom: var(--mid-space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--mid-space-3);
+  padding: var(--mid-space-3) var(--mid-space-4);
+  background: var(--mid-bg);
+  border: 1px solid var(--mid-danger);
+  border-left-width: 4px;
+  border-radius: var(--mid-radius-lg);
+  box-shadow: var(--mid-shadow-lg);
+  z-index: var(--mid-z-modal);
+  max-width: 760px;
+}
+.mid-conflict-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--mid-danger);
+  color: #fff;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mid-conflict-text { flex: 1; min-width: 0; }
+.mid-conflict-title { font-weight: var(--mid-weight-semibold); font-size: var(--mid-font-size-sm); }
+.mid-conflict-msg { font-family: var(--mid-font-mono); font-size: var(--mid-font-size-xs); color: var(--mid-fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* Cursor-aware mermaid popout (#222) */
 .mid-mermaid-popout {
   position: fixed;
