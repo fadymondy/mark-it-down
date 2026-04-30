@@ -394,6 +394,95 @@ body.has-sidebar .mid-shell {
   color: var(--mid-fg-muted);
 }
 
+/* Launch loader overlay */
+.mid-loader {
+  position: fixed;
+  inset: 0;
+  z-index: var(--mid-z-toast);
+  display: grid;
+  place-items: center;
+  background: var(--mid-bg);
+  transition: opacity 400ms var(--mid-ease-out);
+  pointer-events: none;
+}
+.mid-loader.is-fading { opacity: 0; }
+.mid-loader-glyph {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid var(--mid-border);
+  border-top-color: var(--mid-fg);
+  animation: mid-loader-spin 900ms linear infinite;
+  margin-bottom: var(--mid-space-3);
+}
+.mid-loader-label {
+  font-size: var(--mid-font-size-sm);
+  color: var(--mid-fg-muted);
+  letter-spacing: 0.04em;
+}
+@keyframes mid-loader-spin { to { transform: rotate(360deg); } }
+
+/* Pin editor modal — title + icon thumbnails + color swatches */
+.mid-pin-editor {
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-lg);
+  background: var(--mid-bg);
+  color: var(--mid-fg);
+  box-shadow: var(--mid-shadow-lg);
+  width: min(420px, 92vw);
+}
+.mid-pin-editor::backdrop { background: rgba(0, 0, 0, 0.5); }
+.mid-pin-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-3);
+  padding: var(--mid-space-4);
+}
+.mid-pin-title { margin: 0; font-size: var(--mid-font-size-lg); font-weight: var(--mid-weight-semibold); }
+.mid-pin-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-1);
+  font-size: var(--mid-font-size-sm);
+  font-weight: var(--mid-weight-medium);
+  color: var(--mid-fg);
+}
+.mid-pin-icons {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+.mid-pin-icon-btn {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mid-bg);
+  color: var(--mid-fg-muted);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+}
+.mid-pin-icon-btn:hover { background: var(--mid-surface); color: var(--mid-fg); }
+.mid-pin-icon-btn.is-active { background: var(--mid-surface); color: var(--mid-fg); border-color: var(--mid-fg); }
+.mid-pin-colors {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+.mid-pin-color-btn {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.mid-pin-color-btn.is-active { border-color: var(--mid-fg); box-shadow: 0 0 0 1px var(--mid-bg) inset; }
+.mid-pin-actions { display: flex; justify-content: flex-end; gap: var(--mid-space-2); }
+
 /* Modal dialog (replaces window.prompt / window.confirm — unsupported in Electron) */
 .mid-dialog {
   margin: auto;
@@ -993,8 +1082,8 @@ main.splitting .mid-preview {
 }
 .mid-preview tr:last-child td { border-bottom: 0; }
 
-/* Header refinement v3 — always-visible sort affordance, more presence */
-.mid-preview thead { background: var(--mid-surface); }
+/* Header v4 — pure shadcn DataTable look (no thead bg) */
+.mid-preview thead { background: transparent; }
 .mid-preview th {
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1002,7 +1091,9 @@ main.splitting .mid-preview {
   font-weight: var(--mid-weight-semibold);
   color: var(--mid-fg-muted);
   padding: var(--mid-space-3) var(--mid-space-4);
-  border-bottom: 1px solid var(--mid-border-strong);
+  border-bottom: 1px solid var(--mid-border);
+  height: 40px;
+  white-space: nowrap;
 }
 
 /* Print mode — hides chrome so PDF export captures only the document */
