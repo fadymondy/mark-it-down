@@ -11,6 +11,7 @@ interface TreeEntry {
 
 interface AppState {
   lastFolder?: string;
+  splitRatio?: number;
 }
 
 interface Mid {
@@ -20,6 +21,7 @@ interface Mid {
   openFolderDialog(): Promise<{ folderPath: string; tree: TreeEntry[] } | null>;
   listFolderMd(folderPath: string): Promise<TreeEntry[]>;
   readAppState(): Promise<AppState>;
+  patchAppState(patch: Partial<AppState>): Promise<void>;
   saveFileDialog(defaultName: string, content: string): Promise<string | null>;
   getAppInfo(): Promise<{ version: string; platform: string; isDark: boolean; userData: string; documents: string }>;
   openExternal(url: string): Promise<void>;
@@ -30,9 +32,12 @@ interface Mid {
 }
 declare const window: Window & { mid: Mid };
 
+type Mode = 'view' | 'edit' | 'split';
+
 const root = document.getElementById('root') as HTMLElement;
 const filenameEl = document.getElementById('filename') as HTMLSpanElement;
 const btnView = document.getElementById('mode-view') as HTMLButtonElement;
+const btnSplit = document.getElementById('mode-split') as HTMLButtonElement;
 const btnEdit = document.getElementById('mode-edit') as HTMLButtonElement;
 const btnOpen = document.getElementById('open-btn') as HTMLButtonElement;
 const btnOpenFolder = document.getElementById('open-folder-btn') as HTMLButtonElement;
@@ -44,9 +49,11 @@ const treeRoot = document.getElementById('tree-root') as HTMLDivElement;
 
 let currentText = '';
 let currentPath: string | null = null;
-let currentMode: 'view' | 'edit' = 'view';
+let currentMode: Mode = 'split';
 let mermaidThemeKind = 0;
 let currentFolder: string | null = null;
+let splitRatio = 0.5;
+let renderTimer: number | null = null;
 const expandedDirs = new Set<string>();
 
 function applyTheme(isDark: boolean): void {
@@ -73,15 +80,26 @@ function renderMarkdown(md: string): string {
   return container.innerHTML;
 }
 
+function emptyStateHTML(): string {
+  return `<div class="empty-state"><h1>Mark It Down</h1><p>Open a folder with <kbd class="mid-kbd">Cmd/Ctrl+Shift+O</kbd> to browse, or open a single file with <kbd class="mid-kbd">Cmd/Ctrl+O</kbd>.</p></div>`;
+}
+
 function renderView(): void {
-  root.classList.remove('editing');
+  root.classList.remove('editing', 'splitting');
   root.classList.add('viewing');
   if (!currentText) {
-    root.innerHTML = `<div class="empty-state"><h1>Mark It Down</h1><p>Open a folder with <kbd class="mid-kbd">Cmd/Ctrl+Shift+O</kbd> to browse, or open a single file with <kbd class="mid-kbd">Cmd/Ctrl+O</kbd>.</p></div>`;
+    root.innerHTML = emptyStateHTML();
     return;
   }
-  root.innerHTML = renderMarkdown(currentText);
-  root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
+  const preview = document.createElement('div');
+  preview.className = 'mid-preview';
+  populatePreview(preview);
+  root.replaceChildren(preview);
+}
+
+function populatePreview(preview: HTMLElement): void {
+  preview.innerHTML = renderMarkdown(currentText);
+  preview.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
     const href = a.getAttribute('href');
     if (!href) return;
     if (href.startsWith('http://') || href.startsWith('https://')) {
@@ -91,11 +109,11 @@ function renderView(): void {
       });
     }
   });
-  applySyntaxHighlighting(root);
-  attachCodeCopyButtons(root);
-  attachHeadingAnchors(root);
-  attachImageLightbox(root);
-  root.querySelectorAll<HTMLDivElement>('.mermaid').forEach((el, i) => {
+  applySyntaxHighlighting(preview);
+  attachCodeCopyButtons(preview);
+  attachHeadingAnchors(preview);
+  attachImageLightbox(preview);
+  preview.querySelectorAll<HTMLDivElement>('.mermaid').forEach((el, i) => {
     const id = `mermaid-${Date.now()}-${i}`;
     const code = (el.textContent ?? '').trim();
     el.removeAttribute('data-processed');
@@ -206,24 +224,94 @@ function openLightbox(src: string, alt: string): void {
 }
 
 function renderEdit(): void {
-  root.classList.remove('viewing');
+  root.classList.remove('viewing', 'splitting');
   root.classList.add('editing');
+  const ta = buildEditor();
+  root.replaceChildren(ta);
+  ta.focus();
+}
+
+function renderSplit(): void {
+  root.classList.remove('viewing', 'editing');
+  root.classList.add('splitting');
+  if (!currentText && !currentPath) {
+    root.innerHTML = emptyStateHTML();
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-split';
+  wrap.style.gridTemplateColumns = `${splitRatio * 100}% 6px 1fr`;
+
+  const editor = buildEditor();
+  editor.classList.add('mid-split-editor');
+
+  const handle = document.createElement('div');
+  handle.className = 'mid-split-handle';
+  handle.setAttribute('role', 'separator');
+  handle.setAttribute('aria-orientation', 'vertical');
+  handle.addEventListener('mousedown', e => beginSplitDrag(e, wrap));
+
+  const preview = document.createElement('div');
+  preview.className = 'mid-preview mid-split-preview';
+  populatePreview(preview);
+
+  editor.addEventListener('input', () => {
+    currentText = editor.value;
+    scheduleSplitRender(preview);
+  });
+
+  editor.addEventListener('scroll', () => {
+    const ratio = editor.scrollTop / Math.max(1, editor.scrollHeight - editor.clientHeight);
+    preview.scrollTop = ratio * Math.max(0, preview.scrollHeight - preview.clientHeight);
+  });
+
+  wrap.append(editor, handle, preview);
+  root.replaceChildren(wrap);
+}
+
+function buildEditor(): HTMLTextAreaElement {
   const ta = document.createElement('textarea');
   ta.value = currentText;
   ta.spellcheck = false;
   ta.addEventListener('input', () => {
     currentText = ta.value;
   });
-  root.replaceChildren(ta);
-  ta.focus();
+  return ta;
 }
 
-function setMode(mode: 'view' | 'edit'): void {
+function scheduleSplitRender(preview: HTMLElement): void {
+  if (renderTimer !== null) window.clearTimeout(renderTimer);
+  renderTimer = window.setTimeout(() => {
+    populatePreview(preview);
+    renderTimer = null;
+  }, 50);
+}
+
+function beginSplitDrag(start: MouseEvent, wrap: HTMLElement): void {
+  start.preventDefault();
+  const wrapRect = wrap.getBoundingClientRect();
+  const onMove = (e: MouseEvent): void => {
+    const ratio = (e.clientX - wrapRect.left) / wrapRect.width;
+    splitRatio = Math.max(0.15, Math.min(0.85, ratio));
+    wrap.style.gridTemplateColumns = `${splitRatio * 100}% 6px 1fr`;
+  };
+  const onUp = (): void => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    void window.mid.patchAppState({ splitRatio });
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function setMode(mode: Mode): void {
   currentMode = mode;
   btnView.classList.toggle('is-active', mode === 'view');
+  btnSplit.classList.toggle('is-active', mode === 'split');
   btnEdit.classList.toggle('is-active', mode === 'edit');
   if (mode === 'view') renderView();
-  else renderEdit();
+  else if (mode === 'edit') renderEdit();
+  else renderSplit();
 }
 
 async function openFile(): Promise<void> {
@@ -237,7 +325,7 @@ function loadFileContent(filePath: string, content: string): void {
   currentPath = filePath;
   filenameEl.textContent = filePath.split('/').pop() ?? 'Untitled';
   highlightActiveTreeItem();
-  setMode('view');
+  setMode(currentMode === 'view' && content.length > 0 ? 'split' : currentMode);
 }
 
 async function selectTreeFile(filePath: string): Promise<void> {
@@ -344,6 +432,7 @@ function flashStatus(message: string): void {
 }
 
 btnView.addEventListener('click', () => setMode('view'));
+btnSplit.addEventListener('click', () => setMode('split'));
 btnEdit.addEventListener('click', () => setMode('edit'));
 btnOpen.addEventListener('click', () => void openFile());
 btnOpenFolder.addEventListener('click', () => void openFolder());
@@ -361,6 +450,9 @@ void window.mid.getAppInfo().then(info => {
 });
 
 void window.mid.readAppState().then(async state => {
+  if (typeof state.splitRatio === 'number' && state.splitRatio > 0 && state.splitRatio < 1) {
+    splitRatio = state.splitRatio;
+  }
   if (state.lastFolder) {
     try {
       const tree = await window.mid.listFolderMd(state.lastFolder);
@@ -369,4 +461,5 @@ void window.mid.readAppState().then(async state => {
       // folder gone — silently ignore
     }
   }
+  setMode(currentMode);
 });

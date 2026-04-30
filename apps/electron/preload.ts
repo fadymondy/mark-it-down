@@ -17,6 +17,7 @@ export interface TreeEntry {
 
 export interface AppState {
   lastFolder?: string;
+  splitRatio?: number;
 }
 
 contextBridge.exposeInMainWorld('mid', {
@@ -30,6 +31,8 @@ contextBridge.exposeInMainWorld('mid', {
   listFolderMd: (folderPath: string): Promise<TreeEntry[]> =>
     ipcRenderer.invoke('mid:list-folder-md', folderPath),
   readAppState: (): Promise<AppState> => ipcRenderer.invoke('mid:read-app-state'),
+  patchAppState: (patch: Partial<AppState>): Promise<void> =>
+    ipcRenderer.invoke('mid:patch-app-state', patch),
   saveFileDialog: (defaultName: string, content: string): Promise<string | null> =>
     ipcRenderer.invoke('mid:save-file-dialog', defaultName, content),
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke('mid:get-app-info'),

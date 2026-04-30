@@ -94,6 +94,10 @@ ipcMain.handle('mid:list-folder-md', async (_e, folderPath: string) => {
 
 ipcMain.handle('mid:read-app-state', async () => readAppState());
 
+ipcMain.handle('mid:patch-app-state', async (_e, patch: Partial<AppState>) => {
+  await writeAppState(patch);
+});
+
 ipcMain.handle('mid:save-file-dialog', async (_e, defaultName: string, content: string) => {
   const result = await dialog.showSaveDialog({
     defaultPath: defaultName,
@@ -216,6 +220,7 @@ function broadcastUpdateState(): void {
 
 interface AppState {
   lastFolder?: string;
+  splitRatio?: number;
 }
 
 const MD_EXT = new Set(['.md', '.mdx', '.markdown']);
