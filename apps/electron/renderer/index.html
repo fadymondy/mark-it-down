@@ -12,6 +12,24 @@
 <link rel="stylesheet" href="renderer.css" />
 </head>
 <body>
+<div id="mid-loader" class="mid-loader" aria-hidden="true">
+  <div class="mid-loader-glyph"></div>
+  <div class="mid-loader-label">Mark It Down</div>
+</div>
+<dialog id="mid-pin-editor" class="mid-pin-editor">
+  <form method="dialog" class="mid-pin-form">
+    <h3 class="mid-pin-title">Pin folder</h3>
+    <label class="mid-pin-label">Title<input type="text" id="mid-pin-name" class="mid-settings-control" /></label>
+    <div class="mid-pin-label">Icon</div>
+    <div class="mid-pin-icons" id="mid-pin-icons"></div>
+    <div class="mid-pin-label">Color</div>
+    <div class="mid-pin-colors" id="mid-pin-colors"></div>
+    <div class="mid-pin-actions">
+      <button type="button" id="mid-pin-cancel" class="mid-btn">Cancel</button>
+      <button type="submit" id="mid-pin-save" class="mid-btn mid-btn--primary">Save</button>
+    </div>
+  </form>
+</dialog>
 <header class="mid-titlebar" role="toolbar">
   <div class="mid-titlebar-left">
     <button id="open-folder-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Open folder (Cmd/Ctrl+Shift+O)" data-icon="folder-open"></button>

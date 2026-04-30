@@ -21,6 +21,18 @@ type FontFamilyChoice = 'system' | 'sans' | 'serif' | 'mono';
 /** A theme is either one of the built-in modes or a named theme id prefixed with `theme:`. */
 type ThemeChoice = 'auto' | 'light' | 'dark' | 'sepia' | `theme:${string}`;
 
+type CodeExportGradient = 'none' | 'sunset' | 'ocean' | 'lavender' | 'forest' | 'slate' | 'midnight';
+
+const CODE_EXPORT_GRADIENTS: Record<CodeExportGradient, string | null> = {
+  none: null,
+  sunset: 'linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%)',
+  ocean: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)',
+  lavender: 'linear-gradient(135deg, #c471f5 0%, #fa71cd 100%)',
+  forest: 'linear-gradient(135deg, #134e5e 0%, #71b280 100%)',
+  slate: 'linear-gradient(135deg, #485563 0%, #29323c 100%)',
+  midnight: 'linear-gradient(135deg, #232526 0%, #414345 100%)',
+};
+
 interface AppState {
   lastFolder?: string;
   splitRatio?: number;
@@ -28,6 +40,16 @@ interface AppState {
   fontSize?: number;
   theme?: ThemeChoice;
   previewMaxWidth?: number;
+  recentFiles?: string[];
+  codeExportGradient?: CodeExportGradient;
+  pinnedFolders?: PinnedFolder[];
+}
+
+interface PinnedFolder {
+  path: string;
+  name: string;
+  icon: string;
+  color: string;
 }
 
 const DEFAULT_SETTINGS = {
@@ -1826,20 +1848,114 @@ function renderActivityPinned(): void {
   }
 }
 
-async function pinFolder(folderPath: string, name: string): Promise<void> {
+async function pinFolder(folderPath: string, defaultName: string): Promise<void> {
   if (pinnedFolders.find(p => p.path === folderPath)) {
     flashStatus('Already pinned');
     return;
   }
-  pinnedFolders = [...pinnedFolders, {
-    path: folderPath,
-    name,
+  const result = await openPinEditor({
+    name: defaultName,
     icon: 'folder',
     color: '#2563eb',
+    titleLabel: 'Pin folder',
+  });
+  if (!result) return;
+  pinnedFolders = [...pinnedFolders, {
+    path: folderPath,
+    name: result.name,
+    icon: result.icon,
+    color: result.color,
   }];
   await window.mid.patchAppState({ pinnedFolders });
   renderActivityPinned();
-  flashStatus(`Pinned "${name}"`);
+  flashStatus(`Pinned "${result.name}"`);
+}
+
+const PIN_ICON_CHOICES: IconName[] = [
+  'folder', 'folder-open', 'file', 'bookmark', 'tag',
+  'list-ul', 'image', 'github', 'link', 'cog',
+  'search', 'markdown', 'typescript', 'javascript', 'python',
+];
+const PIN_COLOR_CHOICES = [
+  '#2563eb', '#16a34a', '#dc2626', '#ca8a04',
+  '#9333ea', '#0891b2', '#db2777', '#475569',
+  '#f97316', '#0d9488', '#7c3aed', '#71717a',
+];
+
+interface PinEditorInput { name: string; icon: string; color: string; titleLabel?: string }
+interface PinEditorResult { name: string; icon: string; color: string }
+
+function openPinEditor(initial: PinEditorInput): Promise<PinEditorResult | null> {
+  return new Promise(resolve => {
+    const dlg = document.getElementById('mid-pin-editor') as HTMLDialogElement;
+    const titleEl = dlg.querySelector('.mid-pin-title') as HTMLHeadingElement;
+    const nameEl = document.getElementById('mid-pin-name') as HTMLInputElement;
+    const iconsEl = document.getElementById('mid-pin-icons') as HTMLDivElement;
+    const colorsEl = document.getElementById('mid-pin-colors') as HTMLDivElement;
+    const cancelBtn = document.getElementById('mid-pin-cancel') as HTMLButtonElement;
+    const form = dlg.querySelector('form') as HTMLFormElement;
+
+    titleEl.textContent = initial.titleLabel ?? 'Pin folder';
+    nameEl.value = initial.name;
+    let chosenIcon = initial.icon;
+    let chosenColor = initial.color;
+
+    iconsEl.replaceChildren();
+    for (const ic of PIN_ICON_CHOICES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mid-pin-icon-btn' + (ic === chosenIcon ? ' is-active' : '');
+      btn.dataset.icon = ic;
+      btn.innerHTML = iconHTML(ic);
+      btn.addEventListener('click', () => {
+        chosenIcon = ic;
+        iconsEl.querySelectorAll('.mid-pin-icon-btn').forEach(b => b.classList.toggle('is-active', (b as HTMLElement).dataset.icon === ic));
+      });
+      iconsEl.appendChild(btn);
+    }
+
+    colorsEl.replaceChildren();
+    for (const col of PIN_COLOR_CHOICES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mid-pin-color-btn' + (col === chosenColor ? ' is-active' : '');
+      btn.style.background = col;
+      btn.dataset.color = col;
+      btn.title = col;
+      btn.addEventListener('click', () => {
+        chosenColor = col;
+        colorsEl.querySelectorAll('.mid-pin-color-btn').forEach(b => b.classList.toggle('is-active', (b as HTMLElement).dataset.color === col));
+      });
+      colorsEl.appendChild(btn);
+    }
+
+    let canceled = true;
+    const cleanup = (): void => {
+      form.removeEventListener('submit', onSubmit);
+      cancelBtn.removeEventListener('click', onCancel);
+      dlg.removeEventListener('click', onBackdrop);
+      dlg.removeEventListener('close', onClose);
+    };
+    const onSubmit = (e: Event): void => {
+      e.preventDefault();
+      canceled = false;
+      cleanup();
+      dlg.close();
+      resolve({ name: nameEl.value.trim() || initial.name, icon: chosenIcon, color: chosenColor });
+    };
+    const onCancel = (): void => { cleanup(); dlg.close(); resolve(null); };
+    const onBackdrop = (e: MouseEvent): void => { if (e.target === dlg) onCancel(); };
+    const onClose = (): void => { if (canceled) { cleanup(); resolve(null); } };
+
+    form.addEventListener('submit', onSubmit);
+    cancelBtn.addEventListener('click', onCancel);
+    dlg.addEventListener('click', onBackdrop);
+    dlg.addEventListener('close', onClose);
+
+    dlg.showModal();
+    nameEl.focus();
+    nameEl.select();
+  });
 }
 
 function unpinFolder(folderPath: string): void {
@@ -1850,18 +1966,21 @@ function unpinFolder(folderPath: string): void {
 }
 
 async function renamePin(pin: PinnedFolder): Promise<void> {
-  const name = await midPrompt('Rename pin', 'Display name', pin.name);
-  if (!name) return;
-  pin.name = name;
+  const result = await openPinEditor({ name: pin.name, icon: pin.icon, color: pin.color, titleLabel: 'Rename pin' });
+  if (!result) return;
+  pin.name = result.name;
+  pin.icon = result.icon;
+  pin.color = result.color;
   await window.mid.patchAppState({ pinnedFolders });
   renderActivityPinned();
 }
 
 async function editPinAppearance(pin: PinnedFolder): Promise<void> {
-  const icon = await midPrompt('Pin icon', 'Boxicon name (folder, bookmark, tag, list-ul, image, github)', pin.icon);
-  if (icon !== null && icon.trim()) pin.icon = icon.trim();
-  const color = await midPrompt('Pin color', 'Hex color', pin.color);
-  if (color !== null && color.trim()) pin.color = color.trim();
+  const result = await openPinEditor({ name: pin.name, icon: pin.icon, color: pin.color, titleLabel: 'Pin appearance' });
+  if (!result) return;
+  pin.name = result.name;
+  pin.icon = result.icon;
+  pin.color = result.color;
   await window.mid.patchAppState({ pinnedFolders });
   renderActivityPinned();
 }
@@ -2331,6 +2450,11 @@ function openDialog(opts: { title: string; message?: string; label?: string; def
     form.addEventListener('submit', onSubmit);
     cancelBtn.addEventListener('click', onCancel);
     dlg.addEventListener('close', onClose);
+    // Click on the backdrop (outside the form) cancels.
+    const onBackdropClick = (e: MouseEvent): void => {
+      if (e.target === dlg) onCancel();
+    };
+    dlg.addEventListener('click', onBackdropClick);
 
     dlg.showModal();
     if (opts.label !== undefined) inputEl.focus();
@@ -2521,6 +2645,9 @@ void window.mid.readAppState().then(async state => {
     renderActivityPinned();
   }
   applySettings();
+  // Fade out the launch loader once initial state is hydrated.
+  document.getElementById('mid-loader')?.classList.add('is-fading');
+  setTimeout(() => document.getElementById('mid-loader')?.remove(), 500);
   if (state.lastFolder) {
     try {
       const tree = await window.mid.listFolderMd(state.lastFolder);
