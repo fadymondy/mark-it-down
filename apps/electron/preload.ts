@@ -37,6 +37,10 @@ contextBridge.exposeInMainWorld('mid', {
   readAppState: (): Promise<AppState> => ipcRenderer.invoke('mid:read-app-state'),
   patchAppState: (patch: Partial<AppState>): Promise<void> =>
     ipcRenderer.invoke('mid:patch-app-state', patch),
+  saveAs: (defaultName: string, content: string | ArrayBuffer, filters: { name: string; extensions: string[] }[]): Promise<string | null> =>
+    ipcRenderer.invoke('mid:save-as', defaultName, content, filters),
+  exportPDF: (defaultName: string): Promise<string | null> =>
+    ipcRenderer.invoke('mid:export-pdf', defaultName),
   saveFileDialog: (defaultName: string, content: string): Promise<string | null> =>
     ipcRenderer.invoke('mid:save-file-dialog', defaultName, content),
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke('mid:get-app-info'),
@@ -60,5 +64,10 @@ contextBridge.exposeInMainWorld('mid', {
     const handler = () => cb();
     ipcRenderer.on('mid:menu-save', handler);
     return () => ipcRenderer.removeListener('mid:menu-save', handler);
+  },
+  onMenuExport: (cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt') => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, fmt: 'md' | 'html' | 'pdf' | 'png' | 'txt') => cb(fmt);
+    ipcRenderer.on('mid:menu-export', handler);
+    return () => ipcRenderer.removeListener('mid:menu-export', handler);
   },
 });
