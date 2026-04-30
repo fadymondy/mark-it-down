@@ -12,8 +12,9 @@
 <body>
 <header class="mid-titlebar" role="toolbar">
   <div class="mid-titlebar-left">
-    <button id="open-btn" class="mid-btn" title="Open markdown file">📂 Open</button>
-    <button id="save-btn" class="mid-btn" title="Save current file">💾 Save</button>
+    <button id="open-folder-btn" class="mid-btn" title="Open folder (Cmd/Ctrl+Shift+O)">📁 Folder</button>
+    <button id="open-btn" class="mid-btn" title="Open markdown file (Cmd/Ctrl+O)">📂 Open</button>
+    <button id="save-btn" class="mid-btn" title="Save current file (Cmd/Ctrl+S)">💾 Save</button>
   </div>
   <div class="mid-titlebar-center">
     <span id="filename" class="mid-filename">Untitled</span>
@@ -23,12 +24,21 @@
     <button id="mode-edit" class="mid-btn">✏️ Edit</button>
   </div>
 </header>
-<main id="root" class="viewing">
-  <div class="empty-state">
-    <h1>Mark It Down</h1>
-    <p>Open a markdown file with <kbd class="mid-kbd">Cmd/Ctrl+O</kbd> to begin.</p>
-  </div>
-</main>
+<div class="mid-shell">
+  <aside class="mid-sidebar" id="sidebar" hidden>
+    <div class="mid-sidebar-header">
+      <span class="mid-sidebar-title" id="sidebar-folder-name">Files</span>
+      <button id="sidebar-refresh" class="mid-btn mid-btn--icon mid-btn--ghost" title="Refresh">↻</button>
+    </div>
+    <div class="mid-sidebar-tree" id="tree-root"></div>
+  </aside>
+  <main id="root" class="viewing">
+    <div class="empty-state">
+      <h1>Mark It Down</h1>
+      <p>Open a folder with <kbd class="mid-kbd">Cmd/Ctrl+Shift+O</kbd> to browse, or open a single file with <kbd class="mid-kbd">Cmd/Ctrl+O</kbd>.</p>
+    </div>
+  </main>
+</div>
 <script src="renderer.js"></script>
 </body>
 </html>

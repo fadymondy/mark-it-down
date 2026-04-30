@@ -78,6 +78,22 @@ ipcMain.handle('mid:open-file-dialog', async () => {
   return { filePath, content: await fs.readFile(filePath, 'utf8') };
 });
 
+ipcMain.handle('mid:open-folder-dialog', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const folderPath = result.filePaths[0];
+  await writeAppState({ lastFolder: folderPath });
+  return { folderPath, tree: await listMarkdownTree(folderPath) };
+});
+
+ipcMain.handle('mid:list-folder-md', async (_e, folderPath: string) => {
+  return listMarkdownTree(folderPath);
+});
+
+ipcMain.handle('mid:read-app-state', async () => readAppState());
+
 ipcMain.handle('mid:save-file-dialog', async (_e, defaultName: string, content: string) => {
   const result = await dialog.showSaveDialog({
     defaultPath: defaultName,
@@ -198,6 +214,61 @@ function broadcastUpdateState(): void {
   }
 }
 
+interface AppState {
+  lastFolder?: string;
+}
+
+const MD_EXT = new Set(['.md', '.mdx', '.markdown']);
+const SKIP_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'out', '.cache', '.DS_Store']);
+
+interface TreeEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'dir';
+  children?: TreeEntry[];
+}
+
+async function listMarkdownTree(folderPath: string): Promise<TreeEntry[]> {
+  const entries = await fs.readdir(folderPath, { withFileTypes: true });
+  const out: TreeEntry[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') && entry.name !== '.github') continue;
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const full = path.join(folderPath, entry.name);
+    if (entry.isDirectory()) {
+      const children = await listMarkdownTree(full);
+      if (children.length > 0) {
+        out.push({ name: entry.name, path: full, kind: 'dir', children });
+      }
+    } else if (entry.isFile() && MD_EXT.has(path.extname(entry.name).toLowerCase())) {
+      out.push({ name: entry.name, path: full, kind: 'file' });
+    }
+  }
+  out.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return out;
+}
+
+async function readAppState(): Promise<AppState> {
+  const file = path.join(app.getPath('userData'), 'state.json');
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    return JSON.parse(raw) as AppState;
+  } catch {
+    return {};
+  }
+}
+
+async function writeAppState(patch: Partial<AppState>): Promise<void> {
+  const file = path.join(app.getPath('userData'), 'state.json');
+  const current = await readAppState();
+  const next = { ...current, ...patch };
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(next, null, 2), 'utf8');
+}
+
 function buildMenu(): Menu {
   const isMac = process.platform === 'darwin';
   const template: MenuItemConstructorOptions[] = [
@@ -226,6 +297,11 @@ function buildMenu(): Menu {
           label: 'Open Markdown…',
           accelerator: 'CmdOrCtrl+O',
           click: () => mainWindow?.webContents.send('mid:menu-open'),
+        },
+        {
+          label: 'Open Folder…',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => mainWindow?.webContents.send('mid:menu-open-folder'),
         },
         {
           label: 'Save',

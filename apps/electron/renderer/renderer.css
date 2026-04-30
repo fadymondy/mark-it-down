@@ -7,6 +7,80 @@ body {
   grid-template-rows: var(--mid-titlebar-h) 1fr;
 }
 
+.mid-shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+body.has-sidebar .mid-shell {
+  grid-template-columns: var(--mid-sidebar-w) 1fr;
+}
+
+.mid-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--mid-surface);
+  border-right: 1px solid var(--mid-border);
+  overflow: hidden;
+}
+.mid-sidebar[hidden] { display: none; }
+.mid-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--mid-space-2) var(--mid-space-3);
+  border-bottom: 1px solid var(--mid-border);
+  font-size: var(--mid-font-size-sm);
+  font-weight: var(--mid-weight-semibold);
+  color: var(--mid-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mid-sidebar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.mid-sidebar-tree {
+  flex: 1;
+  overflow: auto;
+  padding: var(--mid-space-2) var(--mid-space-1);
+}
+.mid-tree-item {
+  display: flex;
+  align-items: center;
+  gap: var(--mid-space-1);
+  padding: 2px var(--mid-space-2);
+  font-size: var(--mid-font-size-sm);
+  color: var(--mid-fg);
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--mid-radius-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mid-tree-item:hover { background: var(--mid-surface-hover); }
+.mid-tree-item.is-active { background: var(--mid-accent); color: var(--mid-accent-fg); }
+.mid-tree-chevron {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  color: var(--mid-fg-muted);
+  transition: transform var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-tree-chevron.is-open { transform: rotate(90deg); }
+.mid-tree-children { padding-left: var(--mid-space-3); }
+.mid-tree-empty {
+  padding: var(--mid-space-4);
+  text-align: center;
+  color: var(--mid-fg-muted);
+  font-size: var(--mid-font-size-sm);
+}
+
 .mid-titlebar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;

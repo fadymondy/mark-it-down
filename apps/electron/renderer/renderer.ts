@@ -1,15 +1,30 @@
 import { renderMarkdown as coreRenderMarkdown, applyMermaidPlaceholders } from '../../../packages/core/src/markdown/renderer';
 import mermaid from 'mermaid';
 
+interface TreeEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'dir';
+  children?: TreeEntry[];
+}
+
+interface AppState {
+  lastFolder?: string;
+}
+
 interface Mid {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<boolean>;
   openFileDialog(): Promise<{ filePath: string; content: string } | null>;
+  openFolderDialog(): Promise<{ folderPath: string; tree: TreeEntry[] } | null>;
+  listFolderMd(folderPath: string): Promise<TreeEntry[]>;
+  readAppState(): Promise<AppState>;
   saveFileDialog(defaultName: string, content: string): Promise<string | null>;
   getAppInfo(): Promise<{ version: string; platform: string; isDark: boolean; userData: string; documents: string }>;
   openExternal(url: string): Promise<void>;
   onThemeChanged(cb: (isDark: boolean) => void): () => void;
   onMenuOpen(cb: () => void): () => void;
+  onMenuOpenFolder(cb: () => void): () => void;
   onMenuSave(cb: () => void): () => void;
 }
 declare const window: Window & { mid: Mid };
@@ -19,12 +34,19 @@ const filenameEl = document.getElementById('filename') as HTMLSpanElement;
 const btnView = document.getElementById('mode-view') as HTMLButtonElement;
 const btnEdit = document.getElementById('mode-edit') as HTMLButtonElement;
 const btnOpen = document.getElementById('open-btn') as HTMLButtonElement;
+const btnOpenFolder = document.getElementById('open-folder-btn') as HTMLButtonElement;
 const btnSave = document.getElementById('save-btn') as HTMLButtonElement;
+const sidebar = document.getElementById('sidebar') as HTMLElement;
+const sidebarFolderName = document.getElementById('sidebar-folder-name') as HTMLSpanElement;
+const sidebarRefresh = document.getElementById('sidebar-refresh') as HTMLButtonElement;
+const treeRoot = document.getElementById('tree-root') as HTMLDivElement;
 
 let currentText = '';
 let currentPath: string | null = null;
 let currentMode: 'view' | 'edit' = 'view';
 let mermaidThemeKind = 0;
+let currentFolder: string | null = null;
+const expandedDirs = new Set<string>();
 
 function applyTheme(isDark: boolean): void {
   document.documentElement.classList.toggle('dark', isDark);
@@ -54,7 +76,7 @@ function renderView(): void {
   root.classList.remove('editing');
   root.classList.add('viewing');
   if (!currentText) {
-    root.innerHTML = `<div class="empty-state"><h1>Mark It Down</h1><p>Open a markdown file with <kbd>Cmd/Ctrl+O</kbd> to begin.</p></div>`;
+    root.innerHTML = `<div class="empty-state"><h1>Mark It Down</h1><p>Open a folder with <kbd class="mid-kbd">Cmd/Ctrl+Shift+O</kbd> to browse, or open a single file with <kbd class="mid-kbd">Cmd/Ctrl+O</kbd>.</p></div>`;
     return;
   }
   root.innerHTML = renderMarkdown(currentText);
@@ -107,10 +129,96 @@ function setMode(mode: 'view' | 'edit'): void {
 async function openFile(): Promise<void> {
   const result = await window.mid.openFileDialog();
   if (!result) return;
-  currentText = result.content;
-  currentPath = result.filePath;
-  filenameEl.textContent = currentPath.split('/').pop() ?? 'Untitled';
+  loadFileContent(result.filePath, result.content);
+}
+
+function loadFileContent(filePath: string, content: string): void {
+  currentText = content;
+  currentPath = filePath;
+  filenameEl.textContent = filePath.split('/').pop() ?? 'Untitled';
+  highlightActiveTreeItem();
   setMode('view');
+}
+
+async function selectTreeFile(filePath: string): Promise<void> {
+  const content = await window.mid.readFile(filePath);
+  loadFileContent(filePath, content);
+}
+
+async function openFolder(): Promise<void> {
+  const result = await window.mid.openFolderDialog();
+  if (!result) return;
+  applyFolder(result.folderPath, result.tree);
+}
+
+function applyFolder(folderPath: string, tree: TreeEntry[]): void {
+  currentFolder = folderPath;
+  document.body.classList.add('has-sidebar');
+  sidebar.hidden = false;
+  sidebarFolderName.textContent = folderPath.split('/').pop() ?? folderPath;
+  sidebarFolderName.title = folderPath;
+  treeRoot.replaceChildren(...renderTree(tree));
+  if (tree.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'mid-tree-empty';
+    empty.textContent = 'No markdown files in this folder.';
+    treeRoot.appendChild(empty);
+  }
+}
+
+function renderTree(entries: TreeEntry[]): HTMLElement[] {
+  return entries.map(entry => renderTreeEntry(entry));
+}
+
+function renderTreeEntry(entry: TreeEntry): HTMLElement {
+  const wrapper = document.createElement('div');
+  const item = document.createElement('div');
+  item.className = 'mid-tree-item';
+  item.dataset.path = entry.path;
+  item.dataset.kind = entry.kind;
+
+  if (entry.kind === 'dir') {
+    const isOpen = expandedDirs.has(entry.path);
+    const chevron = document.createElement('span');
+    chevron.className = `mid-tree-chevron${isOpen ? ' is-open' : ''}`;
+    chevron.textContent = '▸';
+    item.appendChild(chevron);
+    item.appendChild(document.createTextNode(`📁 ${entry.name}`));
+    item.addEventListener('click', () => {
+      if (expandedDirs.has(entry.path)) expandedDirs.delete(entry.path);
+      else expandedDirs.add(entry.path);
+      const fresh = renderTreeEntry(entry);
+      wrapper.replaceWith(fresh);
+    });
+    wrapper.appendChild(item);
+    if (isOpen && entry.children) {
+      const children = document.createElement('div');
+      children.className = 'mid-tree-children';
+      children.append(...renderTree(entry.children));
+      wrapper.appendChild(children);
+    }
+  } else {
+    const spacer = document.createElement('span');
+    spacer.className = 'mid-tree-chevron';
+    item.appendChild(spacer);
+    item.appendChild(document.createTextNode(`📄 ${entry.name}`));
+    if (currentPath === entry.path) item.classList.add('is-active');
+    item.addEventListener('click', () => void selectTreeFile(entry.path));
+    wrapper.appendChild(item);
+  }
+  return wrapper;
+}
+
+function highlightActiveTreeItem(): void {
+  treeRoot.querySelectorAll<HTMLElement>('.mid-tree-item').forEach(el => {
+    el.classList.toggle('is-active', el.dataset.path === currentPath && el.dataset.kind === 'file');
+  });
+}
+
+async function refreshFolder(): Promise<void> {
+  if (!currentFolder) return;
+  const tree = await window.mid.listFolderMd(currentFolder);
+  treeRoot.replaceChildren(...renderTree(tree));
 }
 
 async function saveFile(): Promise<void> {
@@ -138,13 +246,27 @@ function flashStatus(message: string): void {
 btnView.addEventListener('click', () => setMode('view'));
 btnEdit.addEventListener('click', () => setMode('edit'));
 btnOpen.addEventListener('click', () => void openFile());
+btnOpenFolder.addEventListener('click', () => void openFolder());
 btnSave.addEventListener('click', () => void saveFile());
+sidebarRefresh.addEventListener('click', () => void refreshFolder());
 
 window.mid.onThemeChanged(applyTheme);
 window.mid.onMenuOpen(() => void openFile());
+window.mid.onMenuOpenFolder(() => void openFolder());
 window.mid.onMenuSave(() => void saveFile());
 
 void window.mid.getAppInfo().then(info => {
   document.body.classList.toggle('is-mac', info.platform === 'darwin');
   applyTheme(info.isDark);
+});
+
+void window.mid.readAppState().then(async state => {
+  if (state.lastFolder) {
+    try {
+      const tree = await window.mid.listFolderMd(state.lastFolder);
+      applyFolder(state.lastFolder, tree);
+    } catch {
+      // folder gone — silently ignore
+    }
+  }
 });
