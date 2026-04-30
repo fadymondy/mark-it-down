@@ -4,6 +4,7 @@ import hljs from 'highlight.js/lib/common';
 import katex from 'katex';
 import yaml from 'js-yaml';
 import { toPng } from 'html-to-image';
+import * as XLSX from 'xlsx';
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 import { iconForFile } from '../../../packages/ui-tokens/src/file-icons';
 import { THEMES, ThemeDefinition } from '../../../packages/core/src/themes/themes';
@@ -925,6 +926,7 @@ function attachTableTools(scope: HTMLElement): void {
       openContextMenu([
         { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getVisible()) },
         { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getVisible(), 'csv') },
+        { icon: 'download', label: 'Download Excel (.xlsx)', action: () => downloadTable(headers, getVisible(), 'xlsx') },
         { icon: 'list-ul', label: 'Download JSON', action: () => downloadTable(headers, getVisible(), 'json') },
         { separator: true, label: '' },
         { icon: state.sortColumn === null ? 'x' : 'refresh', label: state.sortColumn === null ? 'No sort active' : 'Reset sort', disabled: state.sortColumn === null, action: () => { state.sortColumn = null; state.sortDir = null; apply(); } },
@@ -1001,7 +1003,7 @@ function copyTableAsMarkdown(headers: HTMLTableCellElement[], rows: HTMLTableRow
   void navigator.clipboard.writeText(lines.join('\n'));
 }
 
-function downloadTable(headers: HTMLTableCellElement[], rows: HTMLTableRowElement[], format: 'csv' | 'json'): void {
+function downloadTable(headers: HTMLTableCellElement[], rows: HTMLTableRowElement[], format: 'csv' | 'json' | 'xlsx'): void {
   const head = headers.map(h => h.textContent?.trim() ?? '');
   let blob: Blob;
   let filename: string;
@@ -1010,13 +1012,24 @@ function downloadTable(headers: HTMLTableCellElement[], rows: HTMLTableRowElemen
     const lines = [head.map(escape).join(','), ...rows.map(r => rowToValues(r).map(escape).join(','))];
     blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     filename = 'table.csv';
-  } else {
+  } else if (format === 'json') {
     const objs = rows.map(r => {
       const vals = rowToValues(r);
       return Object.fromEntries(head.map((h, i) => [h, vals[i] ?? '']));
     });
     blob = new Blob([JSON.stringify(objs, null, 2)], { type: 'application/json' });
     filename = 'table.json';
+  } else {
+    // xlsx — single sheet, header row + data, frozen first row
+    const aoa = [head, ...rows.map(r => rowToValues(r))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    ws['!cols'] = head.map(h => ({ wch: Math.max(h.length, 12) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    const arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+    blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    filename = 'table.xlsx';
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
