@@ -152,6 +152,11 @@ body.has-sidebar .mid-shell {
   border-radius: var(--mid-radius-pill);
   color: var(--mid-fg-muted);
 }
+.mid-note-warehouse {
+  background: rgba(9, 105, 218, 0.15);
+  color: var(--mid-accent);
+  margin-right: var(--mid-space-1);
+}
 .mid-note-delete {
   grid-column: 2;
   grid-row: 1 / span 2;

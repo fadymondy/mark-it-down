@@ -142,6 +142,16 @@ interface NoteEntry {
   tags: string[];
   created: string;
   updated: string;
+  warehouse?: string;
+  pushedAt?: string;
+}
+
+interface Warehouse {
+  id: string;
+  name: string;
+  repo: string;
+  branch?: string;
+  subdir?: string;
 }
 
 const NOTES_DIR = '.mid';
@@ -214,6 +224,36 @@ ipcMain.handle('mid:notes-tag', async (_e, workspace: string, id: string, tags: 
   if (!note) return null;
   note.tags = tags;
   note.updated = new Date().toISOString();
+  await writeNotes(workspace, notes);
+  return note;
+});
+
+ipcMain.handle('mid:warehouses-list', async (_e, workspace: string): Promise<Warehouse[]> => {
+  try {
+    const raw = await fs.readFile(path.join(workspace, NOTES_DIR, 'warehouse.json'), 'utf8');
+    const parsed = JSON.parse(raw) as { warehouses?: Warehouse[] };
+    return Array.isArray(parsed.warehouses) ? parsed.warehouses : [];
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('mid:notes-attach-warehouse', async (_e, workspace: string, id: string, warehouseId: string | null) => {
+  const notes = await readNotes(workspace);
+  const note = notes.find(n => n.id === id);
+  if (!note) return null;
+  if (warehouseId) note.warehouse = warehouseId;
+  else delete note.warehouse;
+  note.updated = new Date().toISOString();
+  await writeNotes(workspace, notes);
+  return note;
+});
+
+ipcMain.handle('mid:notes-mark-pushed', async (_e, workspace: string, id: string) => {
+  const notes = await readNotes(workspace);
+  const note = notes.find(n => n.id === id);
+  if (!note) return null;
+  note.pushedAt = new Date().toISOString();
   await writeNotes(workspace, notes);
   return note;
 });

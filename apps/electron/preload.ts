@@ -32,6 +32,16 @@ export interface NoteEntry {
   tags: string[];
   created: string;
   updated: string;
+  warehouse?: string;
+  pushedAt?: string;
+}
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  repo: string;
+  branch?: string;
+  subdir?: string;
 }
 
 contextBridge.exposeInMainWorld('mid', {
@@ -57,6 +67,12 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:notes-delete', workspace, id),
   notesTag: (workspace: string, id: string, tags: string[]): Promise<NoteEntry | null> =>
     ipcRenderer.invoke('mid:notes-tag', workspace, id, tags),
+  warehousesList: (workspace: string): Promise<Warehouse[]> =>
+    ipcRenderer.invoke('mid:warehouses-list', workspace),
+  notesAttachWarehouse: (workspace: string, id: string, warehouseId: string | null): Promise<NoteEntry | null> =>
+    ipcRenderer.invoke('mid:notes-attach-warehouse', workspace, id, warehouseId),
+  notesMarkPushed: (workspace: string, id: string): Promise<NoteEntry | null> =>
+    ipcRenderer.invoke('mid:notes-mark-pushed', workspace, id),
   ghAuthStatus: (): Promise<{ authenticated: boolean; output: string }> =>
     ipcRenderer.invoke('mid:gh-auth-status'),
   repoStatus: (workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }> =>
