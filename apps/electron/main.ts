@@ -125,6 +125,33 @@ ipcMain.handle('mid:patch-app-state', async (_e, patch: Partial<AppState>) => {
   await writeAppState(patch);
 });
 
+ipcMain.handle('mid:save-as', async (_e, defaultName: string, content: string | ArrayBuffer, filters: Electron.FileFilter[]) => {
+  const result = await dialog.showSaveDialog({ defaultPath: defaultName, filters });
+  if (result.canceled || !result.filePath) return null;
+  if (typeof content === 'string') {
+    await fs.writeFile(result.filePath, content, 'utf8');
+  } else {
+    await fs.writeFile(result.filePath, Buffer.from(content));
+  }
+  return result.filePath;
+});
+
+ipcMain.handle('mid:export-pdf', async (_e, defaultName: string) => {
+  if (!mainWindow) return null;
+  const result = await dialog.showSaveDialog({
+    defaultPath: defaultName,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  const data = await mainWindow.webContents.printToPDF({
+    pageSize: 'A4',
+    printBackground: true,
+    landscape: false,
+  });
+  await fs.writeFile(result.filePath, data);
+  return result.filePath;
+});
+
 ipcMain.handle('mid:save-file-dialog', async (_e, defaultName: string, content: string) => {
   const result = await dialog.showSaveDialog({
     defaultPath: defaultName,
@@ -343,6 +370,17 @@ function buildMenu(): Menu {
           label: 'Save',
           accelerator: 'CmdOrCtrl+S',
           click: () => mainWindow?.webContents.send('mid:menu-save'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Export',
+          submenu: [
+            { label: 'Markdown source…', click: () => mainWindow?.webContents.send('mid:menu-export', 'md') },
+            { label: 'HTML…', click: () => mainWindow?.webContents.send('mid:menu-export', 'html') },
+            { label: 'PDF…', click: () => mainWindow?.webContents.send('mid:menu-export', 'pdf') },
+            { label: 'Image (PNG)…', click: () => mainWindow?.webContents.send('mid:menu-export', 'png') },
+            { label: 'Plain text…', click: () => mainWindow?.webContents.send('mid:menu-export', 'txt') },
+          ],
         },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },

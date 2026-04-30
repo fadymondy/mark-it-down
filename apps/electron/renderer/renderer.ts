@@ -39,6 +39,8 @@ const FONT_STACKS: Record<FontFamilyChoice, string> = {
   mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
 };
 
+type ExportFormat = 'md' | 'html' | 'pdf' | 'png' | 'txt';
+
 interface Mid {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<boolean>;
@@ -47,6 +49,8 @@ interface Mid {
   listFolderMd(folderPath: string): Promise<TreeEntry[]>;
   readAppState(): Promise<AppState>;
   patchAppState(patch: Partial<AppState>): Promise<void>;
+  saveAs(defaultName: string, content: string | ArrayBuffer, filters: { name: string; extensions: string[] }[]): Promise<string | null>;
+  exportPDF(defaultName: string): Promise<string | null>;
   saveFileDialog(defaultName: string, content: string): Promise<string | null>;
   getAppInfo(): Promise<{ version: string; platform: string; isDark: boolean; userData: string; documents: string }>;
   openExternal(url: string): Promise<void>;
@@ -54,6 +58,7 @@ interface Mid {
   onMenuOpen(cb: () => void): () => void;
   onMenuOpenFolder(cb: () => void): () => void;
   onMenuSave(cb: () => void): () => void;
+  onMenuExport(cb: (format: ExportFormat) => void): () => void;
 }
 declare const window: Window & { mid: Mid };
 
@@ -883,6 +888,98 @@ async function saveFile(): Promise<void> {
   }
 }
 
+function defaultExportName(ext: string): string {
+  const base = currentPath ? currentPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? 'document' : 'document';
+  return `${base}.${ext}`;
+}
+
+async function exportAs(format: ExportFormat): Promise<void> {
+  if (!currentText && format !== 'pdf' && format !== 'png') {
+    flashStatus('Nothing to export');
+    return;
+  }
+  switch (format) {
+    case 'md':
+      await window.mid.saveAs(defaultExportName('md'), currentText, [{ name: 'Markdown', extensions: ['md'] }]);
+      flashStatus('Exported Markdown');
+      break;
+    case 'txt':
+      await window.mid.saveAs(defaultExportName('txt'), markdownToPlainText(currentText), [{ name: 'Plain text', extensions: ['txt'] }]);
+      flashStatus('Exported text');
+      break;
+    case 'html': {
+      const html = buildStandaloneHTML();
+      await window.mid.saveAs(defaultExportName('html'), html, [{ name: 'HTML', extensions: ['html'] }]);
+      flashStatus('Exported HTML');
+      break;
+    }
+    case 'pdf': {
+      const result = await window.mid.exportPDF(defaultExportName('pdf'));
+      flashStatus(result ? 'Exported PDF' : 'PDF cancelled');
+      break;
+    }
+    case 'png': {
+      const preview = root.querySelector<HTMLElement>('.mid-preview');
+      if (!preview) { flashStatus('No preview to capture'); return; }
+      const dataUrl = await toPng(preview, {
+        pixelRatio: 2,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#ffffff',
+      });
+      const buffer = dataUrlToArrayBuffer(dataUrl);
+      await window.mid.saveAs(defaultExportName('png'), buffer, [{ name: 'PNG', extensions: ['png'] }]);
+      flashStatus('Exported PNG');
+      break;
+    }
+  }
+}
+
+function dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
+  const base64 = dataUrl.split(',')[1];
+  const binary = atob(base64);
+  const buf = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+  return buf.buffer;
+}
+
+function markdownToPlainText(md: string): string {
+  return md
+    .replace(/^---\r?\n[\s\S]+?\r?\n---\r?\n?/, '')   // strip frontmatter
+    .replace(/```[\s\S]*?```/g, m => m.replace(/```\w*\n?|```/g, ''))  // unwrap code fences
+    .replace(/`([^`]+)`/g, '$1')                       // inline code
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')          // images → alt text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')           // links → text
+    .replace(/^[#>\s-]+/gm, '')                         // heading / quote / list markers
+    .replace(/[*_~]+/g, '')                              // emphasis markers
+    .replace(/\n{3,}/g, '\n\n');                         // collapse extra blank lines
+}
+
+function buildStandaloneHTML(): string {
+  const preview = root.querySelector<HTMLElement>('.mid-preview');
+  const body = preview ? preview.outerHTML : '<p>(empty)</p>';
+  const title = currentPath ? currentPath.split('/').pop() ?? 'Untitled' : 'Untitled';
+  // Inline the active stylesheets so the export is self-contained.
+  const styles = Array.from(document.styleSheets)
+    .map(sheet => {
+      try {
+        return Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
+      } catch {
+        return '';
+      }
+    })
+    .join('\n');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>${escapeHTML(title)}</title>
+<style>${styles}</style>
+</head>
+<body class="${document.body.className}">
+<main class="viewing">${body}</main>
+</body>
+</html>`;
+}
+
 function flashStatus(message: string): void {
   const original = filenameEl.textContent;
   filenameEl.textContent = message;
@@ -903,6 +1000,7 @@ window.mid.onThemeChanged(applyTheme);
 window.mid.onMenuOpen(() => void openFile());
 window.mid.onMenuOpenFolder(() => void openFolder());
 window.mid.onMenuSave(() => void saveFile());
+window.mid.onMenuExport(fmt => void exportAs(fmt));
 
 hydrateIconButtons(document);
 wireSettingsPanel();
