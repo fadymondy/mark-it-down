@@ -80,6 +80,12 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:notes-mark-pushed', workspace, id),
   ghAuthStatus: (): Promise<{ authenticated: boolean; output: string }> =>
     ipcRenderer.invoke('mid:gh-auth-status'),
+  ghRepoList: (): Promise<{ repos: { nameWithOwner: string; description: string; visibility: string }[]; ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('mid:gh-repo-list'),
+  ghRepoCreate: (slug: string, visibility: 'private' | 'public'): Promise<{ ok: boolean; url?: string; error?: string }> =>
+    ipcRenderer.invoke('mid:gh-repo-create', slug, visibility),
+  fileHistory: (workspace: string, filePath: string): Promise<{ commits: { hash: string; date: string; author: string; message: string; diff: string }[]; ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('mid:file-history', workspace, filePath),
   repoStatus: (workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }> =>
     ipcRenderer.invoke('mid:repo-status', workspace),
   repoConnect: (workspace: string, repoSlug: string): Promise<{ url: string }> =>

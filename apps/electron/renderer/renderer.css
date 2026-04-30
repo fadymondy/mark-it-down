@@ -390,6 +390,29 @@ body.has-sidebar .mid-shell {
 .mid-spotlight-row-path { font-family: var(--mid-font-mono); font-size: var(--mid-font-size-xs); color: var(--mid-fg-muted); white-space: nowrap; }
 .mid-spotlight-empty { padding: var(--mid-space-4); text-align: center; color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); }
 
+/* File history viewer (#219) */
+.mid-fh-row {
+  border-bottom: 1px solid var(--mid-border);
+  padding: var(--mid-space-3) var(--mid-space-4);
+}
+.mid-fh-row:last-child { border-bottom: 0; }
+.mid-fh-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--mid-space-2); }
+.mid-fh-msg { font-weight: var(--mid-weight-medium); color: var(--mid-fg); font-size: var(--mid-font-size-sm); }
+.mid-fh-meta { font-family: var(--mid-font-mono); font-size: var(--mid-font-size-xs); color: var(--mid-fg-muted); }
+.mid-fh-hash { color: var(--mid-link); }
+.mid-fh-diff {
+  margin: 0;
+  padding: var(--mid-space-2);
+  font-family: var(--mid-font-mono);
+  font-size: 11px;
+  background: var(--mid-code-bg);
+  color: var(--mid-fg);
+  border-radius: var(--mid-radius-sm);
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 220px;
+}
+
 /* Mermaid editor modal — split textarea + live preview */
 .mid-mermaid-editor {
   width: min(1100px, 92vw);
