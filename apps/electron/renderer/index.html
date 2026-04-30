@@ -91,6 +91,22 @@
   <span class="mid-status-cell" id="status-words">0 words</span>
   <span class="mid-status-cell mid-status-dot" id="status-save" title="Saved">●</span>
 </footer>
+<dialog id="mid-mermaid-editor" class="mid-mermaid-editor">
+  <header class="mid-mermaid-editor-header">
+    <h3 class="mid-mermaid-editor-title">Edit diagram</h3>
+    <button id="mid-mermaid-editor-close" class="mid-btn mid-btn--icon mid-btn--ghost" data-icon="x" title="Cancel"></button>
+  </header>
+  <div class="mid-mermaid-editor-body">
+    <textarea id="mid-mermaid-editor-src" class="mid-mermaid-editor-src" spellcheck="false"></textarea>
+    <div id="mid-mermaid-editor-preview" class="mid-mermaid-editor-preview"></div>
+  </div>
+  <footer class="mid-mermaid-editor-footer">
+    <span class="mid-mermaid-editor-hint">⌘↵ to save · Esc to cancel</span>
+    <span style="flex:1"></span>
+    <button id="mid-mermaid-editor-cancel" class="mid-btn">Cancel</button>
+    <button id="mid-mermaid-editor-save" class="mid-btn mid-btn--primary">Save</button>
+  </footer>
+</dialog>
 <dialog id="mid-dialog" class="mid-dialog">
   <form method="dialog" class="mid-dialog-form">
     <h3 class="mid-dialog-title" id="mid-dialog-title"></h3>
