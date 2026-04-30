@@ -20,7 +20,7 @@ export interface AppState {
   splitRatio?: number;
   fontFamily?: 'system' | 'sans' | 'serif' | 'mono';
   fontSize?: number;
-  theme?: 'auto' | 'light' | 'dark' | 'sepia';
+  theme?: string;
   previewMaxWidth?: number;
   recentFiles?: string[];
 }
