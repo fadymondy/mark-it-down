@@ -45,6 +45,7 @@ body {
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
+body.is-mac .mid-titlebar { padding-left: 80px; }
 .mid-titlebar button { -webkit-app-region: no-drag; }
 .mid-titlebar-left, .mid-titlebar-right { display: flex; gap: 6px; }
 .mid-titlebar-right { justify-self: end; }
