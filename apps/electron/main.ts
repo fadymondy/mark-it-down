@@ -715,6 +715,7 @@ function buildMenu(): Menu {
             { label: 'Markdown source…', click: () => mainWindow?.webContents.send('mid:menu-export', 'md') },
             { label: 'HTML…', click: () => mainWindow?.webContents.send('mid:menu-export', 'html') },
             { label: 'PDF…', click: () => mainWindow?.webContents.send('mid:menu-export', 'pdf') },
+            { label: 'Word (.docx)…', click: () => mainWindow?.webContents.send('mid:menu-export', 'docx') },
             { label: 'Image (PNG)…', click: () => mainWindow?.webContents.send('mid:menu-export', 'png') },
             { label: 'Plain text…', click: () => mainWindow?.webContents.send('mid:menu-export', 'txt') },
           ],

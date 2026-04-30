@@ -5,6 +5,7 @@ import katex from 'katex';
 import yaml from 'js-yaml';
 import { toPng } from 'html-to-image';
 import * as XLSX from 'xlsx';
+import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType } from 'docx';
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 import { iconForFile } from '../../../packages/ui-tokens/src/file-icons';
 import { THEMES, ThemeDefinition } from '../../../packages/core/src/themes/themes';
@@ -43,7 +44,7 @@ const FONT_STACKS: Record<FontFamilyChoice, string> = {
   mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
 };
 
-type ExportFormat = 'md' | 'html' | 'pdf' | 'png' | 'txt';
+type ExportFormat = 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx';
 
 interface NoteEntry {
   id: string;
@@ -80,7 +81,7 @@ interface Mid {
   onMenuOpen(cb: () => void): () => void;
   onMenuOpenFolder(cb: () => void): () => void;
   onMenuSave(cb: () => void): () => void;
-  onMenuExport(cb: (format: ExportFormat) => void): () => void;
+  onMenuExport(cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx') => void): () => void;
 }
 declare const window: Window & { mid: Mid };
 
@@ -1426,7 +1427,83 @@ async function exportAs(format: ExportFormat): Promise<void> {
       flashStatus('Exported PNG');
       break;
     }
+    case 'docx': {
+      const preview = root.querySelector<HTMLElement>('.mid-preview');
+      if (!preview) { flashStatus('No preview to export'); return; }
+      const buffer = await buildDocxFromPreview(preview);
+      await window.mid.saveAs(defaultExportName('docx'), buffer, [{ name: 'Word', extensions: ['docx'] }]);
+      flashStatus('Exported DOCX');
+      break;
+    }
   }
+}
+
+async function buildDocxFromPreview(preview: HTMLElement): Promise<ArrayBuffer> {
+  const children: (Paragraph | DocxTable)[] = [];
+  for (const node of Array.from(preview.children)) {
+    children.push(...domNodeToDocx(node as HTMLElement));
+  }
+  const doc = new Document({ sections: [{ children }] });
+  const blob = await Packer.toBlob(doc);
+  return blob.arrayBuffer();
+}
+
+const HEADING_MAP: Record<string, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
+  H1: HeadingLevel.HEADING_1,
+  H2: HeadingLevel.HEADING_2,
+  H3: HeadingLevel.HEADING_3,
+  H4: HeadingLevel.HEADING_4,
+  H5: HeadingLevel.HEADING_5,
+  H6: HeadingLevel.HEADING_6,
+};
+
+function domNodeToDocx(el: HTMLElement): (Paragraph | DocxTable)[] {
+  const tag = el.tagName;
+  const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+  if (HEADING_MAP[tag]) {
+    return [new Paragraph({ heading: HEADING_MAP[tag], children: [new TextRun(text)] })];
+  }
+  if (tag === 'P') {
+    return [new Paragraph({ children: [new TextRun(text)] })];
+  }
+  if (tag === 'BLOCKQUOTE') {
+    return [new Paragraph({ children: [new TextRun({ text, italics: true })], indent: { left: 720 } })];
+  }
+  if (tag === 'PRE') {
+    const lines = (el.textContent ?? '').split('\n');
+    return lines.map(line => new Paragraph({
+      children: [new TextRun({ text: line, font: 'Courier New', size: 20 })],
+      spacing: { after: 0 },
+    }));
+  }
+  if (tag === 'UL' || tag === 'OL') {
+    const items = Array.from(el.querySelectorAll(':scope > li'));
+    return items.map(li => new Paragraph({
+      children: [new TextRun((li.textContent ?? '').replace(/\s+/g, ' ').trim())],
+      bullet: tag === 'UL' ? { level: 0 } : undefined,
+      numbering: tag === 'OL' ? { reference: 'mid-ol', level: 0 } : undefined,
+    }));
+  }
+  if (tag === 'TABLE' || el.classList.contains('mid-table')) {
+    const tbl = el.querySelector('table') ?? (tag === 'TABLE' ? el : null);
+    if (!tbl) return [];
+    const rows = Array.from(tbl.querySelectorAll('tr')).map(tr => {
+      const cells = Array.from(tr.querySelectorAll('th, td')).map(cell =>
+        new DocxTableCell({
+          children: [new Paragraph({
+            children: [new TextRun({ text: (cell.textContent ?? '').trim(), bold: cell.tagName === 'TH' })],
+          })],
+        }),
+      );
+      return new DocxTableRow({ children: cells });
+    });
+    return [new DocxTable({ rows, width: { size: 100, type: WidthType.PERCENTAGE } })];
+  }
+  if (tag === 'HR') {
+    return [new Paragraph({ children: [new TextRun('───')], alignment: AlignmentType.CENTER })];
+  }
+  if (text) return [new Paragraph({ children: [new TextRun(text)] })];
+  return [];
 }
 
 function dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
@@ -1729,9 +1806,10 @@ document.addEventListener('contextmenu', e => {
   openContextMenu([
     { icon: 'copy', label: 'Copy text', action: () => void navigator.clipboard.writeText(currentText) },
     { separator: true, label: '' },
-    { icon: 'download', label: 'Export Markdown', action: () => void exportAs('md') },
-    { icon: 'image', label: 'Export HTML', action: () => void exportAs('html') },
-    { icon: 'image', label: 'Export PDF', action: () => void exportAs('pdf') },
+    { icon: 'markdown', label: 'Export Markdown', action: () => void exportAs('md') },
+    { icon: 'html5', label: 'Export HTML', action: () => void exportAs('html') },
+    { icon: 'download', label: 'Export PDF', action: () => void exportAs('pdf') },
+    { icon: 'download', label: 'Export Word (.docx)', action: () => void exportAs('docx') },
     { icon: 'image', label: 'Export PNG', action: () => void exportAs('png') },
     { icon: 'list-ul', label: 'Export plain text', action: () => void exportAs('txt') },
   ], e.clientX, e.clientY);

@@ -93,8 +93,8 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.on('mid:menu-save', handler);
     return () => ipcRenderer.removeListener('mid:menu-save', handler);
   },
-  onMenuExport: (cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt') => void): (() => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, fmt: 'md' | 'html' | 'pdf' | 'png' | 'txt') => cb(fmt);
+  onMenuExport: (cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx') => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, fmt: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx') => cb(fmt);
     ipcRenderer.on('mid:menu-export', handler);
     return () => ipcRenderer.removeListener('mid:menu-export', handler);
   },
