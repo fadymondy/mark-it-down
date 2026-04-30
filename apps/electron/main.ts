@@ -640,20 +640,25 @@ async function installMCPFor(target: 'claude' | 'cursor'): Promise<void> {
   } catch {
     // file doesn't exist or invalid JSON — start fresh
   }
+  const notesDir = resolveMCPNotesDir();
+  // Always use `node`. Packaged builds ship Electron as `process.execPath`
+  // — if Claude Code launched that, it would relaunch the desktop app
+  // instead of running the MCP server. Users running an MCP-aware client
+  // already have node on PATH (Claude Code itself ships node).
+  const command = 'node';
   json.mcpServers = json.mcpServers ?? {};
   json.mcpServers['mark-it-down'] = {
-    command: process.execPath.includes('Electron')
-      ? 'node'
-      : process.execPath, // packaged: invoke node directly if available
-    args: [script, '--notes-dir', resolveMCPNotesDir()],
+    command,
+    args: [script, '--notes-dir', notesDir],
   };
   await fs.mkdir(path.dirname(configPath), { recursive: true });
   await fs.writeFile(configPath, JSON.stringify(json, null, 2), 'utf8');
+  const testCmd = `node ${script} --notes-dir ${notesDir}`;
   await dialog.showMessageBox({
     type: 'info',
     title: 'Mark It Down',
     message: `Installed for ${target === 'claude' ? 'Claude Code' : 'Cursor'}`,
-    detail: `Wrote mcpServers["mark-it-down"] to ${configPath}.\n\nRestart ${target === 'claude' ? 'Claude Code' : 'Cursor'} to pick up the change.`,
+    detail: `Wrote mcpServers["mark-it-down"] to ${configPath}.\n\nRestart ${target === 'claude' ? 'Claude Code' : 'Cursor'} to pick up the change.\n\nTest the server manually:\n\n  ${testCmd}\n\nIf you don't have node on PATH, install it via Homebrew (\`brew install node\`) or nvm.`,
     buttons: ['OK'],
   });
 }
