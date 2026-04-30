@@ -1049,73 +1049,153 @@ main.splitting .mid-preview {
 }
 
 
-/* Data-table viewer (sort / filter / export) */
-.mid-table {
+/* ========================================================================
+ * shadcn DataTable — full rebuild (#210). Replaces 9 prior CSS patches.
+ * Card shell + toolbar + sticky header + pagination + density + columns.
+ * ======================================================================== */
+
+.mid-data-table {
   margin: 1.2em 0;
-  border-radius: var(--mid-radius-md);
-  overflow: hidden;
   background: var(--mid-bg);
-  box-shadow: inset 0 0 0 1px var(--mid-border);
-}
-.mid-table table { margin: 0; border: 0; border-radius: 0; min-width: max-content; width: 100%; }
-.mid-table th { position: sticky; top: 0; z-index: 1; background: var(--mid-bg); }
-.mid-table-scroll {
-  overflow-x: auto;
   border: 1px solid var(--mid-border);
-  border-radius: var(--mid-radius-md);
+  border-radius: var(--mid-radius-lg);
+  box-shadow: var(--mid-shadow-sm);
+  overflow: hidden;
 }
 
-/* Filter chip strip above the table — clear separation from sort indicators */
-.mid-table-chip {
+.mid-dt-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--mid-space-3);
-  margin-bottom: var(--mid-space-3);
-  padding: 0;
-  background: transparent;
-  border: 0;
+  gap: var(--mid-space-2);
+  padding: var(--mid-space-3);
+  border-bottom: 1px solid var(--mid-border);
 }
-.mid-table-chip[hidden] { display: none; }
-.mid-table-filter {
+.mid-dt-search-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mid-space-2);
+  flex: 1;
+  max-width: 320px;
+  padding: 0 var(--mid-space-3);
+  background: var(--mid-bg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-md);
+  transition: border-color var(--mid-motion-fast), box-shadow var(--mid-motion-fast);
+}
+.mid-dt-search-wrap:focus-within {
+  border-color: var(--mid-fg);
+  box-shadow: 0 0 0 1px var(--mid-fg);
+}
+.mid-dt-search {
   flex: 1;
   min-width: 0;
-  padding: 8px var(--mid-space-3);
+  padding: 7px 0;
   font-family: inherit;
   font-size: var(--mid-font-size-sm);
   color: var(--mid-fg);
-  background: var(--mid-bg);
-  border: 1px solid var(--mid-border);
-  border-radius: var(--mid-radius-sm);
+  background: transparent;
+  border: 0;
   outline: none;
 }
-.mid-table-filter:focus-visible { border-color: var(--mid-accent); box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.15); }
-.mid-table-counter {
+.mid-dt-search::placeholder { color: var(--mid-fg-subtle); }
+.mid-dt-counter {
   font-family: var(--mid-font-mono);
   font-size: var(--mid-font-size-xs);
   color: var(--mid-fg-muted);
   white-space: nowrap;
-  padding-right: var(--mid-space-1);
 }
+.mid-dt-spacer { flex: 1; }
+.mid-dt-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  color: var(--mid-fg-muted);
+  border: 1px solid transparent;
+  border-radius: var(--mid-radius-md);
+  cursor: pointer;
+  transition: background var(--mid-motion-fast), color var(--mid-motion-fast);
+}
+.mid-dt-action:hover { background: var(--mid-surface); color: var(--mid-fg); border-color: var(--mid-border); }
 
-/* Sort affordances on each header cell — Boxicons chevron */
-.mid-table-sortable {
+/* Scroll area + table */
+.mid-dt-scroll { overflow: auto; max-height: 70vh; }
+.mid-dt-table {
+  margin: 0;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: max-content;
+}
+.mid-dt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--mid-bg);
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--mid-font-size-xs);
+  font-weight: var(--mid-weight-semibold);
+  color: var(--mid-fg-muted);
+  border-bottom: 1px solid var(--mid-border);
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
 }
-.mid-table-sortable .mid-table-th-label { vertical-align: middle; }
-.mid-table-sort-indicator {
+.mid-dt-th-label { vertical-align: middle; }
+.mid-dt-sort {
   margin-left: var(--mid-space-1);
   vertical-align: middle;
   opacity: 0.35;
   transform: rotate(90deg);
   transition: opacity var(--mid-motion-fast) var(--mid-ease-out), transform var(--mid-motion-fast) var(--mid-ease-out);
 }
-.mid-table-sortable:hover { color: var(--mid-fg); }
-.mid-table-sortable:hover .mid-table-sort-indicator { opacity: 0.7; }
-.mid-table-sortable.is-sort-asc { color: var(--mid-fg); }
-.mid-table-sortable.is-sort-asc .mid-table-sort-indicator { opacity: 1; transform: rotate(-90deg); }
-.mid-table-sortable.is-sort-desc { color: var(--mid-fg); }
-.mid-table-sortable.is-sort-desc .mid-table-sort-indicator { opacity: 1; transform: rotate(90deg); }
+.mid-dt-table thead th:hover { color: var(--mid-fg); }
+.mid-dt-table thead th:hover .mid-dt-sort { opacity: 0.7; }
+.mid-dt-table thead th.is-sort-asc { color: var(--mid-fg); }
+.mid-dt-table thead th.is-sort-asc .mid-dt-sort { opacity: 1; transform: rotate(-90deg); }
+.mid-dt-table thead th.is-sort-desc { color: var(--mid-fg); }
+.mid-dt-table thead th.is-sort-desc .mid-dt-sort { opacity: 1; transform: rotate(90deg); }
+
+.mid-dt-table tbody tr {
+  transition: background-color var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-dt-table tbody tr:hover { background: var(--mid-surface); }
+.mid-dt-table td {
+  border-bottom: 1px solid var(--mid-border);
+  vertical-align: middle;
+  color: var(--mid-fg);
+}
+.mid-dt-table tbody tr:last-child td { border-bottom: 0; }
+.mid-dt-table .is-hidden { display: none !important; }
+
+/* Density modes */
+.mid-data-table[data-density="comfy"]    .mid-dt-table th,
+.mid-data-table[data-density="comfy"]    .mid-dt-table td { padding: 10px var(--mid-space-4); }
+.mid-data-table[data-density="compact"]  .mid-dt-table th,
+.mid-data-table[data-density="compact"]  .mid-dt-table td { padding: 4px var(--mid-space-3); font-size: 13px; }
+.mid-data-table[data-density="spacious"] .mid-dt-table th,
+.mid-data-table[data-density="spacious"] .mid-dt-table td { padding: 14px var(--mid-space-4); }
+
+/* Footer / pagination */
+.mid-dt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--mid-space-2) var(--mid-space-3);
+  border-top: 1px solid var(--mid-border);
+}
+.mid-dt-footer[hidden] { display: none; }
+.mid-dt-page-info {
+  font-family: var(--mid-font-mono);
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+}
+.mid-dt-pager { display: flex; gap: 4px; }
+.mid-dt-pager .mid-btn { width: 28px; height: 28px; }
 
 /* Heading anchors (#) shown on hover */
 .mid-preview h1, .mid-preview h2, .mid-preview h3,
