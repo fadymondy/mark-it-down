@@ -201,6 +201,7 @@ function populatePreview(preview: HTMLElement): void {
   attachImageLightbox(preview);
   attachAlerts(preview);
   attachMath(preview);
+  attachTableTools(preview);
   preview.querySelectorAll<HTMLDivElement>('.mermaid').forEach((el, i) => {
     const id = `mermaid-${Date.now()}-${i}`;
     const code = (el.textContent ?? '').trim();
@@ -436,6 +437,172 @@ function renderKatex(expr: string, displayMode: boolean): string {
   } catch (err) {
     return `<code class="mid-math-error" title="${escapeHTML(String((err as Error).message))}">${escapeHTML(expr)}</code>`;
   }
+}
+
+interface TableState {
+  sortColumn: number | null;
+  sortDir: 'asc' | 'desc' | null;
+  filter: string;
+}
+
+function attachTableTools(scope: HTMLElement): void {
+  scope.querySelectorAll<HTMLTableElement>('table').forEach(table => {
+    if (table.dataset.midTable === '1') return;
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+    if (!thead || !tbody) return;
+    const headers = Array.from(thead.querySelectorAll<HTMLTableCellElement>('th'));
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr'));
+    if (headers.length === 0 || rows.length === 0) return;
+    table.dataset.midTable = '1';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'mid-table';
+    table.replaceWith(wrapper);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'mid-table-toolbar';
+
+    const filterInput = document.createElement('input');
+    filterInput.type = 'search';
+    filterInput.className = 'mid-table-filter';
+    filterInput.placeholder = 'Filter rows…';
+
+    const counter = document.createElement('span');
+    counter.className = 'mid-table-counter';
+
+    const exportGroup = document.createElement('div');
+    exportGroup.className = 'mid-table-exports';
+    exportGroup.append(
+      makeIconButton('copy', 'Copy as Markdown', () => copyTableAsMarkdown(headers, getVisibleRows(rows))),
+      makeIconButton('download', 'Download CSV', () => downloadTable(headers, getVisibleRows(rows), 'csv')),
+      makeIconButton('list-ul', 'Download JSON', () => downloadTable(headers, getVisibleRows(rows), 'json')),
+    );
+
+    toolbar.append(filterInput, counter, exportGroup);
+    wrapper.append(toolbar, table);
+
+    const state: TableState = { sortColumn: null, sortDir: null, filter: '' };
+
+    const apply = (): void => applyTableState(headers, rows, state, counter);
+    apply();
+
+    headers.forEach((th, idx) => {
+      th.classList.add('mid-table-sortable');
+      th.addEventListener('click', () => {
+        if (state.sortColumn !== idx) { state.sortColumn = idx; state.sortDir = 'asc'; }
+        else if (state.sortDir === 'asc') { state.sortDir = 'desc'; }
+        else { state.sortColumn = null; state.sortDir = null; }
+        apply();
+      });
+    });
+
+    let debounce: number | undefined;
+    filterInput.addEventListener('input', () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => {
+        state.filter = filterInput.value.trim().toLowerCase();
+        apply();
+      }, 120);
+    });
+  });
+
+  function getVisibleRows(rows: HTMLTableRowElement[]): HTMLTableRowElement[] {
+    return rows.filter(r => !r.hidden);
+  }
+}
+
+function applyTableState(
+  headers: HTMLTableCellElement[],
+  rows: HTMLTableRowElement[],
+  state: TableState,
+  counter: HTMLSpanElement,
+): void {
+  headers.forEach((th, idx) => {
+    th.classList.remove('is-sort-asc', 'is-sort-desc');
+    if (state.sortColumn === idx && state.sortDir === 'asc') th.classList.add('is-sort-asc');
+    if (state.sortColumn === idx && state.sortDir === 'desc') th.classList.add('is-sort-desc');
+  });
+
+  const tbody = rows[0]?.parentElement;
+  if (!tbody) return;
+
+  const sorted = [...rows];
+  if (state.sortColumn !== null && state.sortDir !== null) {
+    const col = state.sortColumn;
+    const cellText = (r: HTMLTableRowElement): string => r.children[col]?.textContent?.trim() ?? '';
+    const allNumeric = rows.every(r => {
+      const t = cellText(r);
+      return t === '' || !Number.isNaN(Number(t.replace(/[$,%\s]/g, '')));
+    });
+    sorted.sort((a, b) => {
+      const av = cellText(a);
+      const bv = cellText(b);
+      let cmp: number;
+      if (allNumeric) {
+        cmp = (Number(av.replace(/[$,%\s]/g, '')) || 0) - (Number(bv.replace(/[$,%\s]/g, '')) || 0);
+      } else {
+        cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return state.sortDir === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  for (const r of sorted) tbody.appendChild(r);
+
+  let visible = 0;
+  rows.forEach(r => {
+    if (!state.filter) {
+      r.hidden = false;
+      visible++;
+      return;
+    }
+    const haystack = (r.textContent ?? '').toLowerCase();
+    const match = haystack.includes(state.filter);
+    r.hidden = !match;
+    if (match) visible++;
+  });
+
+  counter.textContent = state.filter ? `${visible} of ${rows.length} rows` : `${rows.length} rows`;
+}
+
+function rowToValues(row: HTMLTableRowElement): string[] {
+  return Array.from(row.children).map(c => c.textContent?.trim() ?? '');
+}
+
+function copyTableAsMarkdown(headers: HTMLTableCellElement[], rows: HTMLTableRowElement[]): void {
+  const head = headers.map(h => h.textContent?.trim() ?? '');
+  const lines = [
+    `| ${head.join(' | ')} |`,
+    `| ${head.map(() => '---').join(' | ')} |`,
+    ...rows.map(r => `| ${rowToValues(r).join(' | ')} |`),
+  ];
+  void navigator.clipboard.writeText(lines.join('\n'));
+}
+
+function downloadTable(headers: HTMLTableCellElement[], rows: HTMLTableRowElement[], format: 'csv' | 'json'): void {
+  const head = headers.map(h => h.textContent?.trim() ?? '');
+  let blob: Blob;
+  let filename: string;
+  if (format === 'csv') {
+    const escape = (v: string): string => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    const lines = [head.map(escape).join(','), ...rows.map(r => rowToValues(r).map(escape).join(','))];
+    blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    filename = 'table.csv';
+  } else {
+    const objs = rows.map(r => {
+      const vals = rowToValues(r);
+      return Object.fromEntries(head.map((h, i) => [h, vals[i] ?? '']));
+    });
+    blob = new Blob([JSON.stringify(objs, null, 2)], { type: 'application/json' });
+    filename = 'table.json';
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function attachImageLightbox(scope: HTMLElement): void {
