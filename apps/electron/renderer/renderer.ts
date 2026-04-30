@@ -1340,9 +1340,26 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
     item.addEventListener('contextmenu', e => {
       e.preventDefault();
       e.stopPropagation();
-      openContextMenu([
+      const isMd = /\.(md|mdx|markdown)$/i.test(entry.name);
+      const baseItems: MenuItem[] = [
         { icon: 'show', label: 'Open', action: () => void selectTreeFile(entry.path) },
         { icon: 'folder-open', label: 'Reveal in Finder', action: () => void window.mid.openExternal(`file://${entry.path.replace(/\/[^/]+$/, '')}`) },
+      ];
+      if (!isMd) {
+        openContextMenu(baseItems, e.clientX, e.clientY);
+        return;
+      }
+      openContextMenu([
+        ...baseItems,
+        { separator: true, label: '' },
+        { icon: 'github', label: 'Push to GitHub now', action: () => void pushFilePath(entry.path, entry.name) },
+        { separator: true, label: '' },
+        { icon: 'markdown', label: 'Export Markdown', action: () => void exportFile(entry.path, 'md') },
+        { icon: 'html5', label: 'Export HTML', action: () => void exportFile(entry.path, 'html') },
+        { icon: 'download', label: 'Export PDF', action: () => void exportFile(entry.path, 'pdf') },
+        { icon: 'download', label: 'Export Word (.docx)', action: () => void exportFile(entry.path, 'docx') },
+        { icon: 'image', label: 'Export PNG', action: () => void exportFile(entry.path, 'png') },
+        { icon: 'list-ul', label: 'Export plain text', action: () => void exportFile(entry.path, 'txt') },
       ], e.clientX, e.clientY);
     });
     wrapper.appendChild(item);
@@ -1741,6 +1758,50 @@ async function promptAttachWarehouse(note: NoteEntry): Promise<void> {
     note.warehouse = picked;
   }
   renderNotes();
+}
+
+async function pushFilePath(filePath: string, name: string): Promise<void> {
+  if (!currentFolder) return;
+  const status = await window.mid.repoStatus(currentFolder);
+  if (!status.initialized || !status.remote) {
+    flashStatus('No GitHub repo connected — use the status bar');
+    return;
+  }
+  const result = await window.mid.repoSync(currentFolder, `notes: ${name}`);
+  if (result.ok) flashStatus(`Pushed "${name}"`);
+  else flashStatus(`Push failed: ${result.error?.split('\n')[0] ?? 'unknown'}`);
+  await refreshRepoStatus();
+}
+
+async function exportFile(filePath: string, format: ExportFormat): Promise<void> {
+  const content = await window.mid.readFile(filePath);
+  const baseName = (filePath.split('/').pop() ?? 'document').replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9-_]/g, '_') || 'document';
+  if (format === 'md' || format === 'txt') {
+    const text = format === 'md' ? content : markdownToPlainText(content);
+    const ext = format;
+    const filterName = format === 'md' ? 'Markdown' : 'Plain text';
+    await window.mid.saveAs(`${baseName}.${ext}`, text, [{ name: filterName, extensions: [ext] }]);
+    flashStatus(`Exported ${format.toUpperCase()}`);
+    return;
+  }
+  // Preview-dependent — temporarily swap currentText, render, capture, restore.
+  const savedText = currentText;
+  const savedPath = currentPath;
+  const savedTitle = filenameEl.textContent ?? 'Untitled';
+  const savedMode = currentMode;
+  try {
+    currentText = content;
+    currentPath = filePath;
+    filenameEl.textContent = filePath.split('/').pop() ?? 'Untitled';
+    setMode('view');
+    await new Promise(resolve => setTimeout(resolve, 120));
+    await exportAs(format);
+  } finally {
+    currentText = savedText;
+    currentPath = savedPath;
+    filenameEl.textContent = savedTitle;
+    setMode(savedMode);
+  }
 }
 
 async function exportNote(note: NoteEntry, format: ExportFormat): Promise<void> {
