@@ -493,6 +493,13 @@ function resolveMCPServerScript(): string {
   return '';
 }
 
+function resolveMCPNotesDir(): string {
+  // Stable per-user notes dir. Created if absent so the MCP server has somewhere to read.
+  const dir = path.join(app.getPath('userData'), 'notes');
+  try { require('fs').mkdirSync(dir, { recursive: true }); } catch { /* fine */ }
+  return dir;
+}
+
 function setMCPStatus(s: MCPStatus, err?: string): void {
   mcpStatus = s;
   mcpLastError = err ?? null;
@@ -506,17 +513,26 @@ function startMCP(): void {
     setMCPStatus('error', 'MCP server script not found');
     return;
   }
+  const notesDir = resolveMCPNotesDir();
+  let stderrTail = '';
   try {
-    mcpProcess = fork(script, [], {
+    mcpProcess = fork(script, ['--notes-dir', notesDir], {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       env: { ...process.env, MID_TRAY_MANAGED: '1' },
     });
     setMCPStatus('running');
+    mcpProcess.stderr?.on('data', chunk => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-500);
+    });
     mcpProcess.on('error', e => setMCPStatus('error', e.message));
     mcpProcess.on('exit', code => {
       mcpProcess = null;
-      if (code !== 0 && mcpStatus !== 'stopped') setMCPStatus('error', `MCP exited with code ${code}`);
-      else setMCPStatus('stopped');
+      if (code !== 0 && mcpStatus !== 'stopped') {
+        const detail = stderrTail.trim().split('\n').slice(-1)[0] || `code ${code}`;
+        setMCPStatus('error', detail);
+      } else {
+        setMCPStatus('stopped');
+      }
     });
   } catch (err) {
     setMCPStatus('error', (err as Error).message);
@@ -589,7 +605,7 @@ async function installMCPFor(target: 'claude' | 'cursor'): Promise<void> {
     command: process.execPath.includes('Electron')
       ? 'node'
       : process.execPath, // packaged: invoke node directly if available
-    args: [script],
+    args: [script, '--notes-dir', resolveMCPNotesDir()],
   };
   await fs.mkdir(path.dirname(configPath), { recursive: true });
   await fs.writeFile(configPath, JSON.stringify(json, null, 2), 'utf8');
