@@ -257,15 +257,16 @@ function populatePreview(preview: HTMLElement): void {
 }
 
 function attachMermaidToolbar(host: HTMLDivElement, source: string): void {
-  const toolbar = document.createElement('div');
-  toolbar.className = 'mid-mermaid-toolbar';
-  toolbar.append(
-    makeIconButton('copy', 'Copy SVG', () => copyMermaidSVG(host)),
-    makeIconButton('download', 'Download SVG', () => downloadMermaidSVG(host, source)),
-    makeIconButton('image', 'Download PNG', () => void downloadMermaidPNG(host)),
-  );
   host.style.position = 'relative';
-  host.appendChild(toolbar);
+  host.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openContextMenu([
+      { icon: 'copy', label: 'Copy SVG', action: () => copyMermaidSVG(host) },
+      { icon: 'download', label: 'Download SVG', action: () => downloadMermaidSVG(host, source) },
+      { icon: 'image', label: 'Download PNG', action: () => void downloadMermaidPNG(host) },
+    ], e.clientX, e.clientY);
+  });
 }
 
 function copyMermaidSVG(host: HTMLDivElement): void {
@@ -364,23 +365,78 @@ function attachCodeBlockToolbar(scope: HTMLElement): void {
       pre.appendChild(badge);
     }
 
-    const toolbar = document.createElement('div');
-    toolbar.className = 'mid-code-toolbar';
-    toolbar.append(
-      makeIconButton('list-ul', 'Toggle line numbers', () => pre.classList.toggle('with-lines')),
-      makeIconButton('copy', 'Copy', async (btn) => {
-        await navigator.clipboard.writeText(code.innerText).then(
-          () => flashButton(btn, 'copy', 'Copied'),
-          () => flashButton(btn, 'x', 'Failed'),
-        );
-      }),
-      makeIconButton('download', 'Download', () => downloadCode(code.innerText, lang)),
-      makeIconButton('image', 'Export PNG', () => void exportCodeBlockAsPNG(pre)),
-    );
-    pre.appendChild(toolbar);
-
     addLineNumbers(pre, code);
+
+    pre.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openContextMenu([
+        { icon: 'copy', label: 'Copy', kbd: '⌘C', action: () => void navigator.clipboard.writeText(code.innerText) },
+        { icon: 'download', label: 'Download as file', action: () => downloadCode(code.innerText, lang) },
+        { icon: 'image', label: 'Export as PNG', action: () => void exportCodeBlockAsPNG(pre) },
+        { separator: true, label: '' },
+        { icon: 'list-ul', label: pre.classList.contains('with-lines') ? 'Hide line numbers' : 'Show line numbers', action: () => pre.classList.toggle('with-lines') },
+      ], e.clientX, e.clientY);
+    });
   });
+}
+
+interface MenuItem {
+  icon?: IconName;
+  label: string;
+  kbd?: string;
+  action?: () => void | Promise<void>;
+  separator?: boolean;
+  disabled?: boolean;
+}
+
+function openContextMenu(items: MenuItem[], x: number, y: number): void {
+  document.querySelectorAll('.mid-context-menu').forEach(el => el.remove());
+  const menu = document.createElement('div');
+  menu.className = 'mid-context-menu';
+  for (const item of items) {
+    if (item.separator) {
+      const sep = document.createElement('div');
+      sep.className = 'mid-context-sep';
+      menu.appendChild(sep);
+      continue;
+    }
+    const row = document.createElement('button');
+    row.className = 'mid-context-item';
+    row.type = 'button';
+    if (item.disabled) row.disabled = true;
+    const iconHtml = item.icon ? iconHTML(item.icon, 'mid-icon--sm mid-icon--muted') : '<span class="mid-icon mid-icon--sm"></span>';
+    const kbdHtml = item.kbd ? `<span class="mid-context-kbd">${item.kbd}</span>` : '';
+    row.innerHTML = `${iconHtml}<span class="mid-context-label">${escapeHTML(item.label)}</span>${kbdHtml}`;
+    row.addEventListener('click', () => {
+      void item.action?.();
+      close();
+    });
+    menu.appendChild(row);
+  }
+  document.body.appendChild(menu);
+
+  const rect = menu.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 4;
+  const maxY = window.innerHeight - rect.height - 4;
+  menu.style.left = `${Math.min(x, maxX)}px`;
+  menu.style.top = `${Math.min(y, maxY)}px`;
+
+  const close = (): void => {
+    menu.remove();
+    document.removeEventListener('mousedown', onOutside, true);
+    document.removeEventListener('keydown', onKey, true);
+  };
+  const onOutside = (e: MouseEvent): void => {
+    if (!menu.contains(e.target as Node)) close();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+  };
+  setTimeout(() => {
+    document.addEventListener('mousedown', onOutside, true);
+    document.addEventListener('keydown', onKey, true);
+  }, 0);
 }
 
 function makeIconButton(icon: IconName, title: string, onClick: (btn: HTMLButtonElement) => void): HTMLButtonElement {
@@ -549,30 +605,23 @@ function attachTableTools(scope: HTMLElement): void {
     wrapper.className = 'mid-table';
     table.replaceWith(wrapper);
 
-    const toolbar = document.createElement('div');
-    toolbar.className = 'mid-table-toolbar';
-
+    // Compact filter chip — only shown for tables with > 5 rows so small tables stay clean.
+    const showChip = rows.length > 5;
+    const chip = document.createElement('div');
+    chip.className = 'mid-table-chip';
     const filterInput = document.createElement('input');
     filterInput.type = 'search';
     filterInput.className = 'mid-table-filter';
-    filterInput.placeholder = 'Filter rows…';
-
+    filterInput.placeholder = 'Filter…';
     const counter = document.createElement('span');
     counter.className = 'mid-table-counter';
+    chip.append(filterInput, counter);
+    if (!showChip) chip.hidden = true;
 
-    const exportGroup = document.createElement('div');
-    exportGroup.className = 'mid-table-exports';
-    exportGroup.append(
-      makeIconButton('copy', 'Copy as Markdown', () => copyTableAsMarkdown(headers, getVisibleRows(rows))),
-      makeIconButton('download', 'Download CSV', () => downloadTable(headers, getVisibleRows(rows), 'csv')),
-      makeIconButton('list-ul', 'Download JSON', () => downloadTable(headers, getVisibleRows(rows), 'json')),
-    );
-
-    toolbar.append(filterInput, counter, exportGroup);
-    wrapper.append(toolbar, table);
+    wrapper.append(chip, table);
 
     const state: TableState = { sortColumn: null, sortDir: null, filter: '' };
-
+    const getVisible = (): HTMLTableRowElement[] => rows.filter(r => !r.hidden);
     const apply = (): void => applyTableState(headers, rows, state, counter);
     apply();
 
@@ -594,11 +643,20 @@ function attachTableTools(scope: HTMLElement): void {
         apply();
       }, 120);
     });
-  });
 
-  function getVisibleRows(rows: HTMLTableRowElement[]): HTMLTableRowElement[] {
-    return rows.filter(r => !r.hidden);
-  }
+    wrapper.addEventListener('contextmenu', e => {
+      if ((e.target as HTMLElement).closest('input, button')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openContextMenu([
+        { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getVisible()) },
+        { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getVisible(), 'csv') },
+        { icon: 'list-ul', label: 'Download JSON', action: () => downloadTable(headers, getVisible(), 'json') },
+        { separator: true, label: '' },
+        { icon: state.sortColumn === null ? 'x' : 'refresh', label: state.sortColumn === null ? 'No sort active' : 'Reset sort', disabled: state.sortColumn === null, action: () => { state.sortColumn = null; state.sortDir = null; apply(); } },
+      ], e.clientX, e.clientY);
+    });
+  });
 }
 
 function applyTableState(
@@ -945,6 +1003,14 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
     item.appendChild(document.createTextNode(` ${entry.name}`));
     if (currentPath === entry.path) item.classList.add('is-active');
     item.addEventListener('click', () => void selectTreeFile(entry.path));
+    item.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openContextMenu([
+        { icon: 'show', label: 'Open', action: () => void selectTreeFile(entry.path) },
+        { icon: 'folder-open', label: 'Reveal in Finder', action: () => void window.mid.openExternal(`file://${entry.path.replace(/\/[^/]+$/, '')}`) },
+      ], e.clientX, e.clientY);
+    });
     wrapper.appendChild(item);
   }
   return wrapper;
@@ -1169,7 +1235,27 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
   });
   row.append(title, meta, del);
   row.addEventListener('click', () => void openNote(note));
+  row.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openContextMenu([
+      { icon: 'show', label: 'Open', action: () => void openNote(note) },
+      { icon: 'edit', label: 'Rename…', action: () => void renameNote(note) },
+      { separator: true, label: '' },
+      { icon: 'trash', label: 'Delete', action: () => void deleteNote(note) },
+    ], e.clientX, e.clientY);
+  });
   return row;
+}
+
+async function renameNote(note: NoteEntry): Promise<void> {
+  if (!currentFolder) return;
+  const next = await midPrompt('Rename note', 'Title', note.title);
+  if (next === null || next.trim() === '' || next === note.title) return;
+  const updated = await window.mid.notesRename(currentFolder, note.id, next.trim());
+  if (!updated) return;
+  Object.assign(note, updated);
+  renderNotes();
 }
 
 async function openNote(note: NoteEntry): Promise<void> {
@@ -1278,6 +1364,22 @@ window.mid.onMenuOpen(() => void openFile());
 window.mid.onMenuOpenFolder(() => void openFolder());
 window.mid.onMenuSave(() => void saveFile());
 window.mid.onMenuExport(fmt => void exportAs(fmt));
+
+document.addEventListener('contextmenu', e => {
+  const el = e.target as HTMLElement;
+  if (el.closest('pre, .mid-table, .mermaid, .mid-tree-item, .mid-note-row, input, textarea, button, select')) return;
+  if (!el.closest('.mid-preview, main')) return;
+  e.preventDefault();
+  openContextMenu([
+    { icon: 'copy', label: 'Copy text', action: () => void navigator.clipboard.writeText(currentText) },
+    { separator: true, label: '' },
+    { icon: 'download', label: 'Export Markdown', action: () => void exportAs('md') },
+    { icon: 'image', label: 'Export HTML', action: () => void exportAs('html') },
+    { icon: 'image', label: 'Export PDF', action: () => void exportAs('pdf') },
+    { icon: 'image', label: 'Export PNG', action: () => void exportAs('png') },
+    { icon: 'list-ul', label: 'Export plain text', action: () => void exportAs('txt') },
+  ], e.clientX, e.clientY);
+});
 
 hydrateIconButtons(document);
 wireSettingsPanel();
