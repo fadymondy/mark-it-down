@@ -646,6 +646,16 @@ main.splitting .mid-preview {
   background: var(--mid-code-bg);
 }
 
+/* Gradient backdrop for code-block PNG export (Carbon-style) */
+.mid-code-export-bg {
+  display: inline-block;
+  padding: 60px;
+  width: max-content;
+}
+.mid-code-export-bg .mid-code-window {
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
 /* Code-block toolbar (Copy / Download / Image / Lines) + language badge */
 .mid-pre { padding-top: var(--mid-space-6); }
 .mid-pre.with-lines {

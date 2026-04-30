@@ -23,6 +23,7 @@ export interface AppState {
   theme?: string;
   previewMaxWidth?: number;
   recentFiles?: string[];
+  codeExportGradient?: string;
 }
 
 export interface NoteEntry {

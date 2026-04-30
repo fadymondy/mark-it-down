@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   fontSize: 17,
   theme: 'auto' as ThemeChoice,
   previewMaxWidth: 760,
+  codeExportGradient: 'sunset' as CodeExportGradient,
 };
 
 const FONT_STACKS: Record<FontFamilyChoice, string> = {
@@ -826,16 +827,46 @@ function downloadCode(text: string, lang?: string): void {
 }
 
 async function exportCodeBlockAsPNG(target: HTMLElement): Promise<void> {
-  // Captures the macOS-window chrome wrapper directly so the export naturally
-  // shows the traffic lights + filename + code surface as a whole.
-  const dataUrl = await toPng(target, {
-    pixelRatio: 2,
-    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#0d1117',
-  });
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = 'code.png';
-  a.click();
+  const gradient = CODE_EXPORT_GRADIENTS[settings.codeExportGradient];
+  if (!gradient) {
+    // No backdrop — capture the chromed window directly.
+    const dataUrl = await toPng(target, {
+      pixelRatio: 2,
+      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#0d1117',
+    });
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'code.png';
+    a.click();
+    return;
+  }
+  // Wrap the chromed window in a gradient backdrop + 60px padding so the export
+  // looks like a Carbon-style screenshot.
+  const backdrop = document.createElement('div');
+  backdrop.className = 'mid-code-export-bg';
+  backdrop.style.background = gradient;
+  // The wrapper sits next to the target temporarily; clone the chrome so we
+  // don't visually disturb the live preview.
+  const clone = target.cloneNode(true) as HTMLElement;
+  backdrop.appendChild(clone);
+  // Position off-screen but in-document so html-to-image picks up styles.
+  backdrop.style.position = 'fixed';
+  backdrop.style.left = '0';
+  backdrop.style.top = '0';
+  backdrop.style.zIndex = '-1';
+  backdrop.style.opacity = '0';
+  document.body.appendChild(backdrop);
+  try {
+    // Force a frame so layout settles.
+    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+    const dataUrl = await toPng(backdrop, { pixelRatio: 2 });
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'code.png';
+    a.click();
+  } finally {
+    backdrop.remove();
+  }
 }
 
 function addLineNumbers(pre: HTMLPreElement, code: HTMLElement): void {
@@ -2131,6 +2162,7 @@ function wireSettingsPanel(): void {
   const sizeVal = document.getElementById('setting-font-size-value') as HTMLSpanElement;
   const widthRange = document.getElementById('setting-preview-width') as HTMLInputElement;
   const widthVal = document.getElementById('setting-preview-width-value') as HTMLSpanElement;
+  const codeBgSel = document.getElementById('setting-code-bg') as HTMLSelectElement;
   const resetBtn = document.getElementById('settings-reset') as HTMLButtonElement;
 
   const syncFromSettings = (): void => {
@@ -2149,6 +2181,7 @@ function wireSettingsPanel(): void {
     sizeVal.textContent = `${settings.fontSize}px`;
     widthRange.value = String(settings.previewMaxWidth);
     widthVal.textContent = `${settings.previewMaxWidth}px`;
+    codeBgSel.value = settings.codeExportGradient;
   };
   // First-time populate so the picker is correct even before the panel opens.
   syncFromSettings();
@@ -2184,6 +2217,7 @@ function wireSettingsPanel(): void {
     widthVal.textContent = `${n}px`;
     persist({ previewMaxWidth: n });
   });
+  codeBgSel.addEventListener('change', () => persist({ codeExportGradient: codeBgSel.value as CodeExportGradient }));
   resetBtn.addEventListener('click', () => {
     Object.assign(settings, DEFAULT_SETTINGS);
     applySettings();
@@ -2229,6 +2263,9 @@ void window.mid.readAppState().then(async state => {
     settings.previewMaxWidth = state.previewMaxWidth;
   }
   if (Array.isArray(state.recentFiles)) recentFiles = state.recentFiles.slice(0, 10);
+  if (state.codeExportGradient && state.codeExportGradient in CODE_EXPORT_GRADIENTS) {
+    settings.codeExportGradient = state.codeExportGradient as CodeExportGradient;
+  }
   applySettings();
   if (state.lastFolder) {
     try {

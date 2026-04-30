@@ -528,6 +528,7 @@ interface AppState {
   theme?: string;
   previewMaxWidth?: number;
   recentFiles?: string[];
+  codeExportGradient?: string;
 }
 
 function resolveMCPServerScript(): string {
