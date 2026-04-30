@@ -213,6 +213,81 @@ body.has-sidebar .mid-shell {
 }
 .mid-status-dot.is-dirty { color: var(--mid-warning); }
 
+/* Mermaid editor modal — split textarea + live preview */
+.mid-mermaid-editor {
+  width: min(1100px, 92vw);
+  max-width: none;
+  height: min(720px, 86vh);
+  padding: 0;
+  margin: auto;
+  background: var(--mid-bg);
+  color: var(--mid-fg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-lg);
+  box-shadow: var(--mid-shadow-lg);
+  overflow: hidden;
+}
+.mid-mermaid-editor::backdrop { background: rgba(0, 0, 0, 0.5); }
+.mid-mermaid-editor[open] { display: flex; flex-direction: column; }
+.mid-mermaid-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--mid-space-3) var(--mid-space-4);
+  border-bottom: 1px solid var(--mid-border);
+}
+.mid-mermaid-editor-title { margin: 0; font-size: var(--mid-font-size-lg); font-weight: var(--mid-weight-semibold); }
+.mid-mermaid-editor-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+}
+.mid-mermaid-editor-src {
+  width: 100%;
+  height: 100%;
+  padding: var(--mid-space-4);
+  font-family: var(--mid-font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  background: var(--mid-bg);
+  color: var(--mid-fg);
+  border: 0;
+  border-right: 1px solid var(--mid-border);
+  outline: none;
+  resize: none;
+  tab-size: 2;
+  white-space: pre;
+}
+.mid-mermaid-editor-preview {
+  background: var(--mid-code-bg);
+  padding: var(--mid-space-4);
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mid-mermaid-editor-preview svg { max-width: 100%; height: auto; }
+.mid-mermaid-editor-empty,
+.mid-mermaid-editor-error {
+  color: var(--mid-fg-muted);
+  font-family: var(--mid-font-mono);
+  font-size: var(--mid-font-size-sm);
+}
+.mid-mermaid-editor-error { color: var(--mid-danger); white-space: pre-wrap; }
+.mid-mermaid-editor-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--mid-space-2);
+  padding: var(--mid-space-3) var(--mid-space-4);
+  border-top: 1px solid var(--mid-border);
+}
+.mid-mermaid-editor-hint {
+  font-family: var(--mid-font-mono);
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+}
+
 /* Modal dialog (replaces window.prompt / window.confirm — unsupported in Electron) */
 .mid-dialog {
   margin: auto;

@@ -520,6 +520,8 @@ function attachMermaidToolbar(host: HTMLDivElement, source: string): void {
     e.stopPropagation();
     const reset = (host as HTMLDivElement & { _midResetMermaid?: () => void })._midResetMermaid;
     openContextMenu([
+      { icon: 'edit', label: 'Edit diagram…', action: () => openMermaidEditor(source) },
+      { separator: true, label: '' },
       { icon: 'copy', label: 'Copy SVG', action: () => copyMermaidSVG(host) },
       { icon: 'download', label: 'Download SVG', action: () => downloadMermaidSVG(host, source) },
       { icon: 'image', label: 'Download PNG', action: () => void downloadMermaidPNG(host) },
@@ -527,6 +529,82 @@ function attachMermaidToolbar(host: HTMLDivElement, source: string): void {
       { icon: 'refresh', label: 'Reset view', action: () => reset?.() },
     ], e.clientX, e.clientY);
   });
+}
+
+function openMermaidEditor(originalSource: string): void {
+  const dlg = document.getElementById('mid-mermaid-editor') as HTMLDialogElement;
+  const src = document.getElementById('mid-mermaid-editor-src') as HTMLTextAreaElement;
+  const preview = document.getElementById('mid-mermaid-editor-preview') as HTMLDivElement;
+  const closeBtn = document.getElementById('mid-mermaid-editor-close') as HTMLButtonElement;
+  const cancelBtn = document.getElementById('mid-mermaid-editor-cancel') as HTMLButtonElement;
+  const saveBtn = document.getElementById('mid-mermaid-editor-save') as HTMLButtonElement;
+
+  src.value = originalSource;
+  let timer: number | null = null;
+  let renderToken = 0;
+
+  const render = (): void => {
+    const code = src.value.trim();
+    if (!code) {
+      preview.innerHTML = '<div class="mid-mermaid-editor-empty">empty</div>';
+      return;
+    }
+    const id = `mermaid-edit-${++renderToken}`;
+    const myToken = renderToken;
+    mermaid.render(id, code).then(({ svg }) => {
+      if (myToken !== renderToken) return;
+      preview.innerHTML = svg;
+    }).catch(err => {
+      if (myToken !== renderToken) return;
+      preview.innerHTML = `<pre class="mid-mermaid-editor-error">${escapeHTML(String((err as Error)?.message ?? err))}</pre>`;
+    });
+  };
+  render();
+
+  src.oninput = (): void => {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = window.setTimeout(render, 120);
+  };
+
+  const close = (): void => {
+    src.oninput = null;
+    if (timer !== null) window.clearTimeout(timer);
+    closeBtn.removeEventListener('click', cancel);
+    cancelBtn.removeEventListener('click', cancel);
+    saveBtn.removeEventListener('click', save);
+    document.removeEventListener('keydown', onKey);
+    if (dlg.open) dlg.close();
+  };
+  const cancel = (): void => close();
+  const save = (): void => {
+    const next = src.value;
+    if (next === originalSource) { close(); return; }
+    const before = '```mermaid\n' + originalSource + '\n```';
+    const after = '```mermaid\n' + next + '\n```';
+    const idx = currentText.indexOf(before);
+    if (idx === -1) {
+      flashStatus('Could not locate diagram source — editor closed without saving');
+      close();
+      return;
+    }
+    currentText = currentText.slice(0, idx) + after + currentText.slice(idx + before.length);
+    if (currentMode === 'view') renderView();
+    else if (currentMode === 'split') renderSplit();
+    updateSaveIndicator(false);
+    flashStatus('Diagram updated');
+    close();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+  };
+
+  closeBtn.addEventListener('click', cancel);
+  cancelBtn.addEventListener('click', cancel);
+  saveBtn.addEventListener('click', save);
+  document.addEventListener('keydown', onKey);
+  dlg.showModal();
+  src.focus();
 }
 
 function copyMermaidSVG(host: HTMLDivElement): void {
