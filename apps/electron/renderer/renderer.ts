@@ -5,6 +5,7 @@ import katex from 'katex';
 import yaml from 'js-yaml';
 import { toPng } from 'html-to-image';
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
+import { iconForFile } from '../../../packages/ui-tokens/src/file-icons';
 import { THEMES, ThemeDefinition } from '../../../packages/core/src/themes/themes';
 
 interface TreeEntry {
@@ -1220,8 +1221,19 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
 
   if (entry.kind === 'dir') {
     const isOpen = expandedDirs.has(entry.path);
+    const folderMatch = iconForFile(entry.name, 'dir');
+    const folderIcon = isOpen && folderMatch.icon === 'folder' ? 'folder-open' : folderMatch.icon;
     item.insertAdjacentHTML('beforeend', `<span class="mid-tree-chevron${isOpen ? ' is-open' : ''}">${iconHTML('chevron-right', 'mid-icon--sm')}</span>`);
-    item.insertAdjacentHTML('beforeend', iconHTML(isOpen ? 'folder-open' : 'folder', 'mid-icon--muted'));
+    const folderIconHtml = iconHTML(folderIcon, 'mid-icon--muted mid-tree-icon');
+    if (folderMatch.color) {
+      const span = document.createElement('span');
+      span.innerHTML = folderIconHtml;
+      const svg = span.firstElementChild as HTMLElement | null;
+      if (svg) svg.style.color = folderMatch.color;
+      item.appendChild(span.firstElementChild!);
+    } else {
+      item.insertAdjacentHTML('beforeend', folderIconHtml);
+    }
     item.appendChild(document.createTextNode(` ${entry.name}`));
     item.addEventListener('click', () => {
       if (expandedDirs.has(entry.path)) expandedDirs.delete(entry.path);
@@ -1238,7 +1250,17 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
     }
   } else {
     item.insertAdjacentHTML('beforeend', '<span class="mid-tree-chevron"></span>');
-    item.insertAdjacentHTML('beforeend', iconHTML('file', 'mid-icon--muted'));
+    const fileMatch = iconForFile(entry.name, 'file');
+    const fileIconHtml = iconHTML(fileMatch.icon, 'mid-icon--muted mid-tree-icon');
+    if (fileMatch.color) {
+      const span = document.createElement('span');
+      span.innerHTML = fileIconHtml;
+      const svg = span.firstElementChild as HTMLElement | null;
+      if (svg) svg.style.color = fileMatch.color;
+      item.appendChild(span.firstElementChild!);
+    } else {
+      item.insertAdjacentHTML('beforeend', fileIconHtml);
+    }
     item.appendChild(document.createTextNode(` ${entry.name}`));
     if (currentPath === entry.path) item.classList.add('is-active');
     item.addEventListener('click', () => void selectTreeFile(entry.path));

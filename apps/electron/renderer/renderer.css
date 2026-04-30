@@ -75,6 +75,8 @@ body.has-sidebar .mid-shell {
   transition: transform var(--mid-motion-fast) var(--mid-ease-out);
 }
 .mid-tree-chevron.is-open { transform: rotate(90deg); }
+.mid-tree-item .mid-tree-icon { flex-shrink: 0; }
+.mid-tree-item.is-active .mid-tree-icon { color: var(--mid-accent-fg) !important; }
 .mid-tree-children { padding-left: var(--mid-space-3); }
 .mid-tree-empty {
   padding: var(--mid-space-4);
