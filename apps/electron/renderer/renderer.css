@@ -111,7 +111,7 @@ main { overflow: hidden; min-height: 0; }
 main.viewing { overflow: auto; }
 main.viewing > .mid-preview {
   padding: var(--mid-space-8) var(--mid-space-12) var(--mid-space-12);
-  max-width: 920px;
+  max-width: var(--mid-preview-max-width, 920px);
   margin: 0 auto;
 }
 main.splitting { display: block; height: 100%; }
@@ -156,6 +156,72 @@ main.splitting .mid-preview {
   inset: 0 -3px;
 }
 .mid-split-preview { border-left: 1px solid var(--mid-border); }
+
+/* Settings panel — slide-in overlay from the right */
+.mid-settings {
+  position: fixed;
+  top: var(--mid-titlebar-h);
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  z-index: var(--mid-z-modal);
+  background: var(--mid-surface);
+  border-left: 1px solid var(--mid-border);
+  box-shadow: var(--mid-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  animation: mid-slide-in var(--mid-motion-base) var(--mid-ease-out);
+}
+.mid-settings[hidden] { display: none; }
+@keyframes mid-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.mid-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--mid-space-3) var(--mid-space-4);
+  border-bottom: 1px solid var(--mid-border);
+}
+.mid-settings-title {
+  margin: 0;
+  font-size: var(--mid-font-size-lg);
+  font-weight: var(--mid-weight-semibold);
+}
+.mid-settings-body {
+  flex: 1;
+  overflow: auto;
+  padding: var(--mid-space-3) var(--mid-space-4) var(--mid-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-5);
+}
+.mid-settings-section { display: flex; flex-direction: column; gap: var(--mid-space-2); }
+.mid-settings-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--mid-font-size-sm);
+  font-weight: var(--mid-weight-medium);
+  color: var(--mid-fg);
+}
+.mid-settings-hint {
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+  font-weight: var(--mid-weight-normal);
+}
+.mid-settings-control {
+  font-family: inherit;
+  font-size: var(--mid-font-size-sm);
+  padding: var(--mid-space-1) var(--mid-space-2);
+  background: var(--mid-bg);
+  color: var(--mid-fg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+}
+.mid-settings-control[type="range"] { padding: 0; accent-color: var(--mid-accent); }
+.mid-settings-control:focus-visible { outline: 2px solid var(--mid-accent); outline-offset: 2px; border-color: var(--mid-accent); }
 .mid-preview h1, .mid-preview h2 {
   border-bottom: 1px solid var(--mid-border);
   padding-bottom: 0.3em;

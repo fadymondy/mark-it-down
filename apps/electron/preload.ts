@@ -18,6 +18,10 @@ export interface TreeEntry {
 export interface AppState {
   lastFolder?: string;
   splitRatio?: number;
+  fontFamily?: 'system' | 'sans' | 'serif' | 'mono';
+  fontSize?: number;
+  theme?: 'auto' | 'light' | 'dark' | 'sepia';
+  previewMaxWidth?: number;
 }
 
 contextBridge.exposeInMainWorld('mid', {

@@ -10,10 +10,31 @@ interface TreeEntry {
   children?: TreeEntry[];
 }
 
+type FontFamilyChoice = 'system' | 'sans' | 'serif' | 'mono';
+type ThemeChoice = 'auto' | 'light' | 'dark' | 'sepia';
+
 interface AppState {
   lastFolder?: string;
   splitRatio?: number;
+  fontFamily?: FontFamilyChoice;
+  fontSize?: number;
+  theme?: ThemeChoice;
+  previewMaxWidth?: number;
 }
+
+const DEFAULT_SETTINGS = {
+  fontFamily: 'system' as FontFamilyChoice,
+  fontSize: 15,
+  theme: 'auto' as ThemeChoice,
+  previewMaxWidth: 920,
+};
+
+const FONT_STACKS: Record<FontFamilyChoice, string> = {
+  system: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+  sans: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+  serif: 'Georgia, "Iowan Old Style", "Apple Garamond", Charter, serif',
+  mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+};
 
 interface Mid {
   readFile(path: string): Promise<string>;
@@ -55,11 +76,37 @@ let mermaidThemeKind = 0;
 let currentFolder: string | null = null;
 let splitRatio = 0.5;
 let renderTimer: number | null = null;
+let osIsDark = false;
+const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
 
 function applyTheme(isDark: boolean): void {
-  document.documentElement.classList.toggle('dark', isDark);
-  initMermaid(isDark ? 2 : 1);
+  osIsDark = isDark;
+  applyResolvedTheme();
+}
+
+function applyResolvedTheme(): void {
+  const root = document.documentElement;
+  root.classList.remove('dark', 'sepia');
+  let resolvedDark = false;
+  if (settings.theme === 'dark') {
+    root.classList.add('dark');
+    resolvedDark = true;
+  } else if (settings.theme === 'sepia') {
+    root.classList.add('sepia');
+  } else if (settings.theme === 'auto' && osIsDark) {
+    root.classList.add('dark');
+    resolvedDark = true;
+  }
+  initMermaid(resolvedDark ? 2 : 1);
+}
+
+function applySettings(): void {
+  const root = document.documentElement;
+  root.style.setProperty('--mid-font-sans', FONT_STACKS[settings.fontFamily]);
+  root.style.setProperty('--mid-font-size-base', `${settings.fontSize}px`);
+  root.style.setProperty('--mid-preview-max-width', `${settings.previewMaxWidth}px`);
+  applyResolvedTheme();
 }
 
 function initMermaid(themeKind: number): void {
@@ -448,6 +495,76 @@ window.mid.onMenuOpenFolder(() => void openFolder());
 window.mid.onMenuSave(() => void saveFile());
 
 hydrateIconButtons(document);
+wireSettingsPanel();
+
+function wireSettingsPanel(): void {
+  const panel = document.getElementById('settings-panel') as HTMLElement;
+  const openBtn = document.getElementById('settings-btn') as HTMLButtonElement;
+  const closeBtn = document.getElementById('settings-close') as HTMLButtonElement;
+  const themeSel = document.getElementById('setting-theme') as HTMLSelectElement;
+  const fontSel = document.getElementById('setting-font') as HTMLSelectElement;
+  const sizeRange = document.getElementById('setting-font-size') as HTMLInputElement;
+  const sizeVal = document.getElementById('setting-font-size-value') as HTMLSpanElement;
+  const widthRange = document.getElementById('setting-preview-width') as HTMLInputElement;
+  const widthVal = document.getElementById('setting-preview-width-value') as HTMLSpanElement;
+  const resetBtn = document.getElementById('settings-reset') as HTMLButtonElement;
+
+  const syncFromSettings = (): void => {
+    themeSel.value = settings.theme;
+    fontSel.value = settings.fontFamily;
+    sizeRange.value = String(settings.fontSize);
+    sizeVal.textContent = `${settings.fontSize}px`;
+    widthRange.value = String(settings.previewMaxWidth);
+    widthVal.textContent = `${settings.previewMaxWidth}px`;
+  };
+
+  const persist = (patch: Partial<typeof settings>): void => {
+    Object.assign(settings, patch);
+    applySettings();
+    void window.mid.patchAppState(patch);
+  };
+
+  const open = (): void => {
+    syncFromSettings();
+    panel.hidden = false;
+    document.body.classList.add('settings-open');
+  };
+  const close = (): void => {
+    panel.hidden = true;
+    document.body.classList.remove('settings-open');
+  };
+
+  openBtn.addEventListener('click', () => (panel.hidden ? open() : close()));
+  closeBtn.addEventListener('click', close);
+
+  themeSel.addEventListener('change', () => persist({ theme: themeSel.value as ThemeChoice }));
+  fontSel.addEventListener('change', () => persist({ fontFamily: fontSel.value as FontFamilyChoice }));
+  sizeRange.addEventListener('input', () => {
+    const n = Number(sizeRange.value);
+    sizeVal.textContent = `${n}px`;
+    persist({ fontSize: n });
+  });
+  widthRange.addEventListener('input', () => {
+    const n = Number(widthRange.value);
+    widthVal.textContent = `${n}px`;
+    persist({ previewMaxWidth: n });
+  });
+  resetBtn.addEventListener('click', () => {
+    Object.assign(settings, DEFAULT_SETTINGS);
+    applySettings();
+    syncFromSettings();
+    void window.mid.patchAppState({ ...DEFAULT_SETTINGS });
+  });
+
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+      e.preventDefault();
+      panel.hidden ? open() : close();
+    } else if (e.key === 'Escape' && !panel.hidden) {
+      close();
+    }
+  });
+}
 
 function hydrateIconButtons(scope: ParentNode): void {
   scope.querySelectorAll<HTMLElement>('[data-icon]').forEach(el => {
@@ -468,6 +585,15 @@ void window.mid.readAppState().then(async state => {
   if (typeof state.splitRatio === 'number' && state.splitRatio > 0 && state.splitRatio < 1) {
     splitRatio = state.splitRatio;
   }
+  if (state.fontFamily) settings.fontFamily = state.fontFamily;
+  if (typeof state.fontSize === 'number' && state.fontSize >= 12 && state.fontSize <= 22) {
+    settings.fontSize = state.fontSize;
+  }
+  if (state.theme) settings.theme = state.theme;
+  if (typeof state.previewMaxWidth === 'number' && state.previewMaxWidth >= 600 && state.previewMaxWidth <= 1400) {
+    settings.previewMaxWidth = state.previewMaxWidth;
+  }
+  applySettings();
   if (state.lastFolder) {
     try {
       const tree = await window.mid.listFolderMd(state.lastFolder);
