@@ -65,10 +65,12 @@ body.has-sidebar .mid-shell {
 }
 .mid-tree-item:hover { background: var(--mid-surface-hover); }
 .mid-tree-item.is-active { background: var(--mid-accent); color: var(--mid-accent-fg); }
+.mid-tree-item.is-active .mid-icon { color: var(--mid-accent-fg); }
 .mid-tree-chevron {
-  display: inline-block;
-  width: 12px;
-  text-align: center;
+  display: inline-flex;
+  width: 14px;
+  align-items: center;
+  justify-content: center;
   color: var(--mid-fg-muted);
   transition: transform var(--mid-motion-fast) var(--mid-ease-out);
 }
@@ -195,6 +197,9 @@ main.splitting .mid-preview {
   position: absolute;
   top: var(--mid-space-2);
   right: var(--mid-space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mid-space-1);
   padding: 2px var(--mid-space-2);
   font-family: var(--mid-font-sans);
   font-size: var(--mid-font-size-xs);

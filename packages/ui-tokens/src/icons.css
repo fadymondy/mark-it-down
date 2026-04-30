@@ -1,0 +1,24 @@
+/* Mark It Down — icon primitives.
+ * SVG icons are inlined via icons.ts; this stylesheet sets default size,
+ * stroke / fill behavior, and alignment so consumers can drop one into a
+ * button without extra wrapping CSS.
+ */
+
+.mid-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: currentColor;
+  stroke: none;
+  vertical-align: -2px;
+  pointer-events: none;
+}
+.mid-icon--sm { width: 14px; height: 14px; }
+.mid-icon--lg { width: 20px; height: 20px; }
+.mid-icon--xl { width: 24px; height: 24px; }
+
+/* When sitting alone in a button cell, no extra spacing wanted. */
+.mid-btn .mid-icon { vertical-align: middle; }
+
+/* Make icons feel light against muted UI text. */
+.mid-icon--muted { color: var(--mid-fg-muted); }

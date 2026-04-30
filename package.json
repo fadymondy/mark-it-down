@@ -785,6 +785,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@sentry/node": "^10.50.0",
     "@types/pdfkit": "^0.17.6",
+    "boxicons": "^2.1.4",
     "codemirror": "^6.0.2",
     "docx": "^9.6.1",
     "dompurify": "^3.2.3",
