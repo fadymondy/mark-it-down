@@ -108,7 +108,7 @@ const repoSyncBtn = document.getElementById('repo-sync') as HTMLButtonElement;
 
 let currentText = '';
 let currentPath: string | null = null;
-let currentMode: Mode = 'split';
+let currentMode: Mode = 'view';
 let mermaidThemeKind = 0;
 let currentFolder: string | null = null;
 let splitRatio = 0.5;
@@ -825,7 +825,7 @@ function loadFileContent(filePath: string, content: string): void {
   currentPath = filePath;
   filenameEl.textContent = filePath.split('/').pop() ?? 'Untitled';
   highlightActiveTreeItem();
-  setMode(currentMode === 'view' && content.length > 0 ? 'split' : currentMode);
+  setMode(currentMode);
 }
 
 async function selectTreeFile(filePath: string): Promise<void> {
