@@ -22,6 +22,7 @@ export interface AppState {
   fontSize?: number;
   theme?: 'auto' | 'light' | 'dark' | 'sepia';
   previewMaxWidth?: number;
+  recentFiles?: string[];
 }
 
 export interface NoteEntry {
