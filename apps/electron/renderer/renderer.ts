@@ -585,10 +585,84 @@ function renderView(): void {
     attachWelcomeHandlers(root);
     return;
   }
+  if (isMermaidFile(currentPath)) {
+    renderMermaidStandalone();
+    return;
+  }
   const preview = document.createElement('div');
   preview.className = 'mid-preview';
   populatePreview(preview);
   root.replaceChildren(preview);
+}
+
+function renderMermaidStandalone(): void {
+  // Standalone .mmd / .mermaid file: editor on left + live diagram on right.
+  root.classList.remove('viewing');
+  root.classList.add('splitting');
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-split';
+  wrap.style.gridTemplateColumns = `${splitRatio * 100}% 6px 1fr`;
+  const editor = buildEditor();
+  editor.classList.add('mid-split-editor');
+  const handle = document.createElement('div');
+  handle.className = 'mid-split-handle';
+  handle.addEventListener('mousedown', e => beginSplitDrag(e, wrap));
+  const preview = document.createElement('div');
+  preview.className = 'mid-preview mid-split-preview mid-mermaid-standalone';
+
+  const renderDiagram = (): void => {
+    const code = currentText.trim();
+    if (!code) { preview.innerHTML = '<div class="mid-mermaid-editor-empty">empty</div>'; return; }
+    const id = `mermaid-standalone-${Date.now()}`;
+    mermaid.render(id, code).then(({ svg }) => {
+      preview.innerHTML = svg;
+    }).catch(err => {
+      preview.innerHTML = `<pre class="mid-mermaid-editor-error">${escapeHTML(String((err as Error)?.message ?? err))}</pre>`;
+    });
+  };
+  renderDiagram();
+  let timer: number | null = null;
+  editor.addEventListener('input', () => {
+    currentText = editor.value;
+    if (timer !== null) window.clearTimeout(timer);
+    timer = window.setTimeout(renderDiagram, 120);
+  });
+  wrap.append(editor, handle, preview);
+  root.replaceChildren(wrap);
+}
+
+let mermaidPopout: HTMLDivElement | null = null;
+function maybeShowMermaidPopout(editor: HTMLTextAreaElement): void {
+  // Cursor-aware mermaid popout — when caret is inside a ```mermaid fence,
+  // render that block in a docked overlay.
+  const value = editor.value;
+  const caret = editor.selectionStart;
+  const before = value.slice(0, caret);
+  const fenceStart = before.lastIndexOf('```mermaid');
+  if (fenceStart === -1) { hideMermaidPopout(); return; }
+  const afterFence = before.slice(fenceStart);
+  if (/```\s*$/m.test(afterFence.slice(10))) { hideMermaidPopout(); return; } // closed before caret
+  const remainder = value.slice(fenceStart + 10);
+  const closeIdx = remainder.indexOf('```');
+  if (closeIdx === -1) { hideMermaidPopout(); return; } // unterminated
+  const source = remainder.slice(0, closeIdx).replace(/^\n+/, '').trimEnd();
+  if (!source) { hideMermaidPopout(); return; }
+
+  if (!mermaidPopout) {
+    mermaidPopout = document.createElement('div');
+    mermaidPopout.className = 'mid-mermaid-popout';
+    document.body.appendChild(mermaidPopout);
+  }
+  const id = `mermaid-popout-${Date.now()}`;
+  mermaid.render(id, source).then(({ svg }) => {
+    if (mermaidPopout) mermaidPopout.innerHTML = svg;
+  }).catch(err => {
+    if (mermaidPopout) mermaidPopout.innerHTML = `<pre class="mid-mermaid-editor-error">${escapeHTML(String((err as Error)?.message ?? err))}</pre>`;
+  });
+}
+
+function hideMermaidPopout(): void {
+  if (mermaidPopout) { mermaidPopout.remove(); mermaidPopout = null; }
 }
 
 function populatePreview(preview: HTMLElement): void {
@@ -1532,16 +1606,18 @@ function buildEditor(): HTMLTextAreaElement {
     currentText = ta.value;
     updateWordCount();
     updateSaveIndicator(false);
+    maybeShowMermaidPopout(ta);
   });
   const onCursor = (): void => {
     const before = ta.value.slice(0, ta.selectionStart);
     const lines = before.split('\n');
     updateCursor(lines.length, lines[lines.length - 1].length + 1);
+    maybeShowMermaidPopout(ta);
   };
   ta.addEventListener('keyup', onCursor);
   ta.addEventListener('click', onCursor);
   ta.addEventListener('focus', onCursor);
-  ta.addEventListener('blur', hideCursor);
+  ta.addEventListener('blur', () => { hideCursor(); hideMermaidPopout(); });
   return ta;
 }
 
@@ -1585,6 +1661,10 @@ async function openFile(): Promise<void> {
   const result = await window.mid.openFileDialog();
   if (!result) return;
   loadFileContent(result.filePath, result.content);
+}
+
+function isMermaidFile(filePath: string | null): boolean {
+  return !!filePath && /\.(mmd|mermaid)$/i.test(filePath);
 }
 
 function loadFileContent(filePath: string, content: string): void {

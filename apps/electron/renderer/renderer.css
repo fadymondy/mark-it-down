@@ -488,6 +488,33 @@ body.has-sidebar .mid-shell {
   color: var(--mid-fg-muted);
 }
 
+/* Cursor-aware mermaid popout (#222) */
+.mid-mermaid-popout {
+  position: fixed;
+  bottom: var(--mid-space-6);
+  right: var(--mid-space-6);
+  width: 320px;
+  max-height: 320px;
+  padding: var(--mid-space-3);
+  background: var(--mid-bg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-lg);
+  box-shadow: var(--mid-shadow-lg);
+  z-index: var(--mid-z-modal);
+  overflow: auto;
+  pointer-events: none;
+}
+.mid-mermaid-popout svg { max-width: 100%; height: auto; }
+
+/* Standalone .mmd file mode (#223) */
+.mid-mermaid-standalone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mid-code-bg);
+}
+.mid-mermaid-standalone svg { max-width: 100%; max-height: 100%; }
+
 /* Launch loader overlay */
 .mid-loader {
   position: fixed;
