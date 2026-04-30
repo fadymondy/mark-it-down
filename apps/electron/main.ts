@@ -248,6 +248,10 @@ function broadcastUpdateState(): void {
 interface AppState {
   lastFolder?: string;
   splitRatio?: number;
+  fontFamily?: 'system' | 'sans' | 'serif' | 'mono';
+  fontSize?: number;
+  theme?: 'auto' | 'light' | 'dark' | 'sepia';
+  previewMaxWidth?: number;
 }
 
 const MD_EXT = new Set(['.md', '.mdx', '.markdown']);

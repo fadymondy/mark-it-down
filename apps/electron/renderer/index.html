@@ -24,8 +24,46 @@
     <button id="mode-view" class="mid-btn" title="View" data-icon="show" data-label="View"></button>
     <button id="mode-split" class="mid-btn is-active" title="Split (default)" data-icon="columns" data-label="Split"></button>
     <button id="mode-edit" class="mid-btn" title="Edit" data-icon="edit" data-label="Edit"></button>
+    <button id="settings-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Settings (Cmd/Ctrl+,)" data-icon="cog"></button>
   </div>
 </header>
+<aside class="mid-settings" id="settings-panel" hidden aria-label="Settings">
+  <header class="mid-settings-header">
+    <h2 class="mid-settings-title">Settings</h2>
+    <button id="settings-close" class="mid-btn mid-btn--icon mid-btn--ghost" title="Close" data-icon="x"></button>
+  </header>
+  <div class="mid-settings-body">
+    <section class="mid-settings-section">
+      <label class="mid-settings-label" for="setting-theme">Theme</label>
+      <select id="setting-theme" class="mid-settings-control">
+        <option value="auto">Auto (follow OS)</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="sepia">Sepia</option>
+      </select>
+    </section>
+    <section class="mid-settings-section">
+      <label class="mid-settings-label" for="setting-font">Font family</label>
+      <select id="setting-font" class="mid-settings-control">
+        <option value="system">System</option>
+        <option value="sans">Sans-serif (Inter-style)</option>
+        <option value="serif">Serif (Georgia)</option>
+        <option value="mono">Monospace</option>
+      </select>
+    </section>
+    <section class="mid-settings-section">
+      <label class="mid-settings-label" for="setting-font-size">Body font size <span id="setting-font-size-value" class="mid-settings-hint">15px</span></label>
+      <input id="setting-font-size" class="mid-settings-control" type="range" min="12" max="22" step="1" />
+    </section>
+    <section class="mid-settings-section">
+      <label class="mid-settings-label" for="setting-preview-width">Preview max-width <span id="setting-preview-width-value" class="mid-settings-hint">920px</span></label>
+      <input id="setting-preview-width" class="mid-settings-control" type="range" min="600" max="1400" step="20" />
+    </section>
+    <section class="mid-settings-section">
+      <button id="settings-reset" class="mid-btn">Reset to defaults</button>
+    </section>
+  </div>
+</aside>
 <div class="mid-shell">
   <aside class="mid-sidebar" id="sidebar" hidden>
     <div class="mid-sidebar-header">
