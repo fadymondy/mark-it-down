@@ -206,15 +206,67 @@ function populatePreview(preview: HTMLElement): void {
     const id = `mermaid-${Date.now()}-${i}`;
     const code = (el.textContent ?? '').trim();
     el.removeAttribute('data-processed');
+    el.dataset.mermaidSource = code;
     mermaid
       .render(id, code)
       .then(({ svg }) => {
         el.innerHTML = svg;
+        attachMermaidToolbar(el, code);
       })
       .catch(err => {
         el.innerHTML = `<pre style="color: #d04444">Mermaid error: ${String((err as Error)?.message ?? err)}</pre>`;
       });
   });
+}
+
+function attachMermaidToolbar(host: HTMLDivElement, source: string): void {
+  const toolbar = document.createElement('div');
+  toolbar.className = 'mid-mermaid-toolbar';
+  toolbar.append(
+    makeIconButton('copy', 'Copy SVG', () => copyMermaidSVG(host)),
+    makeIconButton('download', 'Download SVG', () => downloadMermaidSVG(host, source)),
+    makeIconButton('image', 'Download PNG', () => void downloadMermaidPNG(host)),
+  );
+  host.style.position = 'relative';
+  host.appendChild(toolbar);
+}
+
+function copyMermaidSVG(host: HTMLDivElement): void {
+  const svg = host.querySelector('svg');
+  if (!svg) return;
+  void navigator.clipboard.writeText(serializeSVG(svg));
+}
+
+function downloadMermaidSVG(host: HTMLDivElement, _source: string): void {
+  const svg = host.querySelector('svg');
+  if (!svg) return;
+  const blob = new Blob([serializeSVG(svg)], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'diagram.svg';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function downloadMermaidPNG(host: HTMLDivElement): Promise<void> {
+  const svg = host.querySelector('svg');
+  if (!svg) return;
+  const dataUrl = await toPng(host, {
+    pixelRatio: 2,
+    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#ffffff',
+    filter: node => !((node as HTMLElement).classList?.contains('mid-mermaid-toolbar')),
+  });
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = 'diagram.png';
+  a.click();
+}
+
+function serializeSVG(svg: SVGSVGElement): string {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  return new XMLSerializer().serializeToString(clone);
 }
 
 function applySyntaxHighlighting(scope: HTMLElement): void {
