@@ -3,6 +3,7 @@ import mermaid from 'mermaid';
 import hljs from 'highlight.js/lib/common';
 import katex from 'katex';
 import yaml from 'js-yaml';
+import { toPng } from 'html-to-image';
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 
 interface TreeEntry {
@@ -195,7 +196,7 @@ function populatePreview(preview: HTMLElement): void {
     }
   });
   applySyntaxHighlighting(preview);
-  attachCodeCopyButtons(preview);
+  attachCodeBlockToolbar(preview);
   attachHeadingAnchors(preview);
   attachImageLightbox(preview);
   attachAlerts(preview);
@@ -226,33 +227,120 @@ function applySyntaxHighlighting(scope: HTMLElement): void {
   });
 }
 
-function attachCodeCopyButtons(scope: HTMLElement): void {
+const LANG_TO_EXT: Record<string, string> = {
+  typescript: 'ts', ts: 'ts',
+  javascript: 'js', js: 'js',
+  jsx: 'jsx', tsx: 'tsx',
+  python: 'py', py: 'py',
+  ruby: 'rb', rb: 'rb',
+  shell: 'sh', sh: 'sh', bash: 'sh', zsh: 'sh',
+  json: 'json', yaml: 'yml', yml: 'yml',
+  markdown: 'md', md: 'md',
+  html: 'html', xml: 'xml', css: 'css', scss: 'scss',
+  go: 'go', rust: 'rs', rs: 'rs',
+  java: 'java', kotlin: 'kt', swift: 'swift',
+  c: 'c', cpp: 'cpp', 'c++': 'cpp', csharp: 'cs', cs: 'cs',
+  sql: 'sql',
+  php: 'php',
+  diff: 'diff',
+  dockerfile: 'Dockerfile',
+  makefile: 'mk',
+};
+
+function detectCodeLanguage(code: HTMLElement): string | undefined {
+  for (const cls of code.classList) {
+    if (cls.startsWith('language-')) {
+      const lang = cls.slice('language-'.length).toLowerCase();
+      if (lang && lang !== 'plaintext') return lang;
+    }
+  }
+  return undefined;
+}
+
+function attachCodeBlockToolbar(scope: HTMLElement): void {
   scope.querySelectorAll<HTMLPreElement>('pre').forEach(pre => {
-    if (pre.querySelector('.mid-copy-btn')) return;
+    if (pre.dataset.midToolbar === '1') return;
     if (pre.classList.contains('mermaid')) return;
-    pre.classList.add('has-copy');
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'mid-copy-btn';
-    btn.title = 'Copy';
-    btn.innerHTML = `${iconHTML('copy', 'mid-icon--sm')}<span class="mid-copy-btn-label">Copy</span>`;
-    const setLabel = (text: string): void => {
-      const label = btn.querySelector('.mid-copy-btn-label');
-      if (label) label.textContent = text;
-    };
-    btn.addEventListener('click', async () => {
-      const code = pre.querySelector('code')?.innerText ?? pre.innerText;
-      try {
-        await navigator.clipboard.writeText(code);
-        setLabel('Copied');
-        setTimeout(() => setLabel('Copy'), 1200);
-      } catch {
-        setLabel('Failed');
-        setTimeout(() => setLabel('Copy'), 1200);
-      }
-    });
-    pre.appendChild(btn);
+    const code = pre.querySelector<HTMLElement>('code');
+    if (!code) return;
+    pre.dataset.midToolbar = '1';
+    pre.classList.add('mid-pre');
+
+    const lang = detectCodeLanguage(code);
+    if (lang) {
+      const badge = document.createElement('span');
+      badge.className = 'mid-code-lang';
+      badge.textContent = lang;
+      pre.appendChild(badge);
+    }
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'mid-code-toolbar';
+    toolbar.append(
+      makeIconButton('list-ul', 'Toggle line numbers', () => pre.classList.toggle('with-lines')),
+      makeIconButton('copy', 'Copy', async (btn) => {
+        await navigator.clipboard.writeText(code.innerText).then(
+          () => flashButton(btn, 'copy', 'Copied'),
+          () => flashButton(btn, 'x', 'Failed'),
+        );
+      }),
+      makeIconButton('download', 'Download', () => downloadCode(code.innerText, lang)),
+      makeIconButton('image', 'Export PNG', () => void exportCodeBlockAsPNG(pre)),
+    );
+    pre.appendChild(toolbar);
+
+    addLineNumbers(pre, code);
   });
+}
+
+function makeIconButton(icon: IconName, title: string, onClick: (btn: HTMLButtonElement) => void): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mid-code-tool-btn';
+  btn.title = title;
+  btn.setAttribute('aria-label', title);
+  btn.innerHTML = iconHTML(icon, 'mid-icon--sm');
+  btn.addEventListener('click', () => onClick(btn));
+  return btn;
+}
+
+function flashButton(btn: HTMLButtonElement, finalIcon: IconName, label: string): void {
+  const original = btn.innerHTML;
+  btn.innerHTML = `${iconHTML(finalIcon, 'mid-icon--sm')}<span class="mid-code-tool-flash">${label}</span>`;
+  setTimeout(() => { btn.innerHTML = original; }, 1200);
+}
+
+function downloadCode(text: string, lang?: string): void {
+  const ext = (lang && LANG_TO_EXT[lang]) ?? 'txt';
+  const isExtensionlessName = ext === 'Dockerfile' || ext === 'mk';
+  const filename = isExtensionlessName ? ext : `snippet.${ext}`;
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportCodeBlockAsPNG(pre: HTMLPreElement): Promise<void> {
+  const dataUrl = await toPng(pre, {
+    pixelRatio: 2,
+    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-code-bg').trim() || '#0d1117',
+  });
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = 'code.png';
+  a.click();
+}
+
+function addLineNumbers(pre: HTMLPreElement, code: HTMLElement): void {
+  const lines = (code.textContent ?? '').replace(/\n$/, '').split('\n').length;
+  const gutter = document.createElement('span');
+  gutter.className = 'mid-code-gutter';
+  gutter.setAttribute('aria-hidden', 'true');
+  gutter.textContent = Array.from({ length: lines }, (_, i) => String(i + 1)).join('\n');
+  pre.insertBefore(gutter, code);
 }
 
 function slugify(text: string): string {
