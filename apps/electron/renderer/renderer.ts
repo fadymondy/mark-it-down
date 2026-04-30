@@ -1,6 +1,8 @@
 import { renderMarkdown as coreRenderMarkdown, applyMermaidPlaceholders } from '../../../packages/core/src/markdown/renderer';
 import mermaid from 'mermaid';
 import hljs from 'highlight.js/lib/common';
+import katex from 'katex';
+import yaml from 'js-yaml';
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 
 interface TreeEntry {
@@ -120,12 +122,47 @@ function initMermaid(themeKind: number): void {
   mermaidThemeKind = themeKind;
 }
 
+function extractFrontmatter(md: string): { meta?: Record<string, unknown>; body: string } {
+  const m = /^---\r?\n([\s\S]+?)\r?\n---\r?\n?/.exec(md);
+  if (!m) return { body: md };
+  try {
+    const parsed = yaml.load(m[1]);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { meta: parsed as Record<string, unknown>, body: md.slice(m[0].length) };
+    }
+  } catch {
+    // Invalid YAML — render raw.
+  }
+  return { body: md };
+}
+
+function renderFrontmatterHTML(meta: Record<string, unknown>): string {
+  const rows = Object.entries(meta)
+    .map(([k, v]) => {
+      const valueText = Array.isArray(v) ? v.join(', ') : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
+      return `<div class="mid-fm-row"><span class="mid-fm-key">${escapeHTML(k)}</span><span class="mid-fm-val">${escapeHTML(valueText)}</span></div>`;
+    })
+    .join('');
+  return `<aside class="mid-frontmatter" aria-label="Frontmatter">${rows}</aside>`;
+}
+
+function escapeHTML(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function renderMarkdown(md: string): string {
-  const { html, mermaidBlocks } = coreRenderMarkdown(md);
+  const { meta, body } = extractFrontmatter(md);
+  const { html, mermaidBlocks } = coreRenderMarkdown(body);
   const container = document.createElement('div');
   container.innerHTML = html;
   applyMermaidPlaceholders(container, mermaidBlocks);
-  return container.innerHTML;
+  const fmHTML = meta ? renderFrontmatterHTML(meta) : '';
+  return fmHTML + container.innerHTML;
 }
 
 function emptyStateHTML(): string {
@@ -161,6 +198,8 @@ function populatePreview(preview: HTMLElement): void {
   attachCodeCopyButtons(preview);
   attachHeadingAnchors(preview);
   attachImageLightbox(preview);
+  attachAlerts(preview);
+  attachMath(preview);
   preview.querySelectorAll<HTMLDivElement>('.mermaid').forEach((el, i) => {
     const id = `mermaid-${Date.now()}-${i}`;
     const code = (el.textContent ?? '').trim();
@@ -245,6 +284,70 @@ function attachHeadingAnchors(scope: HTMLElement): void {
     });
     h.appendChild(anchor);
   });
+}
+
+const ALERT_ICONS: Record<string, IconName> = {
+  note: 'list-ul',
+  tip: 'bookmark',
+  important: 'link',
+  warning: 'tag',
+  caution: 'x',
+};
+
+function attachAlerts(scope: HTMLElement): void {
+  scope.querySelectorAll('blockquote').forEach(bq => {
+    const firstP = bq.querySelector('p');
+    if (!firstP) return;
+    const m = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/.exec(firstP.textContent ?? '');
+    if (!m) return;
+    const type = m[1].toLowerCase();
+    bq.classList.add('mid-alert', `mid-alert--${type}`);
+    firstP.innerHTML = firstP.innerHTML.replace(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/, '');
+    const header = document.createElement('div');
+    header.className = 'mid-alert-header';
+    header.innerHTML = `${iconHTML(ALERT_ICONS[type] ?? 'list-ul', 'mid-icon--sm')}<span>${m[1].charAt(0)}${m[1].slice(1).toLowerCase()}</span>`;
+    bq.insertBefore(header, bq.firstChild);
+    if (firstP.textContent?.trim() === '') firstP.remove();
+  });
+}
+
+function attachMath(scope: HTMLElement): void {
+  const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
+    acceptNode(node: Text) {
+      if (!node.textContent || !/\$/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
+      let p = node.parentElement;
+      while (p) {
+        const tag = p.tagName;
+        if (tag === 'CODE' || tag === 'PRE' || tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
+        p = p.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const targets: Text[] = [];
+  let n: Node | null = walker.nextNode();
+  while (n) {
+    targets.push(n as Text);
+    n = walker.nextNode();
+  }
+  for (const text of targets) {
+    const original = text.textContent ?? '';
+    const replaced = original
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => renderKatex(expr.trim(), true))
+      .replace(/(?<!\$)\$([^$\n]+?)\$(?!\$)/g, (_, expr) => renderKatex(expr.trim(), false));
+    if (replaced === original) continue;
+    const wrap = document.createElement('span');
+    wrap.innerHTML = replaced;
+    text.replaceWith(...Array.from(wrap.childNodes));
+  }
+}
+
+function renderKatex(expr: string, displayMode: boolean): string {
+  try {
+    return katex.renderToString(expr, { displayMode, throwOnError: false, output: 'html' });
+  } catch (err) {
+    return `<code class="mid-math-error" title="${escapeHTML(String((err as Error).message))}">${escapeHTML(expr)}</code>`;
+  }
 }
 
 function attachImageLightbox(scope: HTMLElement): void {
