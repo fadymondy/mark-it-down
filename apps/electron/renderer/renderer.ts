@@ -119,8 +119,9 @@ const activityPinned = document.getElementById('activity-pinned') as HTMLDivElem
 const sidebarFolderName = document.getElementById('sidebar-folder-name') as HTMLSpanElement;
 const sidebarRefresh = document.getElementById('sidebar-refresh') as HTMLButtonElement;
 const treeRoot = document.getElementById('tree-root') as HTMLDivElement;
-const modeFilesBtn = document.getElementById('mode-files') as HTMLButtonElement;
-const modeNotesBtn = document.getElementById('mode-notes') as HTMLButtonElement;
+// Inline Files/Notes tabs were removed in #187 — the activity bar drives the sidebar now.
+const modeFilesBtn = document.getElementById('mode-files') as HTMLButtonElement | null;
+const modeNotesBtn = document.getElementById('mode-notes') as HTMLButtonElement | null;
 const sidebarFilesHeader = document.getElementById('sidebar-files-header') as HTMLElement;
 const sidebarNotesHeader = document.getElementById('sidebar-notes-header') as HTMLElement;
 const notesListEl = document.getElementById('notes-list') as HTMLDivElement;
@@ -1741,8 +1742,8 @@ btnOpen.addEventListener('click', () => void openFile());
 btnOpenFolder.addEventListener('click', () => void openFolder());
 btnSave.addEventListener('click', () => void saveFile());
 sidebarRefresh.addEventListener('click', () => void refreshFolder());
-modeFilesBtn.addEventListener('click', () => setSidebarMode('files'));
-modeNotesBtn.addEventListener('click', () => setSidebarMode('notes'));
+modeFilesBtn?.addEventListener('click', () => setSidebarMode('files'));
+modeNotesBtn?.addEventListener('click', () => setSidebarMode('notes'));
 
 // Activity bar — VSCode-style icon tray.
 type ActivityTarget = 'files' | 'notes' | `pinned:${string}`;
@@ -2008,8 +2009,8 @@ document.addEventListener('keydown', e => {
 
 function setSidebarMode(mode: 'files' | 'notes'): void {
   sidebarMode = mode;
-  modeFilesBtn.classList.toggle('is-active', mode === 'files');
-  modeNotesBtn.classList.toggle('is-active', mode === 'notes');
+  modeFilesBtn?.classList.toggle('is-active', mode === 'files');
+  modeNotesBtn?.classList.toggle('is-active', mode === 'notes');
   sidebarFilesHeader.hidden = mode !== 'files';
   sidebarNotesHeader.hidden = mode !== 'notes';
   treeRoot.hidden = mode !== 'files';
