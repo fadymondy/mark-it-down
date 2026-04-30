@@ -751,7 +751,7 @@
     "compile:extension": "tsc -p ./",
     "compile:webview": "esbuild src/webview/main.ts --bundle --outfile=out/webview/main.js --format=iife --target=es2020 --platform=browser",
     "compile:mcp": "esbuild src/mcp/server.ts --bundle --outfile=out/mcp/server.js --format=cjs --platform=node --target=node18 --external:vscode",
-    "compile:electron": "tsc -p apps/electron/tsconfig.json && esbuild apps/electron/renderer/renderer.ts --bundle --outfile=out/electron/renderer/renderer.js --format=iife --target=es2020 --platform=browser && node -e \"const fs=require('fs'),p=require('path');fs.mkdirSync('out/electron/renderer',{recursive:true});['index.html','renderer.css'].forEach(f=>fs.copyFileSync(p.join('apps/electron/renderer',f),p.join('out/electron/renderer',f)));\"",
+    "compile:electron": "tsc -p apps/electron/tsconfig.json && esbuild apps/electron/renderer/renderer.ts --bundle --outfile=out/electron/renderer/renderer.js --format=iife --target=es2020 --platform=browser && node scripts/copy-electron-assets.mjs",
     "build:claude-plugin": "npm run compile:mcp && node -e \"const fs=require('fs'),p=require('path');fs.mkdirSync('plugins/mark-it-down-claude/bin',{recursive:true});fs.copyFileSync('out/mcp/server.js','plugins/mark-it-down-claude/bin/server.js');console.log('mark-it-down-claude plugin: bin/server.js refreshed');\"",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",

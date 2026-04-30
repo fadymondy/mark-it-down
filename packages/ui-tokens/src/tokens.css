@@ -1,0 +1,120 @@
+/* Mark It Down — design tokens
+ * Single source of truth for color / spacing / type / radius / shadow / motion.
+ * Consumed by the Electron renderer, the VS Code webview, and the published site.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Color — light */
+  --mid-bg: #ffffff;
+  --mid-surface: #f6f8fa;
+  --mid-surface-hover: #eaeef2;
+  --mid-surface-active: #d8dee4;
+  --mid-fg: #1f2328;
+  --mid-fg-muted: #656d76;
+  --mid-fg-subtle: #8b949e;
+  --mid-border: #d0d7de;
+  --mid-border-strong: #afb8c1;
+  --mid-accent: #0969da;
+  --mid-accent-fg: #ffffff;
+  --mid-accent-hover: #0550ae;
+  --mid-link: #0969da;
+  --mid-link-hover: #0550ae;
+  --mid-code-bg: #f6f8fa;
+  --mid-inline-code-bg: rgba(175, 184, 193, 0.2);
+  --mid-table-stripe: #f6f8fa;
+  --mid-danger: #d1242f;
+  --mid-warning: #9a6700;
+  --mid-success: #1a7f37;
+
+  /* Spacing — 4px base */
+  --mid-space-0: 0;
+  --mid-space-1: 4px;
+  --mid-space-2: 8px;
+  --mid-space-3: 12px;
+  --mid-space-4: 16px;
+  --mid-space-5: 20px;
+  --mid-space-6: 24px;
+  --mid-space-8: 32px;
+  --mid-space-10: 40px;
+  --mid-space-12: 48px;
+
+  /* Radius */
+  --mid-radius-xs: 2px;
+  --mid-radius-sm: 4px;
+  --mid-radius-md: 6px;
+  --mid-radius-lg: 8px;
+  --mid-radius-xl: 12px;
+  --mid-radius-pill: 9999px;
+
+  /* Typography */
+  --mid-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+  --mid-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --mid-font-size-xs: 11px;
+  --mid-font-size-sm: 12px;
+  --mid-font-size-base: 15px;
+  --mid-font-size-lg: 17px;
+  --mid-font-size-xl: 20px;
+  --mid-font-size-2xl: 24px;
+  --mid-font-size-3xl: 32px;
+  --mid-line-tight: 1.25;
+  --mid-line-normal: 1.5;
+  --mid-line-relaxed: 1.65;
+  --mid-weight-normal: 400;
+  --mid-weight-medium: 500;
+  --mid-weight-semibold: 600;
+  --mid-weight-bold: 700;
+
+  /* Shadow */
+  --mid-shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.06);
+  --mid-shadow-md: 0 3px 6px rgba(31, 35, 40, 0.10), 0 1px 2px rgba(31, 35, 40, 0.06);
+  --mid-shadow-lg: 0 10px 24px rgba(31, 35, 40, 0.14);
+
+  /* Motion */
+  --mid-motion-fast: 120ms;
+  --mid-motion-base: 200ms;
+  --mid-motion-slow: 320ms;
+  --mid-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --mid-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Layout */
+  --mid-titlebar-h: 38px;
+  --mid-sidebar-w: 240px;
+
+  /* Z-index */
+  --mid-z-base: 1;
+  --mid-z-sticky: 100;
+  --mid-z-dropdown: 200;
+  --mid-z-modal: 1000;
+  --mid-z-toast: 2000;
+}
+
+:root.dark {
+  color-scheme: dark;
+
+  --mid-bg: #0d1117;
+  --mid-surface: #161b22;
+  --mid-surface-hover: #1f242c;
+  --mid-surface-active: #2a313c;
+  --mid-fg: #e6edf3;
+  --mid-fg-muted: #7d8590;
+  --mid-fg-subtle: #6e7681;
+  --mid-border: #30363d;
+  --mid-border-strong: #484f58;
+  --mid-accent: #2f81f7;
+  --mid-accent-fg: #ffffff;
+  --mid-accent-hover: #58a6ff;
+  --mid-link: #2f81f7;
+  --mid-link-hover: #58a6ff;
+  --mid-code-bg: #161b22;
+  --mid-inline-code-bg: rgba(110, 118, 129, 0.4);
+  --mid-table-stripe: #161b22;
+  --mid-danger: #f85149;
+  --mid-warning: #d29922;
+  --mid-success: #3fb950;
+
+  --mid-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --mid-shadow-md: 0 3px 6px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --mid-shadow-lg: 0 10px 24px rgba(0, 0, 0, 0.5);
+}

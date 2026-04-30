@@ -98,8 +98,8 @@ function renderEdit(): void {
 
 function setMode(mode: 'view' | 'edit'): void {
   currentMode = mode;
-  btnView.classList.toggle('active', mode === 'view');
-  btnEdit.classList.toggle('active', mode === 'edit');
+  btnView.classList.toggle('is-active', mode === 'view');
+  btnEdit.classList.toggle('is-active', mode === 'edit');
   if (mode === 'view') renderView();
   else renderEdit();
 }
