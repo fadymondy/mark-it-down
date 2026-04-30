@@ -88,13 +88,44 @@ body.has-sidebar .mid-shell {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--mid-space-2) var(--mid-space-3);
+  gap: var(--mid-space-1);
+  padding: var(--mid-space-2) var(--mid-space-2);
   border-bottom: 1px solid var(--mid-border);
   font-size: var(--mid-font-size-sm);
   font-weight: var(--mid-weight-semibold);
   color: var(--mid-fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+}
+.mid-workspace-switcher {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mid-space-1);
+  padding: var(--mid-space-1) var(--mid-space-2);
+  font-family: inherit;
+  font-size: var(--mid-font-size-sm);
+  font-weight: var(--mid-weight-semibold);
+  color: var(--mid-fg);
+  background: transparent;
+  border: 0;
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.mid-workspace-switcher:hover { background: var(--mid-surface); }
+.mid-workspace-switcher .mid-sidebar-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--mid-fg);
+}
+.mid-workspace-chevron {
+  display: inline-flex;
+  color: var(--mid-fg-muted);
+  transform: rotate(90deg);
 }
 .mid-sidebar-title {
   overflow: hidden;
@@ -1203,13 +1234,17 @@ main.splitting .mid-preview {
 /* Print mode — hides chrome so PDF export captures only the document */
 body.is-printing .mid-titlebar,
 body.is-printing .mid-sidebar,
+body.is-printing .mid-activity-bar,
 body.is-printing .mid-statusbar,
 body.is-printing .mid-settings,
 body.is-printing #mid-dialog,
-body.is-printing #mid-mermaid-editor { display: none !important; }
+body.is-printing #mid-mermaid-editor,
+body.is-printing #mid-pin-editor,
+body.is-printing #mid-spotlight,
+body.is-printing #mid-loader { display: none !important; }
 body.is-printing { display: block; grid-template-rows: none; }
-body.is-printing .mid-shell { display: block; }
-body.is-printing main.viewing { padding: 32px !important; max-width: 760px !important; }
+body.is-printing .mid-shell { display: block; grid-template-columns: 1fr !important; }
+body.is-printing main.viewing { padding: 32px !important; max-width: 760px !important; overflow: visible !important; }
 
 /* Inline <code> inside table cells styled as shadcn badges */
 .mid-preview td code,

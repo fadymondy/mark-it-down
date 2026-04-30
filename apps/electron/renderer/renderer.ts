@@ -43,6 +43,8 @@ interface AppState {
   recentFiles?: string[];
   codeExportGradient?: CodeExportGradient;
   pinnedFolders?: PinnedFolder[];
+  workspaces?: Workspace[];
+  activeWorkspace?: string;
 }
 
 interface PinnedFolder {
@@ -50,6 +52,12 @@ interface PinnedFolder {
   name: string;
   icon: string;
   color: string;
+}
+
+interface Workspace {
+  id: string;
+  name: string;
+  path: string;
 }
 
 const DEFAULT_SETTINGS = {
@@ -67,7 +75,7 @@ const FONT_STACKS: Record<FontFamilyChoice, string> = {
   mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
 };
 
-type ExportFormat = 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx';
+type ExportFormat = 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx' | 'docx-gdocs';
 
 interface NoteEntry {
   id: string;
@@ -118,7 +126,7 @@ interface Mid {
   onMenuOpen(cb: () => void): () => void;
   onMenuOpenFolder(cb: () => void): () => void;
   onMenuSave(cb: () => void): () => void;
-  onMenuExport(cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx') => void): () => void;
+  onMenuExport(cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx' | 'docx-gdocs') => void): () => void;
 }
 declare const window: Window & { mid: Mid };
 
@@ -171,8 +179,10 @@ let notesFilterText = '';
 let recentFiles: string[] = [];
 let warehouses: Warehouse[] = [];
 let pinnedFolders: PinnedFolder[] = [];
+let workspaces: Workspace[] = [];
 const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
+const treeCache = new Map<string, TreeEntry[]>();
 
 function applyTheme(isDark: boolean): void {
   osIsDark = isDark;
@@ -1122,6 +1132,7 @@ function attachTableTools(scope: HTMLElement): void {
         { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getVisible()) },
         { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getVisible(), 'csv') },
         { icon: 'download', label: 'Download Excel (.xlsx)', action: () => downloadTable(headers, getVisible(), 'xlsx') },
+        { icon: 'github', label: 'Share to Google Sheets', action: () => void shareTableToSheets(headers, getVisible()) },
         { icon: 'list-ul', label: 'Download JSON', action: () => downloadTable(headers, getVisible(), 'json') },
         { separator: true, label: '' },
         { icon: state.sortColumn === null ? 'x' : 'refresh', label: state.sortColumn === null ? 'No sort active' : 'Reset sort', disabled: state.sortColumn === null, action: () => { state.sortColumn = null; state.sortDir = null; apply(); } },
@@ -1196,6 +1207,23 @@ function copyTableAsMarkdown(headers: HTMLTableCellElement[], rows: HTMLTableRow
     ...rows.map(r => `| ${rowToValues(r).join(' | ')} |`),
   ];
   void navigator.clipboard.writeText(lines.join('\n'));
+}
+
+async function shareTableToSheets(headers: HTMLTableCellElement[], rows: HTMLTableRowElement[]): Promise<void> {
+  const head = headers.map(h => h.textContent?.trim() ?? '');
+  const aoa = [head, ...rows.map(r => rowToValues(r))];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+  ws['!cols'] = head.map(h => ({ wch: Math.max(h.length, 12) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+  const saved = await window.mid.saveAs('table.xlsx', arr, [{ name: 'Excel', extensions: ['xlsx'] }]);
+  if (saved) {
+    await navigator.clipboard.writeText(saved).catch(() => undefined);
+    await window.mid.openExternal('https://drive.google.com/drive/u/0/upload');
+    flashStatus(`Saved ${saved.split('/').pop()}; drop into the open Drive tab`);
+  }
 }
 
 function downloadTable(headers: HTMLTableCellElement[], rows: HTMLTableRowElement[], format: 'csv' | 'json' | 'xlsx'): void {
@@ -1588,7 +1616,9 @@ function highlightActiveTreeItem(): void {
 
 async function refreshFolder(): Promise<void> {
   if (!currentFolder) return;
+  invalidateTreeCache(currentFolder);
   const tree = await window.mid.listFolderMd(currentFolder);
+  treeCache.set(currentFolder, tree);
   treeRoot.replaceChildren(...renderTree(tree));
 }
 
@@ -1660,19 +1690,45 @@ async function exportAs(format: ExportFormat): Promise<void> {
       const preview = root.querySelector<HTMLElement>('.mid-preview');
       if (!preview) { flashStatus('No preview to export'); return; }
       const buffer = await buildDocxFromPreview(preview);
-      await window.mid.saveAs(defaultExportName('docx'), buffer, [{ name: 'Word', extensions: ['docx'] }]);
-      flashStatus('Exported DOCX');
+      const saved = await window.mid.saveAs(defaultExportName('docx'), buffer, [{ name: 'Word', extensions: ['docx'] }]);
+      flashStatus(saved ? 'Exported DOCX' : 'Cancelled');
+      break;
+    }
+    case 'docx-gdocs': {
+      const preview = root.querySelector<HTMLElement>('.mid-preview');
+      if (!preview) { flashStatus('No preview to export'); return; }
+      const buffer = await buildDocxFromPreview(preview);
+      const saved = await window.mid.saveAs(defaultExportName('docx'), buffer, [{ name: 'Word', extensions: ['docx'] }]);
+      if (saved) {
+        await navigator.clipboard.writeText(saved).catch(() => undefined);
+        await window.mid.openExternal('https://drive.google.com/drive/u/0/upload');
+        flashStatus(`Saved ${saved.split('/').pop()}; drop into the open Drive tab`);
+      }
       break;
     }
   }
 }
 
 async function buildDocxFromPreview(preview: HTMLElement): Promise<ArrayBuffer> {
+  // Work on a clone so we can strip in-app affordances (heading anchors,
+  // copy buttons, mermaid SVGs we can't faithfully render in Word, etc.)
+  // without affecting the live preview.
+  const clone = preview.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('.mid-anchor, .mid-code-toolbar, .mid-copy-btn, .mid-mermaid-toolbar').forEach(el => el.remove());
+
   const children: (Paragraph | DocxTable)[] = [];
-  for (const node of Array.from(preview.children)) {
+  for (const node of Array.from(clone.children)) {
     children.push(...domNodeToDocx(node as HTMLElement));
   }
-  const doc = new Document({ sections: [{ children }] });
+  const doc = new Document({
+    numbering: {
+      config: [{
+        reference: 'mid-ol',
+        levels: [{ level: 0, format: 'decimal', text: '%1.', alignment: AlignmentType.START }],
+      }],
+    },
+    sections: [{ children }],
+  });
   const blob = await Packer.toBlob(doc);
   return blob.arrayBuffer();
 }
@@ -1686,32 +1742,54 @@ const HEADING_MAP: Record<string, (typeof HeadingLevel)[keyof typeof HeadingLeve
   H6: HeadingLevel.HEADING_6,
 };
 
+function cleanText(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 function domNodeToDocx(el: HTMLElement): (Paragraph | DocxTable)[] {
   const tag = el.tagName;
-  const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
   if (HEADING_MAP[tag]) {
-    return [new Paragraph({ heading: HEADING_MAP[tag], children: [new TextRun(text)] })];
+    return [new Paragraph({
+      heading: HEADING_MAP[tag],
+      children: [new TextRun(cleanText(el.textContent ?? ''))],
+      spacing: { before: 240, after: 120 },
+    })];
   }
   if (tag === 'P') {
-    return [new Paragraph({ children: [new TextRun(text)] })];
+    return [new Paragraph({
+      children: [new TextRun(cleanText(el.textContent ?? ''))],
+      spacing: { after: 120 },
+    })];
   }
   if (tag === 'BLOCKQUOTE') {
-    return [new Paragraph({ children: [new TextRun({ text, italics: true })], indent: { left: 720 } })];
+    return [new Paragraph({
+      children: [new TextRun({ text: cleanText(el.textContent ?? ''), italics: true })],
+      indent: { left: 720 },
+      spacing: { after: 120 },
+    })];
   }
   if (tag === 'PRE') {
-    const lines = (el.textContent ?? '').split('\n');
+    const lines = (el.textContent ?? '').replace(/\n+$/, '').split('\n');
     return lines.map(line => new Paragraph({
       children: [new TextRun({ text: line, font: 'Courier New', size: 20 })],
       spacing: { after: 0 },
+      indent: { left: 360 },
     }));
   }
   if (tag === 'UL' || tag === 'OL') {
     const items = Array.from(el.querySelectorAll(':scope > li'));
     return items.map(li => new Paragraph({
-      children: [new TextRun((li.textContent ?? '').replace(/\s+/g, ' ').trim())],
+      children: [new TextRun(cleanText(li.textContent ?? ''))],
       bullet: tag === 'UL' ? { level: 0 } : undefined,
       numbering: tag === 'OL' ? { reference: 'mid-ol', level: 0 } : undefined,
+      spacing: { after: 60 },
     }));
+  }
+  if (el.classList.contains('mid-spec-card')) {
+    return specCardToDocx(el);
+  }
+  if (el.classList.contains('mid-frontmatter')) {
+    return frontmatterToDocx(el);
   }
   if (tag === 'TABLE' || el.classList.contains('mid-table')) {
     const tbl = el.querySelector('table') ?? (tag === 'TABLE' ? el : null);
@@ -1748,8 +1826,71 @@ function domNodeToDocx(el: HTMLElement): (Paragraph | DocxTable)[] {
   if (tag === 'HR') {
     return [new Paragraph({ children: [new TextRun('───')], alignment: AlignmentType.CENTER })];
   }
+  const text = cleanText(el.textContent ?? '');
   if (text) return [new Paragraph({ children: [new TextRun(text)] })];
   return [];
+}
+
+function specCardToDocx(el: HTMLElement): Paragraph[] {
+  const result: Paragraph[] = [];
+  const name = cleanText(el.querySelector('.mid-spec-card-name')?.textContent ?? '');
+  const kind = cleanText(el.querySelector('.mid-spec-card-kind')?.textContent ?? '');
+  const desc = cleanText(el.querySelector('.mid-spec-card-desc')?.textContent ?? '');
+  if (name) {
+    result.push(new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      children: [new TextRun({ text: name, bold: true })],
+      spacing: { before: 0, after: 60 },
+    }));
+  }
+  if (kind) {
+    result.push(new Paragraph({
+      children: [new TextRun({ text: kind.toUpperCase(), bold: true, size: 18, color: '6B7280' })],
+      spacing: { after: 120 },
+    }));
+  }
+  if (desc) {
+    result.push(new Paragraph({
+      children: [new TextRun({ text: desc, italics: true })],
+      spacing: { after: 120 },
+    }));
+  }
+  el.querySelectorAll<HTMLElement>('.mid-spec-chip').forEach(chip => {
+    const k = cleanText(chip.querySelector('.mid-spec-chip-key')?.textContent ?? '');
+    const v = cleanText(chip.querySelector('.mid-spec-chip-val')?.textContent ?? '');
+    if (k || v) {
+      result.push(new Paragraph({
+        children: [
+          new TextRun({ text: `${k}: `, bold: true, font: 'Courier New', size: 20 }),
+          new TextRun({ text: v, font: 'Courier New', size: 20 }),
+        ],
+        spacing: { after: 40 },
+      }));
+    }
+  });
+  result.push(new Paragraph({ children: [new TextRun('')], spacing: { after: 120 } }));
+  return result;
+}
+
+function frontmatterToDocx(el: HTMLElement): Paragraph[] {
+  const result: Paragraph[] = [];
+  el.querySelectorAll<HTMLElement>('.mid-fm-row').forEach(row => {
+    const k = cleanText(row.querySelector('.mid-fm-key')?.textContent ?? '');
+    const v = cleanText(row.querySelector('.mid-fm-val')?.textContent ?? '');
+    if (k || v) {
+      result.push(new Paragraph({
+        children: [
+          new TextRun({ text: `${k}: `, bold: true }),
+          new TextRun({ text: v }),
+        ],
+        spacing: { after: 40 },
+      }));
+    }
+  });
+  if (result.length > 0) {
+    result.push(new Paragraph({ children: [new TextRun('')], spacing: { after: 120 } }));
+  }
+  return result;
 }
 
 function dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
@@ -1850,9 +1991,21 @@ function selectActivity(target: ActivityTarget): void {
   }
 }
 
+async function loadFolderTree(folderPath: string): Promise<TreeEntry[]> {
+  if (treeCache.has(folderPath)) return treeCache.get(folderPath)!;
+  const tree = await window.mid.listFolderMd(folderPath);
+  treeCache.set(folderPath, tree);
+  return tree;
+}
+
+function invalidateTreeCache(folderPath?: string): void {
+  if (folderPath) treeCache.delete(folderPath);
+  else treeCache.clear();
+}
+
 async function loadPinnedTree(folderPath: string): Promise<void> {
   try {
-    const tree = await window.mid.listFolderMd(folderPath);
+    const tree = await loadFolderTree(folderPath);
     const name = pinnedFolders.find(p => p.path === folderPath)?.name ?? folderPath.split('/').pop() ?? folderPath;
     sidebarFolderName.textContent = name;
     sidebarFolderName.title = folderPath;
@@ -2058,6 +2211,48 @@ activityFiles.addEventListener('click', () => selectActivity('files'));
 activityNotes.addEventListener('click', () => selectActivity('notes'));
 activitySettings.addEventListener('click', () => document.getElementById('settings-btn')?.dispatchEvent(new MouseEvent('click')));
 titlebarSearchBtn.addEventListener('click', () => openSpotlight());
+
+const workspaceSwitcherBtn = document.getElementById('workspace-switcher') as HTMLButtonElement | null;
+workspaceSwitcherBtn?.addEventListener('click', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  const items: MenuItem[] = workspaces.map(ws => ({
+    icon: 'folder',
+    label: `${ws.name}${ws.path === currentFolder ? '  (active)' : ''}`,
+    action: () => void switchWorkspace(ws),
+  }));
+  if (items.length > 0) items.push({ separator: true, label: '' });
+  items.push({ icon: 'plus', label: 'Add workspace…', action: () => void addWorkspace() });
+  if (currentFolder) {
+    items.push({ icon: 'trash', label: 'Remove current from list', action: () => removeWorkspace(currentFolder!) });
+  }
+  const rect = workspaceSwitcherBtn.getBoundingClientRect();
+  openContextMenu(items, rect.left, rect.bottom + 4);
+});
+
+async function addWorkspace(): Promise<void> {
+  const result = await window.mid.openFolderDialog();
+  if (!result) return;
+  const id = `ws-${Date.now()}`;
+  const name = result.folderPath.split('/').pop() ?? result.folderPath;
+  workspaces = [...workspaces.filter(w => w.path !== result.folderPath), { id, name, path: result.folderPath }];
+  await window.mid.patchAppState({ workspaces, activeWorkspace: id });
+  treeCache.set(result.folderPath, result.tree);
+  applyFolder(result.folderPath, result.tree);
+}
+
+async function switchWorkspace(ws: Workspace): Promise<void> {
+  if (ws.path === currentFolder) return;
+  await window.mid.patchAppState({ activeWorkspace: ws.id });
+  const tree = await loadFolderTree(ws.path);
+  applyFolder(ws.path, tree);
+}
+
+function removeWorkspace(folderPath: string): void {
+  workspaces = workspaces.filter(w => w.path !== folderPath);
+  void window.mid.patchAppState({ workspaces });
+  flashStatus('Workspace removed from list');
+}
 // Hydrate the search-icon span (title-bar uses a custom layout, not data-icon hydration)
 if (titlebarSearchIcon) titlebarSearchIcon.innerHTML = iconHTML('search', 'mid-icon--sm mid-icon--muted');
 
@@ -2560,6 +2755,7 @@ document.addEventListener('contextmenu', e => {
     { icon: 'html5', label: 'Export HTML', action: () => void exportAs('html') },
     { icon: 'download', label: 'Export PDF', action: () => void exportAs('pdf') },
     { icon: 'download', label: 'Export Word (.docx)', action: () => void exportAs('docx') },
+    { icon: 'github', label: 'Share to Google Docs', action: () => void exportAs('docx-gdocs') },
     { icon: 'image', label: 'Export PNG', action: () => void exportAs('png') },
     { icon: 'list-ul', label: 'Export plain text', action: () => void exportAs('txt') },
   ], e.clientX, e.clientY);
@@ -2714,6 +2910,15 @@ void window.mid.readAppState().then(async state => {
   if (Array.isArray(state.pinnedFolders)) {
     pinnedFolders = state.pinnedFolders;
     renderActivityPinned();
+  }
+  if (Array.isArray(state.workspaces)) {
+    workspaces = state.workspaces;
+  }
+  // Auto-register the lastFolder as a workspace if it's not in the list yet.
+  if (state.lastFolder && !workspaces.find(w => w.path === state.lastFolder)) {
+    const name = state.lastFolder.split('/').pop() ?? state.lastFolder;
+    workspaces = [...workspaces, { id: `ws-${Date.now()}`, name, path: state.lastFolder }];
+    void window.mid.patchAppState({ workspaces });
   }
   applySettings();
   // Fade out the launch loader once initial state is hydrated.

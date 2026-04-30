@@ -530,6 +530,8 @@ interface AppState {
   recentFiles?: string[];
   codeExportGradient?: string;
   pinnedFolders?: { path: string; name: string; icon: string; color: string }[];
+  workspaces?: { id: string; name: string; path: string }[];
+  activeWorkspace?: string;
 }
 
 function resolveMCPServerScript(): string {
@@ -783,6 +785,7 @@ function buildMenu(): Menu {
             { label: 'HTML…', click: () => mainWindow?.webContents.send('mid:menu-export', 'html') },
             { label: 'PDF…', click: () => mainWindow?.webContents.send('mid:menu-export', 'pdf') },
             { label: 'Word (.docx)…', click: () => mainWindow?.webContents.send('mid:menu-export', 'docx') },
+            { label: 'Share to Google Docs…', click: () => mainWindow?.webContents.send('mid:menu-export', 'docx-gdocs') },
             { label: 'Image (PNG)…', click: () => mainWindow?.webContents.send('mid:menu-export', 'png') },
             { label: 'Plain text…', click: () => mainWindow?.webContents.send('mid:menu-export', 'txt') },
           ],
