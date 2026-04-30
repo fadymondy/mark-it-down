@@ -1,6 +1,7 @@
 import { renderMarkdown as coreRenderMarkdown, applyMermaidPlaceholders } from '../../../packages/core/src/markdown/renderer';
 import mermaid from 'mermaid';
 import hljs from 'highlight.js/lib/common';
+import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 
 interface TreeEntry {
   name: string;
@@ -147,16 +148,21 @@ function attachCodeCopyButtons(scope: HTMLElement): void {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'mid-copy-btn';
-    btn.textContent = 'Copy';
+    btn.title = 'Copy';
+    btn.innerHTML = `${iconHTML('copy', 'mid-icon--sm')}<span class="mid-copy-btn-label">Copy</span>`;
+    const setLabel = (text: string): void => {
+      const label = btn.querySelector('.mid-copy-btn-label');
+      if (label) label.textContent = text;
+    };
     btn.addEventListener('click', async () => {
       const code = pre.querySelector('code')?.innerText ?? pre.innerText;
       try {
         await navigator.clipboard.writeText(code);
-        btn.textContent = 'Copied';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+        setLabel('Copied');
+        setTimeout(() => setLabel('Copy'), 1200);
       } catch {
-        btn.textContent = 'Failed';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+        setLabel('Failed');
+        setTimeout(() => setLabel('Copy'), 1200);
       }
     });
     pre.appendChild(btn);
@@ -367,11 +373,9 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
 
   if (entry.kind === 'dir') {
     const isOpen = expandedDirs.has(entry.path);
-    const chevron = document.createElement('span');
-    chevron.className = `mid-tree-chevron${isOpen ? ' is-open' : ''}`;
-    chevron.textContent = '▸';
-    item.appendChild(chevron);
-    item.appendChild(document.createTextNode(`📁 ${entry.name}`));
+    item.insertAdjacentHTML('beforeend', `<span class="mid-tree-chevron${isOpen ? ' is-open' : ''}">${iconHTML('chevron-right', 'mid-icon--sm')}</span>`);
+    item.insertAdjacentHTML('beforeend', iconHTML(isOpen ? 'folder-open' : 'folder', 'mid-icon--muted'));
+    item.appendChild(document.createTextNode(` ${entry.name}`));
     item.addEventListener('click', () => {
       if (expandedDirs.has(entry.path)) expandedDirs.delete(entry.path);
       else expandedDirs.add(entry.path);
@@ -386,10 +390,9 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
       wrapper.appendChild(children);
     }
   } else {
-    const spacer = document.createElement('span');
-    spacer.className = 'mid-tree-chevron';
-    item.appendChild(spacer);
-    item.appendChild(document.createTextNode(`📄 ${entry.name}`));
+    item.insertAdjacentHTML('beforeend', '<span class="mid-tree-chevron"></span>');
+    item.insertAdjacentHTML('beforeend', iconHTML('file', 'mid-icon--muted'));
+    item.appendChild(document.createTextNode(` ${entry.name}`));
     if (currentPath === entry.path) item.classList.add('is-active');
     item.addEventListener('click', () => void selectTreeFile(entry.path));
     wrapper.appendChild(item);
@@ -443,6 +446,18 @@ window.mid.onThemeChanged(applyTheme);
 window.mid.onMenuOpen(() => void openFile());
 window.mid.onMenuOpenFolder(() => void openFolder());
 window.mid.onMenuSave(() => void saveFile());
+
+hydrateIconButtons(document);
+
+function hydrateIconButtons(scope: ParentNode): void {
+  scope.querySelectorAll<HTMLElement>('[data-icon]').forEach(el => {
+    const name = el.dataset.icon as IconName | undefined;
+    const label = el.dataset.label;
+    if (!name) return;
+    const labelHTML = label ? `<span class="mid-btn-label">${label}</span>` : '';
+    el.innerHTML = `${iconHTML(name)}${labelHTML}`;
+  });
+}
 
 void window.mid.getAppInfo().then(info => {
   document.body.classList.toggle('is-mac', info.platform === 'darwin');

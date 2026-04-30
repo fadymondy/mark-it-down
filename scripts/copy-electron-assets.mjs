@@ -9,5 +9,6 @@ const copies = [
   ['apps/electron/renderer/renderer.css', join(out, 'renderer.css')],
   ['packages/ui-tokens/src/tokens.css', join(out, 'tokens.css')],
   ['packages/ui-tokens/src/primitives.css', join(out, 'primitives.css')],
+  ['packages/ui-tokens/src/icons.css', join(out, 'icons.css')],
 ];
 for (const [src, dest] of copies) copyFileSync(src, dest);
