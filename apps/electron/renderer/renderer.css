@@ -478,39 +478,44 @@ main.splitting .mid-preview {
   border-radius: var(--mid-radius-pill);
 }
 
-.mid-code-toolbar {
-  position: absolute;
-  top: var(--mid-space-2);
-  right: var(--mid-space-2);
-  display: flex;
-  gap: 2px;
-  padding: 2px;
+/* Context menu (replaces hover toolbars on code / table / mermaid / file-tree / notes) */
+.mid-context-menu {
+  position: fixed;
+  z-index: var(--mid-z-modal);
+  min-width: 200px;
+  padding: var(--mid-space-1);
   background: var(--mid-surface);
   border: 1px solid var(--mid-border);
-  border-radius: var(--mid-radius-sm);
-  opacity: 0;
-  transition: opacity var(--mid-motion-fast) var(--mid-ease-out);
+  border-radius: var(--mid-radius-md);
+  box-shadow: var(--mid-shadow-lg);
+  animation: mid-fade-in var(--mid-motion-fast) var(--mid-ease-out);
 }
-.mid-pre:hover .mid-code-toolbar,
-.mid-code-toolbar:focus-within { opacity: 1; }
-.mid-code-tool-btn {
-  display: inline-flex;
+.mid-context-item {
+  display: flex;
   align-items: center;
-  gap: var(--mid-space-1);
-  padding: 2px var(--mid-space-1);
+  gap: var(--mid-space-2);
+  width: 100%;
+  padding: var(--mid-space-1) var(--mid-space-3);
   font-family: var(--mid-font-sans);
-  font-size: var(--mid-font-size-xs);
-  color: var(--mid-fg-muted);
+  font-size: var(--mid-font-size-sm);
+  color: var(--mid-fg);
+  text-align: left;
   background: transparent;
   border: 0;
-  border-radius: var(--mid-radius-xs);
+  border-radius: var(--mid-radius-sm);
   cursor: pointer;
 }
-.mid-code-tool-btn:hover { background: var(--mid-surface-hover); color: var(--mid-fg); }
-.mid-code-tool-flash {
+.mid-context-item:hover:not(:disabled) { background: var(--mid-accent); color: var(--mid-accent-fg); }
+.mid-context-item:hover:not(:disabled) .mid-icon { color: var(--mid-accent-fg); }
+.mid-context-item:disabled { color: var(--mid-fg-subtle); cursor: default; }
+.mid-context-label { flex: 1; }
+.mid-context-kbd {
+  font-family: var(--mid-font-mono);
   font-size: var(--mid-font-size-xs);
-  font-weight: var(--mid-weight-medium);
+  color: var(--mid-fg-muted);
 }
+.mid-context-item:hover .mid-context-kbd { color: var(--mid-accent-fg); opacity: 0.85; }
+.mid-context-sep { height: 1px; margin: var(--mid-space-1) 0; background: var(--mid-border); }
 
 .mid-code-gutter {
   display: none;
@@ -532,38 +537,41 @@ main.splitting .mid-preview {
   overflow: hidden;
   background: var(--mid-bg);
 }
+.mid-table { position: relative; }
 .mid-table table { margin: 0; border: 0; border-radius: 0; }
 .mid-table th { position: sticky; top: 0; z-index: 1; }
-.mid-table-toolbar {
+
+/* Compact filter chip in the top-right of large tables (>5 rows). */
+.mid-table-chip {
+  position: absolute;
+  top: var(--mid-space-2);
+  right: var(--mid-space-2);
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: var(--mid-space-2);
-  padding: var(--mid-space-2) var(--mid-space-3);
-  background: var(--mid-surface);
-  border-bottom: 1px solid var(--mid-border);
+  padding: 2px var(--mid-space-2);
+  background: var(--mid-bg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-pill);
+  box-shadow: var(--mid-shadow-sm);
 }
+.mid-table-chip[hidden] { display: none; }
 .mid-table-filter {
-  flex: 1;
-  min-width: 0;
-  padding: 4px var(--mid-space-2);
+  width: 140px;
+  padding: 0;
   font-family: inherit;
   font-size: var(--mid-font-size-sm);
   color: var(--mid-fg);
-  background: var(--mid-bg);
-  border: 1px solid var(--mid-border);
-  border-radius: var(--mid-radius-sm);
+  background: transparent;
+  border: 0;
+  outline: none;
 }
-.mid-table-filter:focus-visible { outline: 2px solid var(--mid-accent); outline-offset: 1px; }
 .mid-table-counter {
   font-family: var(--mid-font-mono);
   font-size: var(--mid-font-size-xs);
   color: var(--mid-fg-muted);
   white-space: nowrap;
-}
-.mid-table-exports { display: flex; gap: 2px; }
-.mid-table-exports .mid-code-tool-btn {
-  background: var(--mid-bg);
-  border: 1px solid var(--mid-border);
 }
 
 /* Sort affordances on each header cell */
@@ -692,21 +700,6 @@ main.splitting .mid-preview {
   overflow-x: auto;
   position: relative;
 }
-.mid-mermaid-toolbar {
-  position: absolute;
-  top: var(--mid-space-2);
-  right: var(--mid-space-2);
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--mid-surface);
-  border: 1px solid var(--mid-border);
-  border-radius: var(--mid-radius-sm);
-  opacity: 0;
-  transition: opacity var(--mid-motion-fast) var(--mid-ease-out);
-}
-.mid-preview .mermaid:hover .mid-mermaid-toolbar,
-.mid-mermaid-toolbar:focus-within { opacity: 1; }
 
 main.editing { padding: 0; max-width: none; display: block; height: 100%; }
 main.editing textarea {
