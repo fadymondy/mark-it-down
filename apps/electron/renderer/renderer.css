@@ -558,7 +558,23 @@ main.splitting .mid-preview {
   margin: 1em 0;
   text-align: center;
   overflow-x: auto;
+  position: relative;
 }
+.mid-mermaid-toolbar {
+  position: absolute;
+  top: var(--mid-space-2);
+  right: var(--mid-space-2);
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--mid-surface);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+  opacity: 0;
+  transition: opacity var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-preview .mermaid:hover .mid-mermaid-toolbar,
+.mid-mermaid-toolbar:focus-within { opacity: 1; }
 
 main.editing { padding: 0; max-width: none; display: block; height: 100%; }
 main.editing textarea {
