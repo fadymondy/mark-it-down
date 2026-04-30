@@ -119,6 +119,7 @@ let osIsDark = false;
 let sidebarMode: 'files' | 'notes' = 'files';
 let notes: NoteEntry[] = [];
 let notesFilterText = '';
+let recentFiles: string[] = [];
 const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
 
@@ -205,8 +206,131 @@ function renderMarkdown(md: string): string {
   return fmHTML + container.innerHTML;
 }
 
+function welcomeHeroHTML(recent: string[]): string {
+  const recentHTML = recent.length === 0 ? '' : `
+    <div class="mid-welcome-recent">
+      <div class="mid-welcome-recent-title">Recent</div>
+      ${recent.slice(0, 5).map(p => {
+        const name = p.split('/').pop() ?? p;
+        return `<button class="mid-welcome-recent-item" data-recent-path="${escapeHTML(p)}">
+          ${iconHTML('file', 'mid-icon--sm mid-icon--muted')}
+          <span class="mid-welcome-recent-name">${escapeHTML(name)}</span>
+          <span class="mid-welcome-recent-path">${escapeHTML(p.replace(/\/[^/]+$/, ''))}</span>
+        </button>`;
+      }).join('')}
+    </div>`;
+  return `
+    <div class="mid-welcome">
+      <div class="mid-welcome-glyph">${midBrandGlyphSVG()}</div>
+      <h1 class="mid-welcome-title">Mark It Down</h1>
+      <p class="mid-welcome-tagline">A calm markdown studio — read first, edit second.</p>
+      <div class="mid-welcome-actions">
+        <button class="mid-welcome-action" data-welcome-action="open-folder">
+          ${iconHTML('folder-open')}
+          <span class="mid-welcome-action-label">Open Folder</span>
+          <span class="mid-welcome-action-kbd">⌘⇧O</span>
+        </button>
+        <button class="mid-welcome-action" data-welcome-action="open-file">
+          ${iconHTML('file')}
+          <span class="mid-welcome-action-label">Open File</span>
+          <span class="mid-welcome-action-kbd">⌘O</span>
+        </button>
+        <button class="mid-welcome-action" data-welcome-action="new-note" ${currentFolder ? '' : 'disabled'}>
+          ${iconHTML('plus')}
+          <span class="mid-welcome-action-label">New Note</span>
+          <span class="mid-welcome-action-kbd">⌘N</span>
+        </button>
+        <button class="mid-welcome-action" data-welcome-action="sample">
+          ${iconHTML('image')}
+          <span class="mid-welcome-action-label">Try the sample</span>
+          <span class="mid-welcome-action-kbd"></span>
+        </button>
+      </div>
+      ${recentHTML}
+    </div>`;
+}
+
+function midBrandGlyphSVG(): string {
+  return `<svg viewBox="0 0 1024 1024" aria-hidden="true">
+    <defs>
+      <linearGradient id="mid-hero-page" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#1d2333"/><stop offset="1" stop-color="#3b3a7a"/>
+      </linearGradient>
+      <linearGradient id="mid-hero-hash" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff5d8"/><stop offset="1" stop-color="#f7c97b"/>
+      </linearGradient>
+    </defs>
+    <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#mid-hero-page)"/>
+    <g fill="url(#mid-hero-hash)">
+      <g transform="translate(512 512) skewX(-8) translate(-512 -512)">
+        <rect x="350" y="232" width="92" height="560" rx="46"/>
+        <rect x="582" y="232" width="92" height="560" rx="46"/>
+      </g>
+      <rect x="232" y="402" width="560" height="92" rx="46"/>
+      <rect x="232" y="566" width="560" height="92" rx="46"/>
+    </g>
+  </svg>`;
+}
+
 function emptyStateHTML(): string {
-  return `<div class="empty-state"><h1>Mark It Down</h1><p>Open a folder with <kbd class="mid-kbd">Cmd/Ctrl+Shift+O</kbd> to browse, or open a single file with <kbd class="mid-kbd">Cmd/Ctrl+O</kbd>.</p></div>`;
+  return welcomeHeroHTML(recentFiles);
+}
+
+function attachWelcomeHandlers(container: HTMLElement): void {
+  container.querySelectorAll<HTMLButtonElement>('[data-welcome-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.welcomeAction;
+      if (action === 'open-folder') void openFolder();
+      else if (action === 'open-file') void openFile();
+      else if (action === 'new-note') void promptCreateNote();
+      else if (action === 'sample') void openSample();
+    });
+  });
+  container.querySelectorAll<HTMLButtonElement>('[data-recent-path]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = btn.dataset.recentPath;
+      if (p) void openRecent(p);
+    });
+  });
+}
+
+async function openSample(): Promise<void> {
+  const candidates = [
+    'media/welcome-sample.md',
+    '../../../media/welcome-sample.md',
+  ];
+  for (const rel of candidates) {
+    try {
+      const text = await window.mid.readFile(rel);
+      currentText = text;
+      currentPath = null;
+      filenameEl.textContent = 'Welcome sample';
+      setMode('view');
+      updateWordCount();
+      return;
+    } catch {
+      // try next
+    }
+  }
+  flashStatus('Sample not found');
+}
+
+async function openRecent(p: string): Promise<void> {
+  try {
+    const content = await window.mid.readFile(p);
+    loadFileContent(p, content);
+    pushRecent(p);
+  } catch {
+    flashStatus('File no longer exists');
+    recentFiles = recentFiles.filter(f => f !== p);
+    void window.mid.patchAppState({ recentFiles });
+    if (currentMode === 'view') renderView();
+  }
+}
+
+function pushRecent(p: string): void {
+  recentFiles = [p, ...recentFiles.filter(f => f !== p)].slice(0, 10);
+  void window.mid.patchAppState({ recentFiles });
 }
 
 function renderView(): void {
@@ -214,6 +338,7 @@ function renderView(): void {
   root.classList.add('viewing');
   if (!currentText) {
     root.innerHTML = emptyStateHTML();
+    attachWelcomeHandlers(root);
     return;
   }
   const preview = document.createElement('div');
@@ -900,6 +1025,7 @@ function loadFileContent(filePath: string, content: string): void {
   setMode(currentMode);
   updateWordCount();
   updateSaveIndicator(true);
+  pushRecent(filePath);
 }
 
 async function selectTreeFile(filePath: string): Promise<void> {
@@ -1529,6 +1655,7 @@ void window.mid.readAppState().then(async state => {
   if (typeof state.previewMaxWidth === 'number' && state.previewMaxWidth >= 600 && state.previewMaxWidth <= 1400) {
     settings.previewMaxWidth = state.previewMaxWidth;
   }
+  if (Array.isArray(state.recentFiles)) recentFiles = state.recentFiles.slice(0, 10);
   applySettings();
   if (state.lastFolder) {
     try {
