@@ -800,9 +800,25 @@ main.splitting .mid-preview {
   border-radius: var(--mid-radius-md);
   padding: var(--mid-space-3);
   margin: 1em 0;
-  text-align: center;
-  overflow-x: auto;
   position: relative;
+  overflow: hidden;
+}
+.mid-mermaid-viewport {
+  width: 100%;
+  height: 420px;
+  overflow: hidden;
+  position: relative;
+  border-radius: var(--mid-radius-sm);
+}
+.mid-mermaid-viewport svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  width: auto;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 main.editing { padding: 0; max-width: none; display: block; height: 100%; }

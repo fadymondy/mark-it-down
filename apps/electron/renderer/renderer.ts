@@ -426,6 +426,7 @@ function populatePreview(preview: HTMLElement): void {
       .render(id, code)
       .then(({ svg }) => {
         el.innerHTML = svg;
+        makeMermaidInteractive(el);
         attachMermaidToolbar(el, code);
       })
       .catch(err => {
@@ -434,15 +435,80 @@ function populatePreview(preview: HTMLElement): void {
   });
 }
 
+function makeMermaidInteractive(host: HTMLDivElement): void {
+  const svg = host.querySelector('svg') as SVGSVGElement | null;
+  if (!svg) return;
+  const viewport = document.createElement('div');
+  viewport.className = 'mid-mermaid-viewport';
+  svg.parentElement?.insertBefore(viewport, svg);
+  viewport.appendChild(svg);
+
+  const state = { scale: 1, tx: 0, ty: 0 };
+  const apply = (): void => {
+    svg.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+  };
+  svg.style.transformOrigin = '0 0';
+  svg.style.cursor = 'grab';
+  apply();
+
+  viewport.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+    const ox = e.clientX - rect.left;
+    const oy = e.clientY - rect.top;
+    const next = Math.max(0.25, Math.min(4, state.scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+    // Zoom around cursor: keep the point under the cursor stable.
+    state.tx = ox - (ox - state.tx) * (next / state.scale);
+    state.ty = oy - (oy - state.ty) * (next / state.scale);
+    state.scale = next;
+    apply();
+  }, { passive: false });
+
+  let dragging = false;
+  let dragStartX = 0, dragStartY = 0, dragOriginTx = 0, dragOriginTy = 0;
+  viewport.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    dragging = true;
+    dragStartX = e.clientX; dragStartY = e.clientY;
+    dragOriginTx = state.tx; dragOriginTy = state.ty;
+    svg.style.cursor = 'grabbing';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    state.tx = dragOriginTx + (e.clientX - dragStartX);
+    state.ty = dragOriginTy + (e.clientY - dragStartY);
+    apply();
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    svg.style.cursor = 'grab';
+  });
+
+  viewport.addEventListener('dblclick', () => {
+    state.scale = 1; state.tx = 0; state.ty = 0;
+    apply();
+  });
+
+  // Expose reset for the right-click menu.
+  (host as HTMLDivElement & { _midResetMermaid?: () => void })._midResetMermaid = () => {
+    state.scale = 1; state.tx = 0; state.ty = 0;
+    apply();
+  };
+}
+
 function attachMermaidToolbar(host: HTMLDivElement, source: string): void {
   host.style.position = 'relative';
   host.addEventListener('contextmenu', e => {
     e.preventDefault();
     e.stopPropagation();
+    const reset = (host as HTMLDivElement & { _midResetMermaid?: () => void })._midResetMermaid;
     openContextMenu([
       { icon: 'copy', label: 'Copy SVG', action: () => copyMermaidSVG(host) },
       { icon: 'download', label: 'Download SVG', action: () => downloadMermaidSVG(host, source) },
       { icon: 'image', label: 'Download PNG', action: () => void downloadMermaidPNG(host) },
+      { separator: true, label: '' },
+      { icon: 'refresh', label: 'Reset view', action: () => reset?.() },
     ], e.clientX, e.clientY);
   });
 }
