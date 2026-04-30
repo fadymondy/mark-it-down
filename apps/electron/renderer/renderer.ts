@@ -101,10 +101,12 @@ const sidebarNotesHeader = document.getElementById('sidebar-notes-header') as HT
 const notesListEl = document.getElementById('notes-list') as HTMLDivElement;
 const notesFilter = document.getElementById('notes-filter') as HTMLInputElement;
 const notesNewBtn = document.getElementById('notes-new') as HTMLButtonElement;
-const repoBar = document.getElementById('repo-bar') as HTMLElement;
-const repoStatusEl = document.getElementById('repo-status') as HTMLSpanElement;
-const repoConnectBtn = document.getElementById('repo-connect') as HTMLButtonElement;
-const repoSyncBtn = document.getElementById('repo-sync') as HTMLButtonElement;
+const statusRepoBtn = document.getElementById('status-repo') as HTMLButtonElement;
+const statusRepoText = document.getElementById('status-repo-text') as HTMLSpanElement;
+const statusRepoIcon = document.getElementById('status-repo-icon') as HTMLSpanElement;
+const statusWords = document.getElementById('status-words') as HTMLSpanElement;
+const statusCursor = document.getElementById('status-cursor') as HTMLSpanElement;
+const statusSave = document.getElementById('status-save') as HTMLSpanElement;
 
 let currentText = '';
 let currentPath: string | null = null;
@@ -833,7 +835,18 @@ function buildEditor(): HTMLTextAreaElement {
   ta.spellcheck = false;
   ta.addEventListener('input', () => {
     currentText = ta.value;
+    updateWordCount();
+    updateSaveIndicator(false);
   });
+  const onCursor = (): void => {
+    const before = ta.value.slice(0, ta.selectionStart);
+    const lines = before.split('\n');
+    updateCursor(lines.length, lines[lines.length - 1].length + 1);
+  };
+  ta.addEventListener('keyup', onCursor);
+  ta.addEventListener('click', onCursor);
+  ta.addEventListener('focus', onCursor);
+  ta.addEventListener('blur', hideCursor);
   return ta;
 }
 
@@ -870,6 +883,7 @@ function setMode(mode: Mode): void {
   if (mode === 'view') renderView();
   else if (mode === 'edit') renderEdit();
   else renderSplit();
+  if (mode === 'view') hideCursor();
 }
 
 async function openFile(): Promise<void> {
@@ -884,6 +898,8 @@ function loadFileContent(filePath: string, content: string): void {
   filenameEl.textContent = filePath.split('/').pop() ?? 'Untitled';
   highlightActiveTreeItem();
   setMode(currentMode);
+  updateWordCount();
+  updateSaveIndicator(true);
 }
 
 async function selectTreeFile(filePath: string): Promise<void> {
@@ -901,7 +917,6 @@ function applyFolder(folderPath: string, tree: TreeEntry[]): void {
   currentFolder = folderPath;
   document.body.classList.add('has-sidebar');
   sidebar.hidden = false;
-  repoBar.hidden = false;
   sidebarFolderName.textContent = folderPath.split('/').pop() ?? folderPath;
   sidebarFolderName.title = folderPath;
   treeRoot.replaceChildren(...renderTree(tree));
@@ -917,10 +932,11 @@ function applyFolder(folderPath: string, tree: TreeEntry[]): void {
 async function refreshRepoStatus(): Promise<void> {
   if (!currentFolder) return;
   const s = await window.mid.repoStatus(currentFolder);
+  statusRepoIcon.innerHTML = iconHTML('github', 'mid-icon--sm');
   if (!s.initialized || !s.remote) {
-    repoStatusEl.textContent = s.initialized ? 'No remote' : 'No repo connected';
-    repoStatusEl.title = s.remote || '';
-    repoSyncBtn.hidden = true;
+    statusRepoText.textContent = s.initialized ? 'No remote' : 'No repo';
+    statusRepoBtn.dataset.connected = 'false';
+    statusRepoBtn.title = 'Click to connect a GitHub repo';
     return;
   }
   const slug = parseSlugFromUrl(s.remote);
@@ -930,10 +946,27 @@ async function refreshRepoStatus(): Promise<void> {
   if (s.behind) counters.push(`↓${s.behind}`);
   if (s.dirty) counters.push(`±${s.dirty}`);
   const counterText = counters.length ? ` ${counters.join(' ')}` : '';
-  repoStatusEl.textContent = `${slug} · ${branch}${counterText}`;
-  repoStatusEl.title = s.remote;
-  repoSyncBtn.hidden = false;
+  statusRepoText.textContent = `${slug} · ${branch}${counterText}`;
+  statusRepoBtn.dataset.connected = 'true';
+  statusRepoBtn.title = `${s.remote} — click to sync, right-click for actions`;
 }
+
+function updateWordCount(): void {
+  const words = currentText.trim() ? currentText.trim().split(/\s+/).length : 0;
+  statusWords.textContent = `${words.toLocaleString()} word${words === 1 ? '' : 's'}`;
+}
+
+function updateSaveIndicator(saved: boolean): void {
+  statusSave.classList.toggle('is-dirty', !saved);
+  statusSave.title = saved ? 'Saved' : 'Unsaved changes';
+}
+
+function updateCursor(line: number, col: number): void {
+  statusCursor.hidden = false;
+  statusCursor.textContent = `L${line}:C${col}`;
+}
+
+function hideCursor(): void { statusCursor.hidden = true; }
 
 function parseSlugFromUrl(url: string): string {
   const m = /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?\/?$/.exec(url);
@@ -1032,6 +1065,7 @@ async function saveFile(): Promise<void> {
   if (currentPath) {
     await window.mid.writeFile(currentPath, currentText);
     flashStatus(`Saved ${currentPath.split('/').pop()}`);
+    updateSaveIndicator(true);
     return;
   }
   const saved = await window.mid.saveFileDialog('untitled.md', currentText);
@@ -1039,6 +1073,7 @@ async function saveFile(): Promise<void> {
     currentPath = saved;
     filenameEl.textContent = saved.split('/').pop() ?? 'Untitled';
     flashStatus(`Saved ${saved.split('/').pop()}`);
+    updateSaveIndicator(true);
   }
 }
 
@@ -1156,8 +1191,22 @@ notesFilter.addEventListener('input', () => {
   notesFilterText = notesFilter.value.trim().toLowerCase();
   renderNotes();
 });
-repoConnectBtn.addEventListener('click', () => void promptConnectRepo());
-repoSyncBtn.addEventListener('click', () => void syncRepo());
+statusRepoBtn.addEventListener('click', () => {
+  if (statusRepoBtn.dataset.connected === 'true') void syncRepo();
+  else void promptConnectRepo();
+});
+statusRepoBtn.addEventListener('contextmenu', e => {
+  if (!currentFolder) return;
+  e.preventDefault();
+  const connected = statusRepoBtn.dataset.connected === 'true';
+  openContextMenu(connected ? [
+    { icon: 'refresh', label: 'Sync (commit + pull + push)', action: () => void syncRepo() },
+    { separator: true, label: '' },
+    { icon: 'github', label: 'Connect to a different repo…', action: () => void promptConnectRepo() },
+  ] : [
+    { icon: 'github', label: 'Connect repo…', action: () => void promptConnectRepo() },
+  ], e.clientX, e.clientY);
+});
 
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
