@@ -642,25 +642,28 @@ main.splitting .mid-preview {
   cursor: pointer;
   user-select: none;
   position: relative;
-  padding-right: 24px !important;
+  padding-right: 28px !important;
 }
 .mid-table-sortable::after {
   content: "";
   position: absolute;
-  right: 8px;
+  right: 10px;
   top: 50%;
   width: 8px;
   height: 8px;
   margin-top: -4px;
-  background: var(--mid-fg-subtle);
+  background: currentColor;
   clip-path: polygon(50% 0, 0 100%, 100% 100%);
-  opacity: 0.5;
+  opacity: 0;
   transform: rotate(180deg);
-  transition: opacity var(--mid-motion-fast) var(--mid-ease-out), transform var(--mid-motion-fast) var(--mid-ease-out), background var(--mid-motion-fast) var(--mid-ease-out);
+  transition: opacity var(--mid-motion-fast) var(--mid-ease-out), transform var(--mid-motion-fast) var(--mid-ease-out);
 }
-.mid-table-sortable:hover::after { opacity: 1; }
-.mid-table-sortable.is-sort-asc::after { opacity: 1; transform: rotate(0deg); background: var(--mid-accent); }
-.mid-table-sortable.is-sort-desc::after { opacity: 1; transform: rotate(180deg); background: var(--mid-accent); }
+.mid-table-sortable:hover { color: var(--mid-fg); }
+.mid-table-sortable:hover::after { opacity: 0.5; }
+.mid-table-sortable.is-sort-asc { color: var(--mid-fg); }
+.mid-table-sortable.is-sort-asc::after { opacity: 1; transform: rotate(0deg); }
+.mid-table-sortable.is-sort-desc { color: var(--mid-fg); }
+.mid-table-sortable.is-sort-desc::after { opacity: 1; transform: rotate(180deg); }
 
 /* Heading anchors (#) shown on hover */
 .mid-preview h1, .mid-preview h2, .mid-preview h3,
@@ -741,15 +744,24 @@ main.splitting .mid-preview {
   font-size: 0.95em;
 }
 .mid-preview th, .mid-preview td {
-  padding: var(--mid-space-2) var(--mid-space-3);
+  padding: var(--mid-space-3) var(--mid-space-4);
   text-align: left;
   border-bottom: 1px solid var(--mid-border);
+  vertical-align: top;
 }
 .mid-preview th {
+  background: transparent;
+  font-weight: var(--mid-weight-medium);
+  color: var(--mid-fg-muted);
+  font-size: var(--mid-font-size-sm);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--mid-border);
+}
+.mid-preview tbody tr {
+  transition: background-color var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-preview tbody tr:hover {
   background: var(--mid-surface);
-  font-weight: var(--mid-weight-semibold);
-  color: var(--mid-fg);
-  border-bottom: 1px solid var(--mid-border-strong);
 }
 .mid-preview tr:last-child td { border-bottom: 0; }
 .mid-preview img { max-width: 100%; border-radius: var(--mid-radius-sm); }
