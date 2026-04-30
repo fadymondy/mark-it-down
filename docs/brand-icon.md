@@ -24,8 +24,11 @@ npm run build:icons
 
 This runs `scripts/build-icons.mjs`, which requires:
 
-- `magick` (ImageMagick) on `PATH` — used for SVG→PNG rasterization and ICO packing.
+- `@resvg/resvg-js` (npm) — Rust SVG renderer with full gradient/filter/transform support. Cross-platform; auto-installed via `npm install`.
+- `magick` (ImageMagick) on `PATH` — only used to pack the multi-size `.ico` for Windows.
 - `iconutil` — Apple-supplied, only present on macOS. The `.icns` step is macOS-only.
+
+> **Why resvg, not magick, for the SVGs?** `magick` falls back to its internal MSVG renderer when `librsvg` isn't installed. That fallback drops gradients and filters, producing a grayscale silhouette (see PR for #88). `@resvg/resvg-js` does the rasterization in-process with full SVG fidelity.
 
 The script overwrites `build/icons/` and the platform icon files in `media/brand/` deterministically; the SVGs are the only diffable source. Commit the regenerated binaries — they are small (~250 KB total) and prevent CI from needing the same toolchain.
 

@@ -622,7 +622,10 @@
           "default": [],
           "items": {
             "type": "object",
-            "required": ["categoryPrefix", "repo"],
+            "required": [
+              "categoryPrefix",
+              "repo"
+            ],
             "properties": {
               "categoryPrefix": {
                 "type": "string",
@@ -797,6 +800,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/dompurify": "^3.2.0",
     "@types/lunr": "^2.3.7",
     "@types/mocha": "^10.0.10",

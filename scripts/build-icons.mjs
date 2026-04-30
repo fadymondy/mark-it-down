@@ -4,16 +4,17 @@
  * electron-builder (mac .icns, windows .ico, linux PNGs) and the
  * macOS template image set used by the renderer (icon-mono).
  *
- * Tools required:
- *   - magick (ImageMagick) on PATH
- *   - iconutil (macOS only — for .icns)
+ * Uses @resvg/resvg-js — Rust-based SVG renderer with full gradient,
+ * filter, and transform support. Cross-platform; no system tools
+ * needed except `iconutil` (macOS-only, for .icns) and `magick` (for .ico).
  *
  * Run:  npm run build:icons
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Resvg } from '@resvg/resvg-js';
 
 const SRC_COLOR = 'media/brand/icon.svg';
 const SRC_MONO = 'media/brand/icon-mono.svg';
@@ -27,9 +28,13 @@ function sh(cmd, args) {
   execFileSync(cmd, args, { stdio: 'inherit' });
 }
 
-function rasterize(svg, size, dest) {
-  // Hi-DPI density renders the SVG sharply at the target size.
-  sh('magick', ['-background', 'none', '-density', '512', svg, '-resize', `${size}x${size}`, dest]);
+function rasterize(svgText, size, dest) {
+  const resvg = new Resvg(svgText, {
+    fitTo: { mode: 'width', value: size },
+    background: 'rgba(0,0,0,0)',
+  });
+  const png = resvg.render().asPng();
+  writeFileSync(dest, png);
 }
 
 function ensureCleanDir(dir) {
@@ -37,18 +42,16 @@ function ensureCleanDir(dir) {
   mkdirSync(dir, { recursive: true });
 }
 
-function buildLinuxPngs() {
+function buildLinuxPngs(svgText) {
   ensureCleanDir(OUT_DIR);
   for (const size of [16, 32, 48, 64, 128, 256, 512, 1024]) {
-    rasterize(SRC_COLOR, size, join(OUT_DIR, `${size}.png`));
+    rasterize(svgText, size, join(OUT_DIR, `${size}.png`));
   }
-  // electron-builder Linux convention: 512x512.png at the root of build/icons
   copyFileSync(join(OUT_DIR, '512.png'), join(OUT_DIR, '512x512.png'));
 }
 
-function buildMacIcns() {
+function buildMacIcns(svgText) {
   ensureCleanDir(ICONSET);
-  // iconutil needs strict apple-naming pairs at 1x and 2x.
   const pairs = [
     [16, 'icon_16x16.png'],
     [32, 'icon_16x16@2x.png'],
@@ -62,32 +65,33 @@ function buildMacIcns() {
     [1024, 'icon_512x512@2x.png'],
   ];
   for (const [size, name] of pairs) {
-    rasterize(SRC_COLOR, size, join(ICONSET, name));
+    rasterize(svgText, size, join(ICONSET, name));
   }
   sh('iconutil', ['-c', 'icns', ICONSET, '-o', ICNS]);
   rmSync(ICONSET, { recursive: true, force: true });
 }
 
 function buildWindowsIco() {
-  // ImageMagick can pack multiple PNGs into a single .ico
   const sizes = [16, 32, 48, 64, 128, 256];
   const tmpFiles = sizes.map(s => join(OUT_DIR, `${s}.png`));
   sh('magick', [...tmpFiles, ICO]);
 }
 
-function buildMacTemplateImages() {
-  // For menu bar icons / overlays — three densities (1x/2x/3x) at 16px base.
+function buildMacTemplateImages(svgText) {
   for (const [scale, suffix] of [[1, ''], [2, '@2x'], [3, '@3x']]) {
-    rasterize(SRC_MONO, 16 * scale, join(TEMPLATE_DIR, `iconTemplate${suffix}.png`));
+    rasterize(svgText, 16 * scale, join(TEMPLATE_DIR, `iconTemplate${suffix}.png`));
   }
 }
 
+const colorSvg = readFileSync(SRC_COLOR, 'utf8');
+const monoSvg = readFileSync(SRC_MONO, 'utf8');
+
 console.log('• rasterizing color PNGs');
-buildLinuxPngs();
+buildLinuxPngs(colorSvg);
 console.log('• building macOS .icns');
-buildMacIcns();
+buildMacIcns(colorSvg);
 console.log('• building Windows .ico');
 buildWindowsIco();
 console.log('• building macOS template images (mono)');
-buildMacTemplateImages();
+buildMacTemplateImages(monoSvg);
 console.log('✔ icon set written to build/icons + media/brand');
