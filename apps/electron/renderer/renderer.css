@@ -1345,6 +1345,54 @@ body.is-printing { display: block; grid-template-rows: none; }
 body.is-printing .mid-shell { display: block; grid-template-columns: 1fr !important; }
 body.is-printing main.viewing { padding: 32px !important; max-width: 760px !important; overflow: visible !important; }
 
+/* Footnotes (#212) */
+.mid-fn-ref { font-size: 0.78em; }
+.mid-fn-ref a { color: var(--mid-link); text-decoration: none; padding: 0 1px; }
+.mid-fn-ref a:hover { text-decoration: underline; }
+.mid-footnotes {
+  margin-top: var(--mid-space-10);
+  padding-top: var(--mid-space-4);
+  border-top: 1px solid var(--mid-border);
+  color: var(--mid-fg-muted);
+  font-size: var(--mid-font-size-sm);
+}
+.mid-footnotes h2 {
+  font-size: var(--mid-font-size-base);
+  font-weight: var(--mid-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 0 !important;
+  padding: 0 !important;
+  margin-bottom: var(--mid-space-3);
+  color: var(--mid-fg);
+}
+.mid-footnotes ol { padding-left: var(--mid-space-5); margin: 0; }
+.mid-footnotes li { margin: var(--mid-space-1) 0; }
+.mid-fn-back {
+  margin-left: var(--mid-space-1);
+  text-decoration: none;
+  color: var(--mid-link);
+  font-family: var(--mid-font-mono);
+}
+
+/* Definition lists (#213) */
+.mid-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--mid-space-2) var(--mid-space-4);
+  margin: 1em 0;
+}
+.mid-dl dt {
+  font-weight: var(--mid-weight-semibold);
+  color: var(--mid-fg);
+  font-family: var(--mid-font-mono);
+  font-size: 0.92em;
+}
+.mid-dl dd {
+  margin: 0;
+  color: var(--mid-fg);
+}
+
 /* Inline <code> inside table cells styled as shadcn badges */
 .mid-preview td code,
 .mid-preview th code {
