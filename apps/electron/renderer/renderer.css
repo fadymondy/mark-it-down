@@ -165,6 +165,27 @@ body.has-sidebar .mid-shell {
 .mid-note-row:hover .mid-note-delete { opacity: 1; }
 .mid-note-delete:hover { color: var(--mid-danger); background: var(--mid-surface); }
 
+/* Repo status bar at the bottom of the sidebar */
+.mid-repo-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--mid-space-1);
+  padding: var(--mid-space-2) var(--mid-space-3);
+  border-top: 1px solid var(--mid-border);
+  background: var(--mid-surface);
+}
+.mid-repo-bar[hidden] { display: none; }
+.mid-repo-status {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mid-font-mono);
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .mid-titlebar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
