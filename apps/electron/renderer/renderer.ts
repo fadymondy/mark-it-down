@@ -116,6 +116,9 @@ interface Mid {
   notesAttachWarehouse(workspace: string, id: string, warehouseId: string | null): Promise<NoteEntry | null>;
   notesMarkPushed(workspace: string, id: string): Promise<NoteEntry | null>;
   ghAuthStatus(): Promise<{ authenticated: boolean; output: string }>;
+  ghRepoList(): Promise<{ repos: { nameWithOwner: string; description: string; visibility: string }[]; ok: boolean; error?: string }>;
+  ghRepoCreate(slug: string, visibility: 'private' | 'public'): Promise<{ ok: boolean; url?: string; error?: string }>;
+  fileHistory(workspace: string, filePath: string): Promise<{ commits: { hash: string; date: string; author: string; message: string; diff: string }[]; ok: boolean; error?: string }>;
   repoStatus(workspace: string): Promise<{ initialized: boolean; branch: string; ahead: number; behind: number; dirty: number; remote: string }>;
   repoConnect(workspace: string, repoSlug: string): Promise<{ url: string }>;
   repoSync(workspace: string, message: string): Promise<{ steps: string[]; ok: boolean; error?: string }>;
@@ -1676,11 +1679,135 @@ async function promptConnectRepo(): Promise<void> {
     );
     if (!proceed) return;
   }
-  const slug = await midPrompt('Connect GitHub repo', 'owner/name', '');
-  if (!slug || !/^[^/]+\/[^/]+$/.test(slug)) return;
+  // Pull list of user's repos via gh CLI for picker; fall back to free-text on failure.
+  const listResult = await window.mid.ghRepoList();
+  const slug = await openRepoPicker(listResult.repos, listResult.ok);
+  if (!slug) return;
   await window.mid.repoConnect(currentFolder, slug);
   flashStatus(`Connected to ${slug}`);
   await refreshRepoStatus();
+}
+
+function openRepoPicker(repos: { nameWithOwner: string; description: string; visibility: string }[], gotList: boolean): Promise<string | null> {
+  return new Promise(resolve => {
+    const dlg = document.getElementById('mid-spotlight') as HTMLDialogElement;
+    const input = document.getElementById('mid-spotlight-input') as HTMLInputElement;
+    const results = document.getElementById('mid-spotlight-results') as HTMLDivElement;
+    const tabs = dlg.querySelectorAll<HTMLButtonElement>('.mid-spotlight-tab');
+    tabs.forEach(t => { t.style.display = 'none'; });
+
+    const render = (): void => {
+      const q = input.value.trim().toLowerCase();
+      results.replaceChildren();
+      if (!gotList) {
+        results.innerHTML = '<div class="mid-spotlight-empty">gh repo list failed — type owner/name manually and press Enter.</div>';
+        return;
+      }
+      const matches = q ? repos.filter(r => r.nameWithOwner.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q)) : repos;
+      // Always offer "Create new repo…" at the top
+      const createRow = document.createElement('button');
+      createRow.className = 'mid-spotlight-row';
+      createRow.innerHTML = `${iconHTML('plus', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">Create new repo…</span><span class="mid-spotlight-row-path">${q ? escapeHTML(q) : 'enter name'}</span>`;
+      createRow.addEventListener('click', () => { void onCreateNew(q || ''); });
+      results.appendChild(createRow);
+      for (const r of matches.slice(0, 50)) {
+        const row = document.createElement('button');
+        row.className = 'mid-spotlight-row';
+        row.innerHTML = `${iconHTML('github', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">${escapeHTML(r.nameWithOwner)}</span><span class="mid-spotlight-row-path">${escapeHTML(r.visibility?.toLowerCase() ?? '')}</span>`;
+        if (r.description) row.title = r.description;
+        row.addEventListener('click', () => { close(r.nameWithOwner); });
+        results.appendChild(row);
+      }
+    };
+
+    const onCreateNew = async (defaultSlug: string): Promise<void> => {
+      close(null);
+      const slug = await midPrompt('Create GitHub repo', 'owner/name (no spaces)', defaultSlug);
+      if (!slug || !/^[^/]+\/[^/]+$/.test(slug)) return;
+      const visConfirm = await midConfirm('Visibility', `Create ${slug} as PRIVATE? Cancel for public.`);
+      const result = await window.mid.ghRepoCreate(slug, visConfirm ? 'private' : 'public');
+      if (!result.ok) {
+        await midConfirm('gh repo create failed', result.error ?? 'unknown');
+        return;
+      }
+      if (currentFolder) {
+        await window.mid.repoConnect(currentFolder, slug);
+        flashStatus(`Created + connected ${slug}`);
+        await refreshRepoStatus();
+      }
+    };
+
+    let closed = false;
+    function close(value: string | null): void {
+      if (closed) return;
+      closed = true;
+      input.removeEventListener('input', onInput);
+      input.removeEventListener('keydown', onKey);
+      dlg.removeEventListener('click', onBackdrop);
+      tabs.forEach(t => { t.style.display = ''; });
+      if (dlg.open) dlg.close();
+      resolve(value);
+    }
+    const onInput = (): void => render();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close(null);
+      if (e.key === 'Enter') {
+        const v = input.value.trim();
+        if (v && /^[^/]+\/[^/]+$/.test(v)) close(v);
+      }
+    };
+    const onBackdrop = (e: MouseEvent): void => { if (e.target === dlg) close(null); };
+
+    input.value = '';
+    input.placeholder = gotList ? 'Search your repos or type owner/name…' : 'Type owner/name…';
+    input.addEventListener('input', onInput);
+    input.addEventListener('keydown', onKey);
+    dlg.addEventListener('click', onBackdrop);
+    dlg.showModal();
+    render();
+    input.focus();
+  });
+}
+
+async function showFileHistory(filePath: string): Promise<void> {
+  if (!currentFolder) return;
+  const result = await window.mid.fileHistory(currentFolder, filePath);
+  if (!result.ok || result.commits.length === 0) {
+    flashStatus(result.error ? `History failed: ${result.error.split('\n')[0]}` : 'No history');
+    return;
+  }
+  // Render history into the spotlight modal repurposed as a viewer.
+  const dlg = document.getElementById('mid-spotlight') as HTMLDialogElement;
+  const input = document.getElementById('mid-spotlight-input') as HTMLInputElement;
+  const results = document.getElementById('mid-spotlight-results') as HTMLDivElement;
+  const tabs = dlg.querySelectorAll<HTMLButtonElement>('.mid-spotlight-tab');
+  tabs.forEach(t => { t.style.display = 'none'; });
+  input.value = '';
+  input.placeholder = `History — ${filePath.split('/').pop()}`;
+  results.replaceChildren();
+  for (const c of result.commits) {
+    const row = document.createElement('div');
+    row.className = 'mid-fh-row';
+    const head = document.createElement('div');
+    head.className = 'mid-fh-head';
+    head.innerHTML = `<span class="mid-fh-msg">${escapeHTML(c.message)}</span><span class="mid-fh-meta">${escapeHTML(c.author)} · ${new Date(c.date).toLocaleDateString()} · <span class="mid-fh-hash">${escapeHTML(c.hash.slice(0, 7))}</span></span>`;
+    const diff = document.createElement('pre');
+    diff.className = 'mid-fh-diff';
+    diff.textContent = c.diff;
+    row.append(head, diff);
+    results.appendChild(row);
+  }
+  const close = (): void => {
+    tabs.forEach(t => { t.style.display = ''; });
+    if (dlg.open) dlg.close();
+    document.removeEventListener('keydown', onKey);
+    dlg.removeEventListener('click', onBackdrop);
+  };
+  const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') close(); };
+  const onBackdrop = (e: MouseEvent): void => { if (e.target === dlg) close(); };
+  document.addEventListener('keydown', onKey);
+  dlg.addEventListener('click', onBackdrop);
+  dlg.showModal();
 }
 
 async function syncRepo(): Promise<void> {
@@ -1774,6 +1901,7 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
       const baseItems: MenuItem[] = [
         { icon: 'show', label: 'Open', action: () => void selectTreeFile(entry.path) },
         { icon: 'folder-open', label: 'Reveal in Finder', action: () => void window.mid.openExternal(`file://${entry.path.replace(/\/[^/]+$/, '')}`) },
+        { icon: 'refresh', label: 'View history…', action: () => void showFileHistory(entry.path) },
       ];
       if (!isMd) {
         openContextMenu(baseItems, e.clientX, e.clientY);

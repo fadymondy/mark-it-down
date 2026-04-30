@@ -292,6 +292,45 @@ async function runGit(workspace: string, args: string[]): Promise<{ stdout: stri
   return execFileP('git', args, { cwd: workspace });
 }
 
+ipcMain.handle('mid:gh-repo-list', async (): Promise<{ repos: { nameWithOwner: string; description: string; visibility: string }[]; ok: boolean; error?: string }> => {
+  try {
+    const { stdout } = await execFileP('gh', ['repo', 'list', '--limit', '200', '--json', 'nameWithOwner,description,visibility']);
+    const repos = JSON.parse(stdout) as { nameWithOwner: string; description: string; visibility: string }[];
+    return { repos, ok: true };
+  } catch (err) {
+    return { repos: [], ok: false, error: (err as { stderr?: string; message: string }).stderr ?? (err as Error).message };
+  }
+});
+
+ipcMain.handle('mid:gh-repo-create', async (_e, slug: string, visibility: 'private' | 'public'): Promise<{ ok: boolean; url?: string; error?: string }> => {
+  try {
+    const { stdout } = await execFileP('gh', ['repo', 'create', slug, `--${visibility}`, '--confirm']);
+    return { ok: true, url: stdout.trim() };
+  } catch (err) {
+    return { ok: false, error: (err as { stderr?: string; message: string }).stderr ?? (err as Error).message };
+  }
+});
+
+ipcMain.handle('mid:file-history', async (_e, workspace: string, filePath: string): Promise<{ commits: { hash: string; date: string; author: string; message: string; diff: string }[]; ok: boolean; error?: string }> => {
+  try {
+    const rel = path.relative(workspace, filePath);
+    const { stdout } = await execFileP('git', ['log', '--follow', '--pretty=format:%H%x1f%an%x1f%ad%x1f%s%x1e', '--date=iso-strict', '--', rel], { cwd: workspace });
+    const entries = stdout.split('').filter(Boolean);
+    const commits = await Promise.all(entries.slice(0, 50).map(async raw => {
+      const [hash, author, date, message] = raw.replace(/^\n+/, '').split('');
+      let diff = '';
+      try {
+        const r = await execFileP('git', ['show', '--no-color', '--pretty=', hash, '--', rel], { cwd: workspace });
+        diff = r.stdout;
+      } catch { /* ignore */ }
+      return { hash, author, date, message, diff };
+    }));
+    return { commits, ok: true };
+  } catch (err) {
+    return { commits: [], ok: false, error: (err as { stderr?: string; message: string }).stderr ?? (err as Error).message };
+  }
+});
+
 ipcMain.handle('mid:gh-auth-status', async () => {
   try {
     const { stdout } = await execFileP('gh', ['auth', 'status']);
