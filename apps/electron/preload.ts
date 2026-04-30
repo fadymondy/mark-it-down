@@ -25,6 +25,8 @@ export interface AppState {
   recentFiles?: string[];
   codeExportGradient?: string;
   pinnedFolders?: { path: string; name: string; icon: string; color: string }[];
+  workspaces?: { id: string; name: string; path: string }[];
+  activeWorkspace?: string;
 }
 
 export interface NoteEntry {
@@ -112,8 +114,8 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.on('mid:menu-save', handler);
     return () => ipcRenderer.removeListener('mid:menu-save', handler);
   },
-  onMenuExport: (cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx') => void): (() => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, fmt: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx') => cb(fmt);
+  onMenuExport: (cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx' | 'docx-gdocs') => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, fmt: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx' | 'docx-gdocs') => cb(fmt);
     ipcRenderer.on('mid:menu-export', handler);
     return () => ipcRenderer.removeListener('mid:menu-export', handler);
   },
