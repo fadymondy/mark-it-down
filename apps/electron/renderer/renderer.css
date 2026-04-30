@@ -241,13 +241,13 @@ body.has-sidebar .mid-shell {
 .mid-note-row:hover .mid-note-delete { opacity: 1; }
 .mid-note-delete:hover { color: var(--mid-danger); background: var(--mid-surface); }
 
-/* Bottom status bar */
+/* Bottom status bar — shadcn v2 (background = bg, smaller chrome) */
 .mid-statusbar {
   display: flex;
   align-items: center;
   gap: var(--mid-space-3);
   padding: 0 var(--mid-space-3);
-  background: var(--mid-surface);
+  background: var(--mid-bg);
   border-top: 1px solid var(--mid-border);
   font-family: var(--mid-font-mono);
   font-size: var(--mid-font-size-xs);
@@ -516,34 +516,44 @@ body.has-sidebar .mid-shell {
 .mid-pin-color-btn.is-active { border-color: var(--mid-fg); box-shadow: 0 0 0 1px var(--mid-bg) inset; }
 .mid-pin-actions { display: flex; justify-content: flex-end; gap: var(--mid-space-2); }
 
-/* Modal dialog (replaces window.prompt / window.confirm — unsupported in Electron) */
+/* shadcn dialog — universal shell used by midPrompt / midConfirm and inherited by other dialogs */
 .mid-dialog {
   margin: auto;
   padding: 0;
   border: 1px solid var(--mid-border);
   border-radius: var(--mid-radius-lg);
-  background: var(--mid-surface);
+  background: var(--mid-bg);
   color: var(--mid-fg);
   box-shadow: var(--mid-shadow-lg);
   width: min(440px, calc(100vw - 32px));
 }
-.mid-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+.mid-dialog::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px); }
 .mid-dialog-form {
   display: flex;
   flex-direction: column;
-  gap: var(--mid-space-3);
-  padding: var(--mid-space-4);
+  gap: var(--mid-space-4);
+  padding: var(--mid-space-5);
 }
 .mid-dialog-title { margin: 0; font-size: var(--mid-font-size-lg); font-weight: var(--mid-weight-semibold); }
-.mid-dialog-message { margin: 0; color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); white-space: pre-wrap; }
+.mid-dialog-message { margin: 0; color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); white-space: pre-wrap; line-height: var(--mid-line-relaxed); }
 .mid-dialog-label {
   display: flex;
   flex-direction: column;
-  gap: var(--mid-space-1);
+  gap: var(--mid-space-2);
   font-size: var(--mid-font-size-sm);
   font-weight: var(--mid-weight-medium);
 }
-.mid-dialog-actions { display: flex; justify-content: flex-end; gap: var(--mid-space-2); }
+.mid-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--mid-space-2);
+  margin-top: var(--mid-space-2);
+}
+
+/* Apply consistent dialog chrome to all dialogs */
+.mid-pin-editor::backdrop,
+.mid-mermaid-editor::backdrop,
+.mid-spotlight::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px); }
 
 .mid-titlebar {
   display: grid;
@@ -745,7 +755,16 @@ main.splitting .mid-preview {
   outline: none;
   transition: border-color var(--mid-motion-fast), box-shadow var(--mid-motion-fast);
 }
-.mid-settings-control[type="range"] { padding: 0; accent-color: var(--mid-fg); border: 0; }
+.mid-settings-control[type="range"] { padding: 0; accent-color: var(--mid-fg); border: 0; height: 24px; }
+select.mid-settings-control {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--mid-fg-muted) 50%), linear-gradient(135deg, var(--mid-fg-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: var(--mid-space-8);
+}
 .mid-settings-control:focus-visible {
   border-color: var(--mid-fg);
   box-shadow: 0 0 0 1px var(--mid-fg);
