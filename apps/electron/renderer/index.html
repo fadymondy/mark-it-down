@@ -14,17 +14,19 @@
 <body>
 <header class="mid-titlebar" role="toolbar">
   <div class="mid-titlebar-left">
-    <button id="open-folder-btn" class="mid-btn" title="Open folder (Cmd/Ctrl+Shift+O)" data-icon="folder-open" data-label="Folder"></button>
-    <button id="open-btn" class="mid-btn" title="Open file (Cmd/Ctrl+O)" data-icon="file" data-label="Open"></button>
-    <button id="save-btn" class="mid-btn" title="Save (Cmd/Ctrl+S)" data-icon="save" data-label="Save"></button>
+    <button id="open-folder-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Open folder (Cmd/Ctrl+Shift+O)" data-icon="folder-open"></button>
+    <button id="open-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Open file (Cmd/Ctrl+O)" data-icon="file"></button>
+    <button id="save-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Save (Cmd/Ctrl+S)" data-icon="save"></button>
   </div>
   <div class="mid-titlebar-center">
     <span id="filename" class="mid-filename">Untitled</span>
   </div>
   <div class="mid-titlebar-right">
-    <button id="mode-view" class="mid-btn is-active" title="View (default)" data-icon="show" data-label="View"></button>
-    <button id="mode-split" class="mid-btn" title="Split" data-icon="columns" data-label="Split"></button>
-    <button id="mode-edit" class="mid-btn" title="Edit" data-icon="edit" data-label="Edit"></button>
+    <div class="mid-mode-toggle" role="tablist" aria-label="Render mode">
+      <button id="mode-view" class="mid-mode-seg is-active" title="View (default)" data-icon="show"></button>
+      <button id="mode-split" class="mid-mode-seg" title="Split" data-icon="columns"></button>
+      <button id="mode-edit" class="mid-mode-seg" title="Edit" data-icon="edit"></button>
+    </div>
     <button id="settings-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Settings (Cmd/Ctrl+,)" data-icon="cog"></button>
   </div>
 </header>
