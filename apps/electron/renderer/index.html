@@ -94,6 +94,20 @@
     </div>
   </main>
 </div>
+<dialog id="mid-dialog" class="mid-dialog">
+  <form method="dialog" class="mid-dialog-form">
+    <h3 class="mid-dialog-title" id="mid-dialog-title"></h3>
+    <p class="mid-dialog-message" id="mid-dialog-message" hidden></p>
+    <label class="mid-dialog-label" id="mid-dialog-label" hidden>
+      <span id="mid-dialog-label-text"></span>
+      <input type="text" id="mid-dialog-input" class="mid-settings-control" />
+    </label>
+    <div class="mid-dialog-actions">
+      <button type="button" id="mid-dialog-cancel" class="mid-btn">Cancel</button>
+      <button type="submit" id="mid-dialog-ok" class="mid-btn mid-btn--primary">OK</button>
+    </div>
+  </form>
+</dialog>
 <script src="renderer.js"></script>
 </body>
 </html>

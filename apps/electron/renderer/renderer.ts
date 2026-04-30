@@ -886,10 +886,13 @@ async function promptConnectRepo(): Promise<void> {
   if (!currentFolder) return;
   const auth = await window.mid.ghAuthStatus();
   if (!auth.authenticated) {
-    const proceed = window.confirm(`gh CLI is not authenticated.\n\n${auth.output}\n\nRun "gh auth login" in a terminal first, then retry.\n\nContinue anyway?`);
+    const proceed = await midConfirm(
+      'gh CLI not authenticated',
+      `${auth.output.split('\n')[0]}\n\nRun "gh auth login" in a terminal first, then retry. Continue anyway?`,
+    );
     if (!proceed) return;
   }
-  const slug = window.prompt('GitHub repo (owner/name):');
+  const slug = await midPrompt('Connect GitHub repo', 'owner/name', '');
   if (!slug || !/^[^/]+\/[^/]+$/.test(slug)) return;
   await window.mid.repoConnect(currentFolder, slug);
   flashStatus(`Connected to ${slug}`);
@@ -899,7 +902,7 @@ async function promptConnectRepo(): Promise<void> {
 async function syncRepo(): Promise<void> {
   if (!currentFolder) return;
   repoSyncBtn.disabled = true;
-  const message = window.prompt('Commit message (leave empty for auto):') ?? '';
+  const message = (await midPrompt('Sync repo', 'Commit message (blank = auto)', '')) ?? '';
   const result = await window.mid.repoSync(currentFolder, message);
   repoSyncBtn.disabled = false;
   if (result.ok) flashStatus(`Synced — ${result.steps.join(', ')}`);
@@ -1182,7 +1185,7 @@ async function promptCreateNote(): Promise<void> {
     flashStatus('Open a folder first');
     return;
   }
-  const title = window.prompt('New note title:');
+  const title = await midPrompt('New note', 'Title', '');
   if (!title) return;
   const { entry, fullPath } = await window.mid.notesCreate(currentFolder, title);
   notes.push(entry);
@@ -1193,10 +1196,81 @@ async function promptCreateNote(): Promise<void> {
 
 async function deleteNote(note: NoteEntry): Promise<void> {
   if (!currentFolder) return;
-  if (!window.confirm(`Delete "${note.title}"? The file will be removed too.`)) return;
+  const ok = await midConfirm('Delete note?', `"${note.title}" — the file will be removed too.`);
+  if (!ok) return;
   await window.mid.notesDelete(currentFolder, note.id);
   notes = notes.filter(n => n.id !== note.id);
   renderNotes();
+}
+
+interface DialogResult { canceled: boolean; value: string; }
+function openDialog(opts: { title: string; message?: string; label?: string; defaultValue?: string }): Promise<DialogResult> {
+  return new Promise(resolve => {
+    const dlg = document.getElementById('mid-dialog') as HTMLDialogElement;
+    const titleEl = document.getElementById('mid-dialog-title') as HTMLHeadingElement;
+    const messageEl = document.getElementById('mid-dialog-message') as HTMLParagraphElement;
+    const labelEl = document.getElementById('mid-dialog-label') as HTMLLabelElement;
+    const labelTextEl = document.getElementById('mid-dialog-label-text') as HTMLSpanElement;
+    const inputEl = document.getElementById('mid-dialog-input') as HTMLInputElement;
+    const cancelBtn = document.getElementById('mid-dialog-cancel') as HTMLButtonElement;
+    const form = dlg.querySelector('form') as HTMLFormElement;
+
+    titleEl.textContent = opts.title;
+    if (opts.message) {
+      messageEl.textContent = opts.message;
+      messageEl.hidden = false;
+    } else {
+      messageEl.hidden = true;
+    }
+    if (opts.label !== undefined) {
+      labelEl.hidden = false;
+      labelTextEl.textContent = opts.label;
+      inputEl.value = opts.defaultValue ?? '';
+    } else {
+      labelEl.hidden = true;
+    }
+
+    let canceled = true;
+    const onSubmit = (e: Event): void => {
+      e.preventDefault();
+      canceled = false;
+      cleanup();
+      dlg.close();
+      resolve({ canceled: false, value: inputEl.value });
+    };
+    const onCancel = (): void => {
+      cleanup();
+      dlg.close();
+      resolve({ canceled: true, value: '' });
+    };
+    const onClose = (): void => {
+      if (canceled) {
+        cleanup();
+        resolve({ canceled: true, value: '' });
+      }
+    };
+    function cleanup(): void {
+      form.removeEventListener('submit', onSubmit);
+      cancelBtn.removeEventListener('click', onCancel);
+      dlg.removeEventListener('close', onClose);
+    }
+    form.addEventListener('submit', onSubmit);
+    cancelBtn.addEventListener('click', onCancel);
+    dlg.addEventListener('close', onClose);
+
+    dlg.showModal();
+    if (opts.label !== undefined) inputEl.focus();
+  });
+}
+
+async function midPrompt(title: string, label: string, defaultValue = ''): Promise<string | null> {
+  const result = await openDialog({ title, label, defaultValue });
+  return result.canceled ? null : result.value;
+}
+
+async function midConfirm(title: string, message: string): Promise<boolean> {
+  const result = await openDialog({ title, message });
+  return !result.canceled;
 }
 
 window.mid.onThemeChanged(applyTheme);
