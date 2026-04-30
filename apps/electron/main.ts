@@ -211,11 +211,31 @@ ipcMain.handle('mid:notes-rename', async (_e, workspace: string, id: string, tit
   const notes = await readNotes(workspace);
   const note = notes.find(n => n.id === id);
   if (!note) return null;
+  const oldTitle = note.title;
   note.title = title;
   note.updated = new Date().toISOString();
   await writeNotes(workspace, notes);
+  // Rewrite [[wikilink]] references that point at the old title across other notes.
+  if (oldTitle && oldTitle !== title) {
+    for (const other of notes) {
+      if (other.id === id) continue;
+      try {
+        const fullPath = path.join(workspace, other.path);
+        let content = await fs.readFile(fullPath, 'utf8');
+        const rx = new RegExp(`\\[\\[\\s*${escapeRegExp(oldTitle)}\\s*(?:\\|([^\\]]+))?\\]\\]`, 'g');
+        if (rx.test(content)) {
+          content = content.replace(rx, (_m, alias) => alias ? `[[${title}|${alias}]]` : `[[${title}]]`);
+          await fs.writeFile(fullPath, content, 'utf8');
+        }
+      } catch { /* note file gone — fine */ }
+    }
+  }
   return note;
 });
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 ipcMain.handle('mid:notes-delete', async (_e, workspace: string, id: string) => {
   const notes = await readNotes(workspace);

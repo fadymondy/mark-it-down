@@ -52,6 +52,8 @@ interface PinnedFolder {
   name: string;
   icon: string;
   color: string;
+  /** Files explicitly assigned to this cluster via drag-drop. Empty = show folder subtree as before. */
+  files?: string[];
 }
 
 interface Workspace {
@@ -1760,6 +1762,11 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
     item.appendChild(document.createTextNode(` ${entry.name}`));
     if (currentPath === entry.path) item.classList.add('is-active');
     item.addEventListener('click', () => void selectTreeFile(entry.path));
+    item.draggable = true;
+    item.addEventListener('dragstart', ev => {
+      ev.dataTransfer?.setData('application/x-mid-file', entry.path);
+      ev.dataTransfer?.setData('text/plain', entry.path);
+    });
     item.addEventListener('contextmenu', e => {
       e.preventDefault();
       e.stopPropagation();
@@ -2187,10 +2194,41 @@ function invalidateTreeCache(folderPath?: string): void {
 
 async function loadPinnedTree(folderPath: string): Promise<void> {
   try {
-    const tree = await loadFolderTree(folderPath);
-    const name = pinnedFolders.find(p => p.path === folderPath)?.name ?? folderPath.split('/').pop() ?? folderPath;
+    const pin = pinnedFolders.find(p => p.path === folderPath);
+    const name = pin?.name ?? folderPath.split('/').pop() ?? folderPath;
     sidebarFolderName.textContent = name;
     sidebarFolderName.title = folderPath;
+    if (pin && pin.files && pin.files.length > 0) {
+      // Cluster mode — render a flat list of registered files.
+      treeRoot.replaceChildren();
+      for (const filePath of pin.files) {
+        const item = document.createElement('div');
+        item.className = 'mid-tree-item';
+        if (currentPath === filePath) item.classList.add('is-active');
+        const fileMatch = iconForFile(filePath.split('/').pop() ?? '', 'file');
+        const span = document.createElement('span');
+        span.innerHTML = iconHTML(fileMatch.icon, 'mid-icon--muted mid-tree-icon');
+        const svg = span.firstElementChild as HTMLElement | null;
+        if (svg && fileMatch.color) svg.style.color = fileMatch.color;
+        item.appendChild(span.firstElementChild!);
+        item.appendChild(document.createTextNode(` ${filePath.split('/').pop() ?? filePath}`));
+        item.addEventListener('click', () => void selectTreeFile(filePath));
+        item.addEventListener('contextmenu', e => {
+          e.preventDefault();
+          openContextMenu([
+            { icon: 'show', label: 'Open', action: () => void selectTreeFile(filePath) },
+            { icon: 'trash', label: 'Remove from cluster', action: () => {
+              pin.files = (pin.files ?? []).filter(f => f !== filePath);
+              void window.mid.patchAppState({ pinnedFolders });
+              void loadPinnedTree(folderPath);
+            } },
+          ], e.clientX, e.clientY);
+        });
+        treeRoot.appendChild(item);
+      }
+      return;
+    }
+    const tree = await loadFolderTree(folderPath);
     treeRoot.replaceChildren(...renderTree(tree));
     if (tree.length === 0) {
       const empty = document.createElement('div');
@@ -2229,6 +2267,7 @@ function renderActivityPinned(): void {
       ], e.clientX, e.clientY);
     });
     btn.addEventListener('dragstart', e => {
+      e.dataTransfer?.setData('application/x-mid-pin', String(idx));
       e.dataTransfer?.setData('text/plain', String(idx));
       btn.classList.add('is-dragging');
     });
@@ -2238,7 +2277,20 @@ function renderActivityPinned(): void {
     btn.addEventListener('drop', e => {
       e.preventDefault();
       btn.classList.remove('is-drop-target');
-      const fromIdx = Number(e.dataTransfer?.getData('text/plain') ?? '');
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      // File drop → register in cluster
+      const filePath = dt.getData('application/x-mid-file');
+      if (filePath) {
+        const target = pinnedFolders[idx];
+        target.files = Array.from(new Set([...(target.files ?? []), filePath]));
+        void window.mid.patchAppState({ pinnedFolders });
+        flashStatus(`Added ${filePath.split('/').pop()} to "${target.name}"`);
+        if (activeActivity === `pinned:${target.path}`) void loadPinnedTree(target.path);
+        return;
+      }
+      // Pin reorder
+      const fromIdx = Number(dt.getData('application/x-mid-pin') ?? dt.getData('text/plain') ?? '');
       const toIdx = Number(btn.dataset.index ?? '');
       if (Number.isNaN(fromIdx) || Number.isNaN(toIdx) || fromIdx === toIdx) return;
       const next = pinnedFolders.slice();
@@ -2618,8 +2670,9 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
   title.textContent = note.title;
   const meta = document.createElement('div');
   meta.className = 'mid-note-meta';
-  const updated = new Date(note.updated).toLocaleDateString();
-  meta.textContent = updated;
+  const dateSpan = document.createElement('span');
+  dateSpan.textContent = new Date(note.updated).toLocaleDateString();
+  meta.appendChild(dateSpan);
   if (note.warehouse) {
     const wh = warehouses.find(w => w.id === note.warehouse);
     const chip = document.createElement('span');
@@ -2627,17 +2680,48 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
     chip.textContent = `↗ ${wh?.name ?? note.warehouse}`;
     meta.appendChild(chip);
   }
-  if (note.tags.length > 0) {
-    const tags = document.createElement('div');
-    tags.className = 'mid-note-tags';
+  const tagsContainer = document.createElement('div');
+  tagsContainer.className = 'mid-note-tags';
+  const renderTags = (): void => {
+    tagsContainer.replaceChildren();
     for (const t of note.tags) {
       const chip = document.createElement('span');
-      chip.className = 'mid-note-tag';
+      chip.className = 'mid-note-tag mid-note-tag-editable';
       chip.textContent = `#${t}`;
-      tags.appendChild(chip);
+      const x = document.createElement('button');
+      x.className = 'mid-note-tag-x';
+      x.title = `Remove tag ${t}`;
+      x.textContent = '×';
+      x.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!currentFolder) return;
+        const next = note.tags.filter(tag => tag !== t);
+        const updated = await window.mid.notesTag(currentFolder, note.id, next);
+        if (updated) Object.assign(note, updated);
+        renderTags();
+      });
+      chip.appendChild(x);
+      tagsContainer.appendChild(chip);
     }
-    meta.appendChild(tags);
-  }
+    const addBtn = document.createElement('button');
+    addBtn.className = 'mid-note-tag-add';
+    addBtn.title = 'Add tag';
+    addBtn.textContent = '+';
+    addBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!currentFolder) return;
+      const tag = await midPrompt('Add tag', 'Tag name (no spaces)', '');
+      if (!tag) return;
+      const cleaned = tag.trim().replace(/^#/, '').replace(/\s+/g, '-');
+      if (!cleaned || note.tags.includes(cleaned)) return;
+      const updated = await window.mid.notesTag(currentFolder, note.id, [...note.tags, cleaned]);
+      if (updated) Object.assign(note, updated);
+      renderTags();
+    });
+    tagsContainer.appendChild(addBtn);
+  };
+  renderTags();
+  meta.appendChild(tagsContainer);
   const del = document.createElement('button');
   del.className = 'mid-note-delete';
   del.title = 'Delete note';
