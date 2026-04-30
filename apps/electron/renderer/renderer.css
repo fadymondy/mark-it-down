@@ -226,6 +226,44 @@ body.has-sidebar .mid-shell {
   color: var(--mid-accent);
   margin-right: var(--mid-space-1);
 }
+.mid-note-tag-editable {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 0;
+}
+.mid-note-tag-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin-left: 2px;
+  font-size: 12px;
+  line-height: 1;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.mid-note-tag-x:hover { background: var(--mid-surface-hover); }
+.mid-note-tag-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  font-family: var(--mid-font-mono);
+  background: transparent;
+  color: var(--mid-fg-subtle);
+  border: 1px dashed var(--mid-border);
+  border-radius: var(--mid-radius-pill);
+  cursor: pointer;
+}
+.mid-note-tag-add:hover { color: var(--mid-fg); border-color: var(--mid-border-strong); }
 .mid-note-delete {
   grid-column: 2;
   grid-row: 1 / span 2;
