@@ -295,12 +295,58 @@ function escapeHTML(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+type SpecKind = 'agent' | 'skill' | 'rule' | 'command';
+const SPEC_PATH_PATTERNS: Array<{ kind: SpecKind; rx: RegExp; icon: IconName }> = [
+  { kind: 'agent',   rx: /\/\.claude\/agents\//i,   icon: 'bookmark' },
+  { kind: 'skill',   rx: /\/\.claude\/skills\//i,   icon: 'tag' },
+  { kind: 'rule',    rx: /\/\.claude\/rules\//i,    icon: 'list-ul' },
+  { kind: 'command', rx: /\/\.claude\/commands\//i, icon: 'cog' },
+];
+
+function detectSpecKind(path: string | null): { kind: SpecKind; icon: IconName } | null {
+  if (!path) return null;
+  for (const p of SPEC_PATH_PATTERNS) {
+    if (p.rx.test(path)) return { kind: p.kind, icon: p.icon };
+  }
+  return null;
+}
+
+function renderSpecCardHTML(meta: Record<string, unknown>, kind: SpecKind, icon: IconName): string {
+  const name = String(meta.name ?? meta.title ?? 'Untitled');
+  const description = meta.description ? String(meta.description) : '';
+  const accent = typeof meta.color === 'string' ? meta.color : '';
+  const skipKeys = new Set(['name', 'title', 'description', 'color']);
+  const chips = Object.entries(meta)
+    .filter(([k]) => !skipKeys.has(k))
+    .map(([k, v]) => {
+      const valueText = Array.isArray(v) ? v.join(', ') : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
+      return `<span class="mid-spec-chip"><span class="mid-spec-chip-key">${escapeHTML(k)}</span><span class="mid-spec-chip-val">${escapeHTML(valueText)}</span></span>`;
+    })
+    .join('');
+  const accentStyle = accent ? ` style="--mid-spec-accent: ${escapeHTML(accent)}"` : '';
+  return `<aside class="mid-spec-card mid-spec-card--${kind}"${accentStyle}>
+    <div class="mid-spec-card-head">
+      <span class="mid-spec-card-icon">${iconHTML(icon, 'mid-icon--lg')}</span>
+      <div class="mid-spec-card-titles">
+        <h1 class="mid-spec-card-name">${escapeHTML(name)}</h1>
+        <div class="mid-spec-card-kind">${kind}</div>
+      </div>
+    </div>
+    ${description ? `<p class="mid-spec-card-desc">${escapeHTML(description)}</p>` : ''}
+    ${chips ? `<div class="mid-spec-card-chips">${chips}</div>` : ''}
+  </aside>`;
+}
+
 function renderMarkdown(md: string): string {
   const { meta, body } = extractFrontmatter(md);
   const { html, mermaidBlocks } = coreRenderMarkdown(body);
   const container = document.createElement('div');
   container.innerHTML = html;
   applyMermaidPlaceholders(container, mermaidBlocks);
+  const spec = detectSpecKind(currentPath);
+  if (spec && meta) {
+    return renderSpecCardHTML(meta, spec.kind, spec.icon) + container.innerHTML;
+  }
   const fmHTML = meta ? renderFrontmatterHTML(meta) : '';
   return fmHTML + container.innerHTML;
 }

@@ -720,6 +720,85 @@ main.splitting .mid-preview {
   box-shadow: 0 0 0 1px var(--mid-fg);
 }
 
+/* Spec card — custom view template for .claude/* files */
+.mid-spec-card {
+  --mid-spec-accent: var(--mid-accent);
+  margin: 0 0 var(--mid-space-6);
+  padding: var(--mid-space-5);
+  background: var(--mid-surface);
+  border: 1px solid var(--mid-border);
+  border-left: 4px solid var(--mid-spec-accent);
+  border-radius: var(--mid-radius-lg);
+}
+.mid-spec-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--mid-space-3);
+  margin-bottom: var(--mid-space-2);
+}
+.mid-spec-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--mid-bg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-md);
+  color: var(--mid-spec-accent);
+}
+.mid-spec-card-titles { display: flex; flex-direction: column; gap: 2px; }
+.mid-spec-card-name {
+  margin: 0;
+  font-size: var(--mid-font-size-xl);
+  font-weight: var(--mid-weight-semibold);
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.mid-spec-card-kind {
+  font-family: var(--mid-font-mono);
+  font-size: var(--mid-font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mid-fg-muted);
+}
+.mid-spec-card-desc {
+  margin: 0 0 var(--mid-space-3) !important;
+  color: var(--mid-fg);
+  font-size: var(--mid-font-size-base);
+}
+.mid-spec-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mid-space-2);
+}
+.mid-spec-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--mid-bg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-pill);
+  font-size: var(--mid-font-size-xs);
+  overflow: hidden;
+}
+.mid-spec-chip-key {
+  padding: 2px var(--mid-space-2);
+  background: var(--mid-surface);
+  color: var(--mid-fg-muted);
+  font-family: var(--mid-font-mono);
+  border-right: 1px solid var(--mid-border);
+}
+.mid-spec-chip-val {
+  padding: 2px var(--mid-space-2);
+  color: var(--mid-fg);
+  font-family: var(--mid-font-mono);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Frontmatter meta block */
 .mid-frontmatter {
   display: grid;
