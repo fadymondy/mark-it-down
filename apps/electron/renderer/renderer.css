@@ -683,8 +683,13 @@ main.splitting .mid-preview {
   background: var(--mid-bg);
   box-shadow: inset 0 0 0 1px var(--mid-border);
 }
-.mid-table table { margin: 0; border: 0; border-radius: 0; }
-.mid-table th { position: sticky; top: 0; z-index: 1; }
+.mid-table table { margin: 0; border: 0; border-radius: 0; min-width: max-content; width: 100%; }
+.mid-table th { position: sticky; top: 0; z-index: 1; background: var(--mid-bg); }
+.mid-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-md);
+}
 
 /* Filter chip strip above the table — clear separation from sort indicators */
 .mid-table-chip {
