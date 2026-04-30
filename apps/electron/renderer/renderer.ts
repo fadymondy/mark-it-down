@@ -1,5 +1,6 @@
 import { renderMarkdown as coreRenderMarkdown, applyMermaidPlaceholders } from '../../../packages/core/src/markdown/renderer';
 import mermaid from 'mermaid';
+import hljs from 'highlight.js/lib/common';
 
 interface TreeEntry {
   name: string;
@@ -90,6 +91,10 @@ function renderView(): void {
       });
     }
   });
+  applySyntaxHighlighting(root);
+  attachCodeCopyButtons(root);
+  attachHeadingAnchors(root);
+  attachImageLightbox(root);
   root.querySelectorAll<HTMLDivElement>('.mermaid').forEach((el, i) => {
     const id = `mermaid-${Date.now()}-${i}`;
     const code = (el.textContent ?? '').trim();
@@ -103,6 +108,101 @@ function renderView(): void {
         el.innerHTML = `<pre style="color: #d04444">Mermaid error: ${String((err as Error)?.message ?? err)}</pre>`;
       });
   });
+}
+
+function applySyntaxHighlighting(scope: HTMLElement): void {
+  scope.querySelectorAll<HTMLElement>('pre > code').forEach(block => {
+    if (block.classList.contains('mermaid')) return;
+    try {
+      hljs.highlightElement(block);
+    } catch {
+      // unsupported language — leave plain
+    }
+  });
+}
+
+function attachCodeCopyButtons(scope: HTMLElement): void {
+  scope.querySelectorAll<HTMLPreElement>('pre').forEach(pre => {
+    if (pre.querySelector('.mid-copy-btn')) return;
+    if (pre.classList.contains('mermaid')) return;
+    pre.classList.add('has-copy');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mid-copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', async () => {
+      const code = pre.querySelector('code')?.innerText ?? pre.innerText;
+      try {
+        await navigator.clipboard.writeText(code);
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+      } catch {
+        btn.textContent = 'Failed';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+      }
+    });
+    pre.appendChild(btn);
+  });
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+function attachHeadingAnchors(scope: HTMLElement): void {
+  const seen = new Map<string, number>();
+  scope.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6').forEach(h => {
+    const baseSlug = slugify(h.textContent ?? '');
+    if (!baseSlug) return;
+    const count = seen.get(baseSlug) ?? 0;
+    seen.set(baseSlug, count + 1);
+    const slug = count === 0 ? baseSlug : `${baseSlug}-${count}`;
+    h.id = slug;
+    const anchor = document.createElement('a');
+    anchor.className = 'mid-anchor';
+    anchor.href = `#${slug}`;
+    anchor.setAttribute('aria-label', `Anchor link to ${slug}`);
+    anchor.textContent = '#';
+    anchor.addEventListener('click', e => {
+      e.preventDefault();
+      h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    h.appendChild(anchor);
+  });
+}
+
+function attachImageLightbox(scope: HTMLElement): void {
+  scope.querySelectorAll<HTMLImageElement>('img').forEach(img => {
+    img.classList.add('mid-zoomable');
+    img.addEventListener('click', () => openLightbox(img.src, img.alt));
+  });
+}
+
+function openLightbox(src: string, alt: string): void {
+  const existing = document.getElementById('mid-lightbox');
+  existing?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'mid-lightbox';
+  overlay.className = 'mid-lightbox';
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = alt;
+  overlay.appendChild(img);
+  const close = (): void => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') close();
+  };
+  overlay.addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
 }
 
 function renderEdit(): void {
