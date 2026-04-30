@@ -37,7 +37,11 @@
     <button id="save-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Save (Cmd/Ctrl+S)" data-icon="save"></button>
   </div>
   <div class="mid-titlebar-center">
-    <span id="filename" class="mid-filename">Untitled</span>
+    <button id="titlebar-search" class="mid-titlebar-search" title="Search (Cmd/Ctrl+K)">
+      <span class="mid-titlebar-search-icon" data-icon="search"></span>
+      <span id="filename" class="mid-filename">Untitled</span>
+      <span class="mid-titlebar-search-kbd"><kbd class="mid-kbd">⌘K</kbd></span>
+    </button>
   </div>
   <div class="mid-titlebar-right">
     <div class="mid-mode-toggle" role="tablist" aria-label="Render mode">
@@ -94,8 +98,6 @@
 </aside>
 <div class="mid-shell">
   <nav class="mid-activity-bar" id="activity-bar" aria-label="Activity bar">
-    <button id="activity-spotlight" class="mid-activity-btn" title="Spotlight search (Cmd/Ctrl+K)" data-icon="search"></button>
-    <span class="mid-activity-divider"></span>
     <button id="activity-files" class="mid-activity-btn is-active" title="Files (toggle)" data-icon="folder"></button>
     <button id="activity-notes" class="mid-activity-btn" title="Notes (toggle)" data-icon="bookmark"></button>
     <div id="activity-pinned" class="mid-activity-pinned"></div>

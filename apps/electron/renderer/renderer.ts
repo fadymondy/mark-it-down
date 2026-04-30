@@ -135,9 +135,10 @@ const btnSave = document.getElementById('save-btn') as HTMLButtonElement;
 const sidebar = document.getElementById('sidebar') as HTMLElement;
 const activityFiles = document.getElementById('activity-files') as HTMLButtonElement;
 const activityNotes = document.getElementById('activity-notes') as HTMLButtonElement;
-const activitySpotlight = document.getElementById('activity-spotlight') as HTMLButtonElement;
 const activitySettings = document.getElementById('activity-settings') as HTMLButtonElement;
 const activityPinned = document.getElementById('activity-pinned') as HTMLDivElement;
+const titlebarSearchBtn = document.getElementById('titlebar-search') as HTMLButtonElement;
+const titlebarSearchIcon = document.querySelector('.mid-titlebar-search-icon') as HTMLSpanElement;
 const sidebarFolderName = document.getElementById('sidebar-folder-name') as HTMLSpanElement;
 const sidebarRefresh = document.getElementById('sidebar-refresh') as HTMLButtonElement;
 const treeRoot = document.getElementById('tree-root') as HTMLDivElement;
@@ -1827,11 +1828,13 @@ async function loadPinnedTree(folderPath: string): Promise<void> {
 
 function renderActivityPinned(): void {
   activityPinned.replaceChildren();
-  for (const pin of pinnedFolders) {
+  pinnedFolders.forEach((pin, idx) => {
     const btn = document.createElement('button');
     btn.className = 'mid-activity-btn mid-activity-btn--pinned';
     btn.title = `${pin.name} (${pin.path})`;
     btn.dataset.path = pin.path;
+    btn.dataset.index = String(idx);
+    btn.draggable = true;
     btn.style.color = pin.color;
     btn.innerHTML = iconHTML((pin.icon as IconName) ?? 'folder');
     btn.addEventListener('click', () => selectActivity(`pinned:${pin.path}`));
@@ -1844,8 +1847,28 @@ function renderActivityPinned(): void {
         { icon: 'trash', label: 'Unpin', action: () => unpinFolder(pin.path) },
       ], e.clientX, e.clientY);
     });
+    btn.addEventListener('dragstart', e => {
+      e.dataTransfer?.setData('text/plain', String(idx));
+      btn.classList.add('is-dragging');
+    });
+    btn.addEventListener('dragend', () => btn.classList.remove('is-dragging'));
+    btn.addEventListener('dragover', e => { e.preventDefault(); btn.classList.add('is-drop-target'); });
+    btn.addEventListener('dragleave', () => btn.classList.remove('is-drop-target'));
+    btn.addEventListener('drop', e => {
+      e.preventDefault();
+      btn.classList.remove('is-drop-target');
+      const fromIdx = Number(e.dataTransfer?.getData('text/plain') ?? '');
+      const toIdx = Number(btn.dataset.index ?? '');
+      if (Number.isNaN(fromIdx) || Number.isNaN(toIdx) || fromIdx === toIdx) return;
+      const next = pinnedFolders.slice();
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      pinnedFolders = next;
+      void window.mid.patchAppState({ pinnedFolders });
+      renderActivityPinned();
+    });
     activityPinned.appendChild(btn);
-  }
+  });
 }
 
 async function pinFolder(folderPath: string, defaultName: string): Promise<void> {
@@ -1987,8 +2010,10 @@ async function editPinAppearance(pin: PinnedFolder): Promise<void> {
 
 activityFiles.addEventListener('click', () => selectActivity('files'));
 activityNotes.addEventListener('click', () => selectActivity('notes'));
-activitySpotlight.addEventListener('click', () => openSpotlight());
 activitySettings.addEventListener('click', () => document.getElementById('settings-btn')?.dispatchEvent(new MouseEvent('click')));
+titlebarSearchBtn.addEventListener('click', () => openSpotlight());
+// Hydrate the search-icon span (title-bar uses a custom layout, not data-icon hydration)
+if (titlebarSearchIcon) titlebarSearchIcon.innerHTML = iconHTML('search', 'mid-icon--sm mid-icon--muted');
 
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !e.shiftKey) {

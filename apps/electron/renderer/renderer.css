@@ -44,6 +44,8 @@ body.has-sidebar .mid-shell {
   border-top: 1px solid var(--mid-border);
 }
 .mid-activity-btn--pinned { color: inherit; }
+.mid-activity-btn.is-dragging { opacity: 0.4; }
+.mid-activity-btn.is-drop-target { background: var(--mid-accent); color: var(--mid-accent-fg); }
 .mid-activity-btn {
   width: 36px;
   height: 36px;
@@ -527,14 +529,36 @@ body.is-mac .mid-titlebar { padding-left: 80px; }
 .mid-titlebar-right { justify-self: end; }
 .mid-titlebar-center {
   text-align: center;
-  color: var(--mid-fg);
+  padding: 0 var(--mid-space-3);
+}
+
+/* Title-bar search — clickable filename pill that opens spotlight */
+.mid-titlebar-search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mid-space-2);
+  padding: 4px var(--mid-space-3);
+  font-family: inherit;
   font-size: var(--mid-font-size-sm);
   font-weight: var(--mid-weight-medium);
+  color: var(--mid-fg);
+  background: var(--mid-surface);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-md);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  max-width: min(420px, 50vw);
+}
+.mid-titlebar-search:hover { background: var(--mid-surface-hover); }
+.mid-titlebar-search .mid-filename {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 0 var(--mid-space-3);
+  text-align: left;
 }
+.mid-titlebar-search-icon { display: inline-flex; align-items: center; }
+.mid-titlebar-search-kbd { color: var(--mid-fg-muted); }
 
 /* Segmented mode toggle (View / Split / Edit) */
 .mid-mode-toggle {
@@ -960,6 +984,7 @@ main.splitting .mid-preview {
   font-size: var(--mid-font-size-xs);
   color: var(--mid-fg-muted);
   white-space: nowrap;
+  padding-right: var(--mid-space-1);
 }
 
 /* Sort affordances on each header cell — Boxicons chevron */
@@ -1061,10 +1086,10 @@ main.splitting .mid-preview {
   font-size: 0.95em;
 }
 .mid-preview th, .mid-preview td {
-  padding: var(--mid-space-3) var(--mid-space-4);
+  padding: var(--mid-space-2) var(--mid-space-4);
   text-align: left;
   border-bottom: 1px solid var(--mid-border);
-  vertical-align: top;
+  vertical-align: middle;
 }
 .mid-preview th {
   background: transparent;
