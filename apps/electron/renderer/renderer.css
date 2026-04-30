@@ -758,33 +758,25 @@ main.splitting .mid-preview {
   white-space: nowrap;
 }
 
-/* Sort affordances on each header cell */
+/* Sort affordances on each header cell — Boxicons chevron */
 .mid-table-sortable {
   cursor: pointer;
   user-select: none;
-  position: relative;
-  padding-right: 28px !important;
 }
-.mid-table-sortable::after {
-  content: "";
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  background: currentColor;
-  clip-path: polygon(50% 0, 0 100%, 100% 100%);
+.mid-table-sortable .mid-table-th-label { vertical-align: middle; }
+.mid-table-sort-indicator {
+  margin-left: var(--mid-space-1);
+  vertical-align: middle;
   opacity: 0;
-  transform: rotate(180deg);
+  transform: rotate(90deg);
   transition: opacity var(--mid-motion-fast) var(--mid-ease-out), transform var(--mid-motion-fast) var(--mid-ease-out);
 }
 .mid-table-sortable:hover { color: var(--mid-fg); }
-.mid-table-sortable:hover::after { opacity: 0.5; }
+.mid-table-sortable:hover .mid-table-sort-indicator { opacity: 0.5; }
 .mid-table-sortable.is-sort-asc { color: var(--mid-fg); }
-.mid-table-sortable.is-sort-asc::after { opacity: 1; transform: rotate(0deg); }
+.mid-table-sortable.is-sort-asc .mid-table-sort-indicator { opacity: 1; transform: rotate(-90deg); }
 .mid-table-sortable.is-sort-desc { color: var(--mid-fg); }
-.mid-table-sortable.is-sort-desc::after { opacity: 1; transform: rotate(180deg); }
+.mid-table-sortable.is-sort-desc .mid-table-sort-indicator { opacity: 1; transform: rotate(90deg); }
 
 /* Heading anchors (#) shown on hover */
 .mid-preview h1, .mid-preview h2, .mid-preview h3,
