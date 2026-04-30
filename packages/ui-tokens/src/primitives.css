@@ -20,25 +20,26 @@ button { font-family: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--mid-space-1);
-  padding: var(--mid-space-1) var(--mid-space-3);
+  gap: var(--mid-space-2);
+  padding: 6px var(--mid-space-3);
   font-size: var(--mid-font-size-sm);
   font-weight: var(--mid-weight-medium);
   line-height: 1.4;
-  background: transparent;
+  background: var(--mid-bg);
   color: var(--mid-fg);
   border: 1px solid var(--mid-border);
-  border-radius: var(--mid-radius-sm);
+  border-radius: var(--mid-radius-md);
   cursor: pointer;
   transition:
     background var(--mid-motion-fast) var(--mid-ease-out),
     border-color var(--mid-motion-fast) var(--mid-ease-out),
-    color var(--mid-motion-fast) var(--mid-ease-out);
+    color var(--mid-motion-fast) var(--mid-ease-out),
+    box-shadow var(--mid-motion-fast) var(--mid-ease-out);
   -webkit-app-region: no-drag;
 }
-.mid-btn:hover { background: var(--mid-surface-hover); border-color: var(--mid-border-strong); }
-.mid-btn:active { background: var(--mid-surface-active); }
-.mid-btn:focus-visible { outline: 2px solid var(--mid-accent); outline-offset: 2px; }
+.mid-btn:hover { background: var(--mid-surface); border-color: var(--mid-border-strong); }
+.mid-btn:active { background: var(--mid-surface-hover); }
+.mid-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--mid-bg), 0 0 0 4px var(--mid-fg); }
 .mid-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .mid-btn--primary {
@@ -50,8 +51,20 @@ button { font-family: inherit; }
   background: var(--mid-accent-hover);
   border-color: var(--mid-accent-hover);
 }
-.mid-btn--ghost { border-color: transparent; }
-.mid-btn--icon { padding: var(--mid-space-1); width: 28px; height: 28px; }
+.mid-btn--secondary {
+  background: var(--mid-surface);
+  border-color: transparent;
+}
+.mid-btn--secondary:hover { background: var(--mid-surface-hover); border-color: transparent; }
+.mid-btn--ghost { background: transparent; border-color: transparent; }
+.mid-btn--ghost:hover { background: var(--mid-surface); border-color: transparent; }
+.mid-btn--destructive {
+  background: var(--mid-danger);
+  color: #ffffff;
+  border-color: var(--mid-danger);
+}
+.mid-btn--icon { padding: 0; width: 32px; height: 32px; }
+.mid-btn--icon.mid-btn--ghost { width: 28px; height: 28px; }
 
 .mid-surface {
   background: var(--mid-surface);

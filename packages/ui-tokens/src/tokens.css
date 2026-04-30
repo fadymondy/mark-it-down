@@ -6,27 +6,27 @@
 :root {
   color-scheme: light dark;
 
-  /* Color — light */
+  /* Color — light (shadcn neutral palette) */
   --mid-bg: #ffffff;
-  --mid-surface: #f6f8fa;
-  --mid-surface-hover: #eaeef2;
-  --mid-surface-active: #d8dee4;
-  --mid-fg: #1f2328;
-  --mid-fg-muted: #656d76;
-  --mid-fg-subtle: #8b949e;
-  --mid-border: #d0d7de;
-  --mid-border-strong: #afb8c1;
-  --mid-accent: #0969da;
-  --mid-accent-fg: #ffffff;
-  --mid-accent-hover: #0550ae;
-  --mid-link: #0969da;
-  --mid-link-hover: #0550ae;
-  --mid-code-bg: #f6f8fa;
-  --mid-inline-code-bg: rgba(175, 184, 193, 0.2);
-  --mid-table-stripe: #f6f8fa;
-  --mid-danger: #d1242f;
-  --mid-warning: #9a6700;
-  --mid-success: #1a7f37;
+  --mid-surface: #f4f4f5;          /* zinc-100 */
+  --mid-surface-hover: #e4e4e7;    /* zinc-200 */
+  --mid-surface-active: #d4d4d8;   /* zinc-300 */
+  --mid-fg: #09090b;               /* zinc-950 */
+  --mid-fg-muted: #71717a;         /* zinc-500 */
+  --mid-fg-subtle: #a1a1aa;        /* zinc-400 */
+  --mid-border: #e4e4e7;           /* zinc-200 */
+  --mid-border-strong: #d4d4d8;    /* zinc-300 */
+  --mid-accent: #18181b;           /* zinc-900 — shadcn primary uses fg-tone */
+  --mid-accent-fg: #fafafa;        /* zinc-50 */
+  --mid-accent-hover: #27272a;     /* zinc-800 */
+  --mid-link: #2563eb;             /* blue-600 */
+  --mid-link-hover: #1d4ed8;       /* blue-700 */
+  --mid-code-bg: #fafafa;          /* zinc-50 */
+  --mid-inline-code-bg: rgba(161, 161, 170, 0.18);
+  --mid-table-stripe: #fafafa;
+  --mid-danger: #dc2626;           /* red-600 */
+  --mid-warning: #ca8a04;          /* yellow-600 */
+  --mid-success: #16a34a;          /* green-600 */
 
   /* Spacing — 4px base */
   --mid-space-0: 0;
@@ -94,26 +94,27 @@
 :root.dark {
   color-scheme: dark;
 
-  --mid-bg: #0d1117;
-  --mid-surface: #161b22;
-  --mid-surface-hover: #1f242c;
-  --mid-surface-active: #2a313c;
-  --mid-fg: #e6edf3;
-  --mid-fg-muted: #7d8590;
-  --mid-fg-subtle: #6e7681;
-  --mid-border: #30363d;
-  --mid-border-strong: #484f58;
-  --mid-accent: #2f81f7;
-  --mid-accent-fg: #ffffff;
-  --mid-accent-hover: #58a6ff;
-  --mid-link: #2f81f7;
-  --mid-link-hover: #58a6ff;
-  --mid-code-bg: #161b22;
-  --mid-inline-code-bg: rgba(110, 118, 129, 0.4);
-  --mid-table-stripe: #161b22;
-  --mid-danger: #f85149;
-  --mid-warning: #d29922;
-  --mid-success: #3fb950;
+  /* zinc-based dark palette — shadcn default */
+  --mid-bg: #09090b;               /* zinc-950 */
+  --mid-surface: #18181b;          /* zinc-900 */
+  --mid-surface-hover: #27272a;    /* zinc-800 */
+  --mid-surface-active: #3f3f46;   /* zinc-700 */
+  --mid-fg: #fafafa;               /* zinc-50 */
+  --mid-fg-muted: #a1a1aa;         /* zinc-400 */
+  --mid-fg-subtle: #71717a;        /* zinc-500 */
+  --mid-border: #27272a;           /* zinc-800 */
+  --mid-border-strong: #3f3f46;    /* zinc-700 */
+  --mid-accent: #fafafa;           /* zinc-50 — primary uses fg in dark */
+  --mid-accent-fg: #18181b;
+  --mid-accent-hover: #e4e4e7;
+  --mid-link: #60a5fa;             /* blue-400 */
+  --mid-link-hover: #93c5fd;       /* blue-300 */
+  --mid-code-bg: #18181b;
+  --mid-inline-code-bg: rgba(63, 63, 70, 0.6);
+  --mid-table-stripe: #18181b;
+  --mid-danger: #f87171;
+  --mid-warning: #facc15;
+  --mid-success: #4ade80;
 
   --mid-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --mid-shadow-md: 0 3px 6px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.25);
