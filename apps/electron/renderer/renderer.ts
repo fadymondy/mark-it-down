@@ -1968,8 +1968,10 @@ function wireSettingsPanel(): void {
   const openBtn = document.getElementById('settings-btn') as HTMLButtonElement;
   const closeBtn = document.getElementById('settings-close') as HTMLButtonElement;
   const themeSel = document.getElementById('setting-theme') as HTMLSelectElement;
-  themeSel.replaceChildren();
-  populateThemeOptions(themeSel);
+  if (THEMES.length === 0) {
+    // eslint-disable-next-line no-console
+    console.warn('[mid] THEMES import returned empty — theme picker will only show modes');
+  }
   const fontSel = document.getElementById('setting-font') as HTMLSelectElement;
   const sizeRange = document.getElementById('setting-font-size') as HTMLInputElement;
   const sizeVal = document.getElementById('setting-font-size-value') as HTMLSpanElement;
@@ -1978,6 +1980,18 @@ function wireSettingsPanel(): void {
   const resetBtn = document.getElementById('settings-reset') as HTMLButtonElement;
 
   const syncFromSettings = (): void => {
+    // Repopulate theme options every time the panel opens so we recover
+    // from any earlier load failure (and so a future hot reload of THEMES
+    // would surface immediately).
+    if (themeSel.options.length < 4 + THEMES.length) {
+      themeSel.replaceChildren();
+      try {
+        populateThemeOptions(themeSel);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[mid] populateThemeOptions failed', err);
+      }
+    }
     themeSel.value = settings.theme;
     fontSel.value = settings.fontFamily;
     sizeRange.value = String(settings.fontSize);
@@ -1985,6 +1999,8 @@ function wireSettingsPanel(): void {
     widthRange.value = String(settings.previewMaxWidth);
     widthVal.textContent = `${settings.previewMaxWidth}px`;
   };
+  // First-time populate so the picker is correct even before the panel opens.
+  syncFromSettings();
 
   const persist = (patch: Partial<typeof settings>): void => {
     Object.assign(settings, patch);
