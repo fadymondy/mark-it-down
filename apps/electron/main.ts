@@ -664,7 +664,7 @@ async function installMCPFor(target: 'claude' | 'cursor'): Promise<void> {
 }
 
 const MD_EXT = new Set(['.md', '.mdx', '.markdown']);
-const SKIP_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'out', '.cache', '.DS_Store']);
+const SKIP_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'out', '.cache', '.DS_Store', '.parcel-cache', '.turbo', '.nuxt', '.svelte-kit', '.angular']);
 
 interface TreeEntry {
   name: string;
@@ -677,7 +677,6 @@ async function listMarkdownTree(folderPath: string): Promise<TreeEntry[]> {
   const entries = await fs.readdir(folderPath, { withFileTypes: true });
   const out: TreeEntry[] = [];
   for (const entry of entries) {
-    if (entry.name.startsWith('.') && entry.name !== '.github') continue;
     if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(folderPath, entry.name);
     if (entry.isDirectory()) {
