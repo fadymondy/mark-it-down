@@ -27,9 +27,9 @@ interface AppState {
 
 const DEFAULT_SETTINGS = {
   fontFamily: 'system' as FontFamilyChoice,
-  fontSize: 15,
+  fontSize: 17,
   theme: 'auto' as ThemeChoice,
-  previewMaxWidth: 920,
+  previewMaxWidth: 760,
 };
 
 const FONT_STACKS: Record<FontFamilyChoice, string> = {
@@ -144,7 +144,7 @@ function applyResolvedTheme(): void {
 function applySettings(): void {
   const root = document.documentElement;
   root.style.setProperty('--mid-font-sans', FONT_STACKS[settings.fontFamily]);
-  root.style.setProperty('--mid-font-size-base', `${settings.fontSize}px`);
+  root.style.setProperty('--mid-font-size-reading', `${settings.fontSize}px`);
   root.style.setProperty('--mid-preview-max-width', `${settings.previewMaxWidth}px`);
   applyResolvedTheme();
 }

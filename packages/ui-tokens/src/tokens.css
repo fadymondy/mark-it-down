@@ -53,11 +53,12 @@
   --mid-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --mid-font-size-xs: 11px;
   --mid-font-size-sm: 12px;
-  --mid-font-size-base: 15px;
-  --mid-font-size-lg: 17px;
+  --mid-font-size-base: 16px;
+  --mid-font-size-reading: 17px;
+  --mid-font-size-lg: 18px;
   --mid-font-size-xl: 20px;
   --mid-font-size-2xl: 24px;
-  --mid-font-size-3xl: 32px;
+  --mid-font-size-3xl: 30px;
   --mid-line-tight: 1.25;
   --mid-line-normal: 1.5;
   --mid-line-relaxed: 1.65;
