@@ -41,6 +41,15 @@ const FONT_STACKS: Record<FontFamilyChoice, string> = {
 
 type ExportFormat = 'md' | 'html' | 'pdf' | 'png' | 'txt';
 
+interface NoteEntry {
+  id: string;
+  title: string;
+  path: string;
+  tags: string[];
+  created: string;
+  updated: string;
+}
+
 interface Mid {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<boolean>;
@@ -49,6 +58,11 @@ interface Mid {
   listFolderMd(folderPath: string): Promise<TreeEntry[]>;
   readAppState(): Promise<AppState>;
   patchAppState(patch: Partial<AppState>): Promise<void>;
+  notesList(workspace: string): Promise<NoteEntry[]>;
+  notesCreate(workspace: string, title: string): Promise<{ entry: NoteEntry; fullPath: string }>;
+  notesRename(workspace: string, id: string, title: string): Promise<NoteEntry | null>;
+  notesDelete(workspace: string, id: string): Promise<boolean>;
+  notesTag(workspace: string, id: string, tags: string[]): Promise<NoteEntry | null>;
   saveAs(defaultName: string, content: string | ArrayBuffer, filters: { name: string; extensions: string[] }[]): Promise<string | null>;
   exportPDF(defaultName: string): Promise<string | null>;
   saveFileDialog(defaultName: string, content: string): Promise<string | null>;
@@ -76,6 +90,13 @@ const sidebar = document.getElementById('sidebar') as HTMLElement;
 const sidebarFolderName = document.getElementById('sidebar-folder-name') as HTMLSpanElement;
 const sidebarRefresh = document.getElementById('sidebar-refresh') as HTMLButtonElement;
 const treeRoot = document.getElementById('tree-root') as HTMLDivElement;
+const modeFilesBtn = document.getElementById('mode-files') as HTMLButtonElement;
+const modeNotesBtn = document.getElementById('mode-notes') as HTMLButtonElement;
+const sidebarFilesHeader = document.getElementById('sidebar-files-header') as HTMLElement;
+const sidebarNotesHeader = document.getElementById('sidebar-notes-header') as HTMLElement;
+const notesListEl = document.getElementById('notes-list') as HTMLDivElement;
+const notesFilter = document.getElementById('notes-filter') as HTMLInputElement;
+const notesNewBtn = document.getElementById('notes-new') as HTMLButtonElement;
 
 let currentText = '';
 let currentPath: string | null = null;
@@ -85,6 +106,9 @@ let currentFolder: string | null = null;
 let splitRatio = 0.5;
 let renderTimer: number | null = null;
 let osIsDark = false;
+let sidebarMode: 'files' | 'notes' = 'files';
+let notes: NoteEntry[] = [];
+let notesFilterText = '';
 const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
 
@@ -995,6 +1019,122 @@ btnOpen.addEventListener('click', () => void openFile());
 btnOpenFolder.addEventListener('click', () => void openFolder());
 btnSave.addEventListener('click', () => void saveFile());
 sidebarRefresh.addEventListener('click', () => void refreshFolder());
+modeFilesBtn.addEventListener('click', () => setSidebarMode('files'));
+modeNotesBtn.addEventListener('click', () => setSidebarMode('notes'));
+notesNewBtn.addEventListener('click', () => void promptCreateNote());
+notesFilter.addEventListener('input', () => {
+  notesFilterText = notesFilter.value.trim().toLowerCase();
+  renderNotes();
+});
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
+    if (currentFolder) {
+      e.preventDefault();
+      setSidebarMode('notes');
+      void promptCreateNote();
+    }
+  }
+});
+
+function setSidebarMode(mode: 'files' | 'notes'): void {
+  sidebarMode = mode;
+  modeFilesBtn.classList.toggle('is-active', mode === 'files');
+  modeNotesBtn.classList.toggle('is-active', mode === 'notes');
+  sidebarFilesHeader.hidden = mode !== 'files';
+  sidebarNotesHeader.hidden = mode !== 'notes';
+  treeRoot.hidden = mode !== 'files';
+  notesListEl.hidden = mode !== 'notes';
+  if (mode === 'notes') void loadNotes();
+}
+
+async function loadNotes(): Promise<void> {
+  if (!currentFolder) {
+    notesListEl.innerHTML = '<div class="mid-tree-empty">Open a folder first.</div>';
+    return;
+  }
+  notes = await window.mid.notesList(currentFolder);
+  renderNotes();
+}
+
+function renderNotes(): void {
+  if (!currentFolder) return;
+  const filtered = notesFilterText
+    ? notes.filter(n => n.title.toLowerCase().includes(notesFilterText) || n.tags.some(t => t.toLowerCase().includes(notesFilterText)))
+    : notes;
+  if (filtered.length === 0) {
+    notesListEl.innerHTML = `<div class="mid-tree-empty">${notes.length === 0 ? 'No notes yet. Create one with + or Cmd/Ctrl+N.' : 'No matches.'}</div>`;
+    return;
+  }
+  const sorted = [...filtered].sort((a, b) => b.updated.localeCompare(a.updated));
+  notesListEl.replaceChildren(...sorted.map(renderNoteRow));
+}
+
+function renderNoteRow(note: NoteEntry): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'mid-note-row';
+  row.dataset.id = note.id;
+  if (currentPath && currentPath.endsWith('/' + note.path)) row.classList.add('is-active');
+  const title = document.createElement('div');
+  title.className = 'mid-note-title';
+  title.textContent = note.title;
+  const meta = document.createElement('div');
+  meta.className = 'mid-note-meta';
+  const updated = new Date(note.updated).toLocaleDateString();
+  meta.textContent = updated;
+  if (note.tags.length > 0) {
+    const tags = document.createElement('div');
+    tags.className = 'mid-note-tags';
+    for (const t of note.tags) {
+      const chip = document.createElement('span');
+      chip.className = 'mid-note-tag';
+      chip.textContent = `#${t}`;
+      tags.appendChild(chip);
+    }
+    meta.appendChild(tags);
+  }
+  const del = document.createElement('button');
+  del.className = 'mid-note-delete';
+  del.title = 'Delete note';
+  del.innerHTML = iconHTML('trash', 'mid-icon--sm');
+  del.addEventListener('click', e => {
+    e.stopPropagation();
+    void deleteNote(note);
+  });
+  row.append(title, meta, del);
+  row.addEventListener('click', () => void openNote(note));
+  return row;
+}
+
+async function openNote(note: NoteEntry): Promise<void> {
+  if (!currentFolder) return;
+  const fullPath = `${currentFolder}/${note.path}`;
+  const content = await window.mid.readFile(fullPath);
+  loadFileContent(fullPath, content);
+  renderNotes();
+}
+
+async function promptCreateNote(): Promise<void> {
+  if (!currentFolder) {
+    flashStatus('Open a folder first');
+    return;
+  }
+  const title = window.prompt('New note title:');
+  if (!title) return;
+  const { entry, fullPath } = await window.mid.notesCreate(currentFolder, title);
+  notes.push(entry);
+  renderNotes();
+  const content = await window.mid.readFile(fullPath);
+  loadFileContent(fullPath, content);
+}
+
+async function deleteNote(note: NoteEntry): Promise<void> {
+  if (!currentFolder) return;
+  if (!window.confirm(`Delete "${note.title}"? The file will be removed too.`)) return;
+  await window.mid.notesDelete(currentFolder, note.id);
+  notes = notes.filter(n => n.id !== note.id);
+  renderNotes();
+}
 
 window.mid.onThemeChanged(applyTheme);
 window.mid.onMenuOpen(() => void openFile());

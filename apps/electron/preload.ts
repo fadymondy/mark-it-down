@@ -24,6 +24,15 @@ export interface AppState {
   previewMaxWidth?: number;
 }
 
+export interface NoteEntry {
+  id: string;
+  title: string;
+  path: string;
+  tags: string[];
+  created: string;
+  updated: string;
+}
+
 contextBridge.exposeInMainWorld('mid', {
   readFile: (path: string): Promise<string> => ipcRenderer.invoke('mid:read-file', path),
   writeFile: (path: string, content: string): Promise<boolean> =>
@@ -37,6 +46,16 @@ contextBridge.exposeInMainWorld('mid', {
   readAppState: (): Promise<AppState> => ipcRenderer.invoke('mid:read-app-state'),
   patchAppState: (patch: Partial<AppState>): Promise<void> =>
     ipcRenderer.invoke('mid:patch-app-state', patch),
+  notesList: (workspace: string): Promise<NoteEntry[]> =>
+    ipcRenderer.invoke('mid:notes-list', workspace),
+  notesCreate: (workspace: string, title: string): Promise<{ entry: NoteEntry; fullPath: string }> =>
+    ipcRenderer.invoke('mid:notes-create', workspace, title),
+  notesRename: (workspace: string, id: string, title: string): Promise<NoteEntry | null> =>
+    ipcRenderer.invoke('mid:notes-rename', workspace, id, title),
+  notesDelete: (workspace: string, id: string): Promise<boolean> =>
+    ipcRenderer.invoke('mid:notes-delete', workspace, id),
+  notesTag: (workspace: string, id: string, tags: string[]): Promise<NoteEntry | null> =>
+    ipcRenderer.invoke('mid:notes-tag', workspace, id, tags),
   saveAs: (defaultName: string, content: string | ArrayBuffer, filters: { name: string; extensions: string[] }[]): Promise<string | null> =>
     ipcRenderer.invoke('mid:save-as', defaultName, content, filters),
   exportPDF: (defaultName: string): Promise<string | null> =>
