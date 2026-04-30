@@ -951,6 +951,8 @@ function attachTableTools(scope: HTMLElement): void {
     const wrapper = document.createElement('div');
     wrapper.className = 'mid-table';
     table.replaceWith(wrapper);
+    const scroller = document.createElement('div');
+    scroller.className = 'mid-table-scroll';
 
     // Compact filter chip — only shown for tables with > 5 rows so small tables stay clean.
     const showChip = rows.length > 5;
@@ -965,7 +967,8 @@ function attachTableTools(scope: HTMLElement): void {
     chip.append(filterInput, counter);
     if (!showChip) chip.hidden = true;
 
-    wrapper.append(chip, table);
+    scroller.appendChild(table);
+    wrapper.append(chip, scroller);
 
     const state: TableState = { sortColumn: null, sortDir: null, filter: '' };
     const getVisible = (): HTMLTableRowElement[] => rows.filter(r => !r.hidden);
