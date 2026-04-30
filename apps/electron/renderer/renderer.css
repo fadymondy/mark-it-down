@@ -186,6 +186,35 @@ body.has-sidebar .mid-shell {
   text-overflow: ellipsis;
 }
 
+/* Modal dialog (replaces window.prompt / window.confirm — unsupported in Electron) */
+.mid-dialog {
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-lg);
+  background: var(--mid-surface);
+  color: var(--mid-fg);
+  box-shadow: var(--mid-shadow-lg);
+  width: min(440px, calc(100vw - 32px));
+}
+.mid-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+.mid-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-3);
+  padding: var(--mid-space-4);
+}
+.mid-dialog-title { margin: 0; font-size: var(--mid-font-size-lg); font-weight: var(--mid-weight-semibold); }
+.mid-dialog-message { margin: 0; color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); white-space: pre-wrap; }
+.mid-dialog-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-1);
+  font-size: var(--mid-font-size-sm);
+  font-weight: var(--mid-weight-medium);
+}
+.mid-dialog-actions { display: flex; justify-content: flex-end; gap: var(--mid-space-2); }
+
 .mid-titlebar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
