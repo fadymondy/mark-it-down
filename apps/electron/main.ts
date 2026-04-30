@@ -1,7 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, MenuItemConstructorOptions, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, MenuItemConstructorOptions, nativeImage, nativeTheme, shell, Tray } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { fork, ChildProcess } from 'child_process';
+import * as os from 'os';
 
 const isDev = process.env.MID_DEV === '1' || !app.isPackaged;
 const updateState = {
@@ -12,6 +14,11 @@ const updateState = {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let mcpProcess: ChildProcess | null = null;
+type MCPStatus = 'stopped' | 'running' | 'error';
+let mcpStatus: MCPStatus = 'stopped';
+let mcpLastError: string | null = null;
 
 function resolveAppIcon(): string | undefined {
   // In dev: use a 512px PNG so the dock/taskbar shows brand art.
@@ -75,11 +82,15 @@ app.whenReady().then(async () => {
   }
   await createWindow();
   Menu.setApplicationMenu(buildMenu());
+  buildTray();
+  startMCP();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
   setupAutoUpdate();
 });
+
+app.on('before-quit', () => stopMCP());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -279,6 +290,128 @@ interface AppState {
   fontSize?: number;
   theme?: 'auto' | 'light' | 'dark' | 'sepia';
   previewMaxWidth?: number;
+}
+
+function resolveMCPServerScript(): string {
+  // In dev: out/mcp/server.js sits in the repo. Packaged: ships under app resources.
+  const candidates = [
+    path.join(process.cwd(), 'out/mcp/server.js'),
+    path.join(__dirname, '../../mcp/server.js'),
+    path.join(__dirname, '../mcp/server.js'),
+  ];
+  for (const p of candidates) {
+    try { require('fs').accessSync(p); return p; } catch { /* try next */ }
+  }
+  return '';
+}
+
+function setMCPStatus(s: MCPStatus, err?: string): void {
+  mcpStatus = s;
+  mcpLastError = err ?? null;
+  rebuildTrayMenu();
+}
+
+function startMCP(): void {
+  if (mcpProcess) return;
+  const script = resolveMCPServerScript();
+  if (!script) {
+    setMCPStatus('error', 'MCP server script not found');
+    return;
+  }
+  try {
+    mcpProcess = fork(script, [], {
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      env: { ...process.env, MID_TRAY_MANAGED: '1' },
+    });
+    setMCPStatus('running');
+    mcpProcess.on('error', e => setMCPStatus('error', e.message));
+    mcpProcess.on('exit', code => {
+      mcpProcess = null;
+      if (code !== 0 && mcpStatus !== 'stopped') setMCPStatus('error', `MCP exited with code ${code}`);
+      else setMCPStatus('stopped');
+    });
+  } catch (err) {
+    setMCPStatus('error', (err as Error).message);
+  }
+}
+
+function stopMCP(): void {
+  if (!mcpProcess) {
+    if (mcpStatus !== 'stopped') setMCPStatus('stopped');
+    return;
+  }
+  setMCPStatus('stopped');
+  try { mcpProcess.kill(); } catch { /* ignore */ }
+  mcpProcess = null;
+}
+
+function buildTray(): void {
+  const iconPath = path.join(process.cwd(), 'media/brand/iconTemplate.png');
+  let icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    // Fallback: use the colored 16-px PNG.
+    icon = nativeImage.createFromPath(path.join(process.cwd(), 'build/icons/16.png'));
+  }
+  if (process.platform === 'darwin') icon.setTemplateImage(true);
+  tray = new Tray(icon);
+  tray.setToolTip('Mark It Down');
+  rebuildTrayMenu();
+}
+
+function rebuildTrayMenu(): void {
+  if (!tray) return;
+  const statusLabel =
+    mcpStatus === 'running' ? '● MCP server: running'
+    : mcpStatus === 'error' ? `● MCP server: error${mcpLastError ? ` — ${mcpLastError}` : ''}`
+    : '○ MCP server: stopped';
+  const menu = Menu.buildFromTemplate([
+    { label: statusLabel, enabled: false },
+    { type: 'separator' },
+    { label: 'Start MCP', enabled: mcpStatus !== 'running', click: () => startMCP() },
+    { label: 'Stop MCP', enabled: mcpStatus === 'running', click: () => stopMCP() },
+    { type: 'separator' },
+    { label: 'Install MCP for Claude Code…', click: () => void installMCPFor('claude') },
+    { label: 'Install MCP for Cursor…', click: () => void installMCPFor('cursor') },
+    { type: 'separator' },
+    { label: 'Show window', click: () => mainWindow?.show() },
+    { label: 'Hide window', click: () => mainWindow?.hide() },
+    { type: 'separator' },
+    { label: 'Quit Mark It Down', click: () => app.quit() },
+  ]);
+  tray.setContextMenu(menu);
+}
+
+async function installMCPFor(target: 'claude' | 'cursor'): Promise<void> {
+  const script = resolveMCPServerScript();
+  if (!script) {
+    await dialog.showMessageBox({ type: 'error', title: 'Mark It Down', message: 'MCP server script not found.' });
+    return;
+  }
+  const home = os.homedir();
+  const configPath = target === 'claude' ? path.join(home, '.claude.json') : path.join(home, '.cursor', 'mcp.json');
+  let json: { mcpServers?: Record<string, { command: string; args: string[] }> } = {};
+  try {
+    const raw = await fs.readFile(configPath, 'utf8');
+    json = JSON.parse(raw);
+  } catch {
+    // file doesn't exist or invalid JSON — start fresh
+  }
+  json.mcpServers = json.mcpServers ?? {};
+  json.mcpServers['mark-it-down'] = {
+    command: process.execPath.includes('Electron')
+      ? 'node'
+      : process.execPath, // packaged: invoke node directly if available
+    args: [script],
+  };
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, JSON.stringify(json, null, 2), 'utf8');
+  await dialog.showMessageBox({
+    type: 'info',
+    title: 'Mark It Down',
+    message: `Installed for ${target === 'claude' ? 'Claude Code' : 'Cursor'}`,
+    detail: `Wrote mcpServers["mark-it-down"] to ${configPath}.\n\nRestart ${target === 'claude' ? 'Claude Code' : 'Cursor'} to pick up the change.`,
+    buttons: ['OK'],
+  });
 }
 
 const MD_EXT = new Set(['.md', '.mdx', '.markdown']);
