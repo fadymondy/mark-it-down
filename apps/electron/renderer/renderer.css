@@ -83,6 +83,88 @@ body.has-sidebar .mid-shell {
   font-size: var(--mid-font-size-sm);
 }
 
+/* Sidebar mode toggle (Files / Notes) */
+.mid-sidebar-mode {
+  display: flex;
+  border-bottom: 1px solid var(--mid-border);
+}
+.mid-sidebar-mode-btn {
+  flex: 1;
+  padding: var(--mid-space-2);
+  font-family: inherit;
+  font-size: var(--mid-font-size-sm);
+  font-weight: var(--mid-weight-medium);
+  color: var(--mid-fg-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.mid-sidebar-mode-btn:hover { color: var(--mid-fg); background: var(--mid-surface-hover); }
+.mid-sidebar-mode-btn.is-active {
+  color: var(--mid-fg);
+  border-bottom-color: var(--mid-accent);
+}
+
+/* Notes list */
+.mid-notes-list {
+  flex: 1;
+  overflow: auto;
+  padding: var(--mid-space-1);
+}
+.mid-note-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 2px var(--mid-space-2);
+  padding: var(--mid-space-2);
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+  user-select: none;
+}
+.mid-note-row:hover { background: var(--mid-surface-hover); }
+.mid-note-row.is-active { background: var(--mid-accent); color: var(--mid-accent-fg); }
+.mid-note-row.is-active .mid-note-meta,
+.mid-note-row.is-active .mid-note-tag { color: var(--mid-accent-fg); opacity: 0.85; }
+.mid-note-title {
+  font-size: var(--mid-font-size-sm);
+  font-weight: var(--mid-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  grid-column: 1;
+  grid-row: 1;
+}
+.mid-note-meta {
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+  grid-column: 1;
+  grid-row: 2;
+}
+.mid-note-tags { display: inline-flex; gap: var(--mid-space-1); margin-left: var(--mid-space-2); }
+.mid-note-tag {
+  font-family: var(--mid-font-mono);
+  font-size: 10px;
+  padding: 0 var(--mid-space-1);
+  background: var(--mid-inline-code-bg);
+  border-radius: var(--mid-radius-pill);
+  color: var(--mid-fg-muted);
+}
+.mid-note-delete {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  background: transparent;
+  border: 0;
+  color: var(--mid-fg-subtle);
+  cursor: pointer;
+  border-radius: var(--mid-radius-sm);
+  padding: 2px;
+  opacity: 0;
+  transition: opacity var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-note-row:hover .mid-note-delete { opacity: 1; }
+.mid-note-delete:hover { color: var(--mid-danger); background: var(--mid-surface); }
+
 .mid-titlebar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;

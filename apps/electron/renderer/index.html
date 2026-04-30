@@ -67,11 +67,20 @@
 </aside>
 <div class="mid-shell">
   <aside class="mid-sidebar" id="sidebar" hidden>
-    <div class="mid-sidebar-header">
+    <div class="mid-sidebar-mode" role="tablist">
+      <button id="mode-files" class="mid-sidebar-mode-btn is-active" role="tab">Files</button>
+      <button id="mode-notes" class="mid-sidebar-mode-btn" role="tab">Notes</button>
+    </div>
+    <div class="mid-sidebar-header" id="sidebar-files-header">
       <span class="mid-sidebar-title" id="sidebar-folder-name">Files</span>
       <button id="sidebar-refresh" class="mid-btn mid-btn--icon mid-btn--ghost" title="Refresh" data-icon="refresh"></button>
     </div>
+    <div class="mid-sidebar-header" id="sidebar-notes-header" hidden>
+      <input id="notes-filter" class="mid-table-filter" type="search" placeholder="Filter notes…" />
+      <button id="notes-new" class="mid-btn mid-btn--icon mid-btn--ghost" title="New note (Cmd/Ctrl+N)" data-icon="plus"></button>
+    </div>
     <div class="mid-sidebar-tree" id="tree-root"></div>
+    <div class="mid-notes-list" id="notes-list" hidden></div>
   </aside>
   <main id="root" class="viewing">
     <div class="empty-state">

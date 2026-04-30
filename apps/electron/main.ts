@@ -132,6 +132,89 @@ ipcMain.handle('mid:list-folder-md', async (_e, folderPath: string) => {
 
 ipcMain.handle('mid:read-app-state', async () => readAppState());
 
+interface NoteEntry {
+  id: string;
+  title: string;
+  path: string;
+  tags: string[];
+  created: string;
+  updated: string;
+}
+
+const NOTES_DIR = '.mid';
+const NOTES_FILE = 'notes.json';
+
+async function readNotes(workspace: string): Promise<NoteEntry[]> {
+  try {
+    const raw = await fs.readFile(path.join(workspace, NOTES_DIR, NOTES_FILE), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as NoteEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeNotes(workspace: string, notes: NoteEntry[]): Promise<void> {
+  const dir = path.join(workspace, NOTES_DIR);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, NOTES_FILE), JSON.stringify(notes, null, 2), 'utf8');
+}
+
+function slugify(text: string): string {
+  return text.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-') || 'untitled';
+}
+
+ipcMain.handle('mid:notes-list', async (_e, workspace: string) => readNotes(workspace));
+
+ipcMain.handle('mid:notes-create', async (_e, workspace: string, title: string) => {
+  const notes = await readNotes(workspace);
+  const baseSlug = slugify(title || 'untitled');
+  const taken = new Set(notes.map(n => n.id));
+  let id = baseSlug;
+  let n = 1;
+  while (taken.has(id)) id = `${baseSlug}-${++n}`;
+  const now = new Date().toISOString();
+  const relPath = `notes/${id}.md`;
+  const fullPath = path.join(workspace, relPath);
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, `# ${title || 'Untitled'}\n\n`, 'utf8');
+  const entry: NoteEntry = { id, title: title || 'Untitled', path: relPath, tags: [], created: now, updated: now };
+  notes.push(entry);
+  await writeNotes(workspace, notes);
+  return { entry, fullPath };
+});
+
+ipcMain.handle('mid:notes-rename', async (_e, workspace: string, id: string, title: string) => {
+  const notes = await readNotes(workspace);
+  const note = notes.find(n => n.id === id);
+  if (!note) return null;
+  note.title = title;
+  note.updated = new Date().toISOString();
+  await writeNotes(workspace, notes);
+  return note;
+});
+
+ipcMain.handle('mid:notes-delete', async (_e, workspace: string, id: string) => {
+  const notes = await readNotes(workspace);
+  const idx = notes.findIndex(n => n.id === id);
+  if (idx === -1) return false;
+  const note = notes[idx];
+  notes.splice(idx, 1);
+  await writeNotes(workspace, notes);
+  try { await fs.unlink(path.join(workspace, note.path)); } catch { /* file gone — fine */ }
+  return true;
+});
+
+ipcMain.handle('mid:notes-tag', async (_e, workspace: string, id: string, tags: string[]) => {
+  const notes = await readNotes(workspace);
+  const note = notes.find(n => n.id === id);
+  if (!note) return null;
+  note.tags = tags;
+  note.updated = new Date().toISOString();
+  await writeNotes(workspace, notes);
+  return note;
+});
+
 ipcMain.handle('mid:patch-app-state', async (_e, patch: Partial<AppState>) => {
   await writeAppState(patch);
 });
