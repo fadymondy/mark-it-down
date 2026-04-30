@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('mid', {
   listFolderMd: (folderPath: string): Promise<TreeEntry[]> =>
     ipcRenderer.invoke('mid:list-folder-md', folderPath),
   readAppState: (): Promise<AppState> => ipcRenderer.invoke('mid:read-app-state'),
+  readRendererStyles: (): Promise<string> => ipcRenderer.invoke('mid:read-renderer-styles'),
   patchAppState: (patch: Partial<AppState>): Promise<void> =>
     ipcRenderer.invoke('mid:patch-app-state', patch),
   notesList: (workspace: string): Promise<NoteEntry[]> =>

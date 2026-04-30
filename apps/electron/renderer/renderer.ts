@@ -5,7 +5,7 @@ import katex from 'katex';
 import yaml from 'js-yaml';
 import { toPng } from 'html-to-image';
 import * as XLSX from 'xlsx';
-import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType } from 'docx';
+import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType, BorderStyle, ShadingType } from 'docx';
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 import { iconForFile } from '../../../packages/ui-tokens/src/file-icons';
 import { THEMES, ThemeDefinition } from '../../../packages/core/src/themes/themes';
@@ -72,6 +72,7 @@ interface Mid {
   openFolderDialog(): Promise<{ folderPath: string; tree: TreeEntry[] } | null>;
   listFolderMd(folderPath: string): Promise<TreeEntry[]>;
   readAppState(): Promise<AppState>;
+  readRendererStyles(): Promise<string>;
   patchAppState(patch: Partial<AppState>): Promise<void>;
   notesList(workspace: string): Promise<NoteEntry[]>;
   notesCreate(workspace: string, title: string): Promise<{ entry: NoteEntry; fullPath: string }>;
@@ -1508,14 +1509,20 @@ async function exportAs(format: ExportFormat): Promise<void> {
       flashStatus('Exported text');
       break;
     case 'html': {
-      const html = buildStandaloneHTML();
+      const html = await buildStandaloneHTML();
       await window.mid.saveAs(defaultExportName('html'), html, [{ name: 'HTML', extensions: ['html'] }]);
       flashStatus('Exported HTML');
       break;
     }
     case 'pdf': {
-      const result = await window.mid.exportPDF(defaultExportName('pdf'));
-      flashStatus(result ? 'Exported PDF' : 'PDF cancelled');
+      document.body.classList.add('is-printing');
+      try {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const result = await window.mid.exportPDF(defaultExportName('pdf'));
+        flashStatus(result ? 'Exported PDF' : 'PDF cancelled');
+      } finally {
+        document.body.classList.remove('is-printing');
+      }
       break;
     }
     case 'png': {
@@ -1590,17 +1597,34 @@ function domNodeToDocx(el: HTMLElement): (Paragraph | DocxTable)[] {
   if (tag === 'TABLE' || el.classList.contains('mid-table')) {
     const tbl = el.querySelector('table') ?? (tag === 'TABLE' ? el : null);
     if (!tbl) return [];
-    const rows = Array.from(tbl.querySelectorAll('tr')).map(tr => {
-      const cells = Array.from(tr.querySelectorAll('th, td')).map(cell =>
-        new DocxTableCell({
+    const trs = Array.from(tbl.querySelectorAll('tr'));
+    const colCount = Math.max(...trs.map(tr => tr.querySelectorAll('th, td').length));
+    if (colCount === 0) return [];
+    const colWidth = Math.floor(100 / colCount);
+    const border = { style: BorderStyle.SINGLE, size: 4, color: 'D4D4D8' }; // 0.5pt zinc-300
+    const headerShading = { type: ShadingType.CLEAR, color: 'auto', fill: 'F4F4F5' }; // zinc-100
+    const rows = trs.map(tr => {
+      const cellEls = Array.from(tr.querySelectorAll('th, td'));
+      const cells = cellEls.map(cell => {
+        const isHeader = cell.tagName === 'TH';
+        return new DocxTableCell({
+          width: { size: colWidth, type: WidthType.PERCENTAGE },
+          shading: isHeader ? headerShading : undefined,
+          borders: {
+            top: border, bottom: border, left: border, right: border,
+          },
           children: [new Paragraph({
-            children: [new TextRun({ text: (cell.textContent ?? '').trim(), bold: cell.tagName === 'TH' })],
+            children: [new TextRun({ text: (cell.textContent ?? '').replace(/\s+/g, ' ').trim(), bold: isHeader })],
           })],
-        }),
-      );
+        });
+      });
       return new DocxTableRow({ children: cells });
     });
-    return [new DocxTable({ rows, width: { size: 100, type: WidthType.PERCENTAGE } })];
+    return [new DocxTable({
+      rows,
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      columnWidths: Array.from({ length: colCount }, () => Math.floor(9000 / colCount)),
+    })];
   }
   if (tag === 'HR') {
     return [new Paragraph({ children: [new TextRun('───')], alignment: AlignmentType.CENTER })];
@@ -1629,26 +1653,23 @@ function markdownToPlainText(md: string): string {
     .replace(/\n{3,}/g, '\n\n');                         // collapse extra blank lines
 }
 
-function buildStandaloneHTML(): string {
+async function buildStandaloneHTML(): Promise<string> {
   const preview = root.querySelector<HTMLElement>('.mid-preview');
   const body = preview ? preview.outerHTML : '<p>(empty)</p>';
   const title = currentPath ? currentPath.split('/').pop() ?? 'Untitled' : 'Untitled';
-  // Inline the active stylesheets so the export is self-contained.
-  const styles = Array.from(document.styleSheets)
-    .map(sheet => {
-      try {
-        return Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
-      } catch {
-        return '';
-      }
-    })
-    .join('\n');
+  // Inline the renderer CSS via main-process IPC — `cssRules` access fails
+  // on cross-origin sheets in Electron and yields an empty stylesheet.
+  const styles = await window.mid.readRendererStyles();
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="${document.documentElement.className}">
 <head>
 <meta charset="UTF-8" />
 <title>${escapeHTML(title)}</title>
-<style>${styles}</style>
+<style>${styles}
+body { display: block; padding: 32px; }
+.mid-titlebar, .mid-sidebar, .mid-statusbar, .mid-mode-toggle, .mid-shell > aside { display: none !important; }
+.mid-shell { display: block !important; }
+main.viewing { padding: 0 !important; max-width: 760px !important; margin: 0 auto !important; }</style>
 </head>
 <body class="${document.body.className}">
 <main class="viewing">${body}</main>
@@ -2113,17 +2134,14 @@ function wireSettingsPanel(): void {
   const resetBtn = document.getElementById('settings-reset') as HTMLButtonElement;
 
   const syncFromSettings = (): void => {
-    // Repopulate theme options every time the panel opens so we recover
-    // from any earlier load failure (and so a future hot reload of THEMES
-    // would surface immediately).
-    if (themeSel.options.length < 4 + THEMES.length) {
-      themeSel.replaceChildren();
-      try {
-        populateThemeOptions(themeSel);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('[mid] populateThemeOptions failed', err);
-      }
+    // Always rebuild — the prior guard could fail silently if a stale
+    // option set existed; an unconditional rebuild is robust + cheap.
+    themeSel.replaceChildren();
+    try {
+      populateThemeOptions(themeSel);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[mid] populateThemeOptions failed', err);
     }
     themeSel.value = settings.theme;
     fontSel.value = settings.fontFamily;

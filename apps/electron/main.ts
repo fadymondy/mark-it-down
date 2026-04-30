@@ -135,6 +135,16 @@ ipcMain.handle('mid:list-folder-md', async (_e, folderPath: string) => {
 
 ipcMain.handle('mid:read-app-state', async () => readAppState());
 
+ipcMain.handle('mid:read-renderer-styles', async (): Promise<string> => {
+  const dir = path.join(process.cwd(), 'out/electron/renderer');
+  const files = ['tokens.css', 'icons.css', 'primitives.css', 'katex.css', 'renderer.css'];
+  const parts: string[] = [];
+  for (const f of files) {
+    try { parts.push(await fs.readFile(path.join(dir, f), 'utf8')); } catch { /* skip */ }
+  }
+  return parts.join('\n\n');
+});
+
 interface NoteEntry {
   id: string;
   title: string;
