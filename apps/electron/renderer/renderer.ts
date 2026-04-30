@@ -1675,10 +1675,54 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
       { icon: 'show', label: 'Open', action: () => void openNote(note) },
       { icon: 'edit', label: 'Rename…', action: () => void renameNote(note) },
       { separator: true, label: '' },
+      { icon: 'markdown', label: 'Export Markdown', action: () => void exportNote(note, 'md') },
+      { icon: 'html5', label: 'Export HTML', action: () => void exportNote(note, 'html') },
+      { icon: 'download', label: 'Export PDF', action: () => void exportNote(note, 'pdf') },
+      { icon: 'download', label: 'Export Word (.docx)', action: () => void exportNote(note, 'docx') },
+      { icon: 'image', label: 'Export PNG', action: () => void exportNote(note, 'png') },
+      { icon: 'list-ul', label: 'Export plain text', action: () => void exportNote(note, 'txt') },
+      { separator: true, label: '' },
       { icon: 'trash', label: 'Delete', action: () => void deleteNote(note) },
     ], e.clientX, e.clientY);
   });
   return row;
+}
+
+async function exportNote(note: NoteEntry, format: ExportFormat): Promise<void> {
+  if (!currentFolder) { flashStatus('Open a folder first'); return; }
+  const fullPath = `${currentFolder}/${note.path}`;
+  const content = await window.mid.readFile(fullPath);
+  const baseName = (note.title || note.id).replace(/[^a-zA-Z0-9-_]/g, '_');
+
+  // Text-only exports: write directly without disturbing the live preview.
+  if (format === 'md' || format === 'txt') {
+    const text = format === 'md' ? content : markdownToPlainText(content);
+    const ext = format;
+    const filterName = format === 'md' ? 'Markdown' : 'Plain text';
+    await window.mid.saveAs(`${baseName}.${ext}`, text, [{ name: filterName, extensions: [ext] }]);
+    flashStatus(`Exported ${format.toUpperCase()}`);
+    return;
+  }
+
+  // Preview-dependent exports — swap currentText, force a re-render, capture, restore.
+  const savedText = currentText;
+  const savedPath = currentPath;
+  const savedTitle = filenameEl.textContent ?? 'Untitled';
+  const savedMode = currentMode;
+  try {
+    currentText = content;
+    currentPath = fullPath;
+    filenameEl.textContent = note.title;
+    setMode('view');
+    // Wait one tick + small delay so mermaid / hljs / katex finish rendering.
+    await new Promise(resolve => setTimeout(resolve, 120));
+    await exportAs(format);
+  } finally {
+    currentText = savedText;
+    currentPath = savedPath;
+    filenameEl.textContent = savedTitle;
+    setMode(savedMode);
+  }
 }
 
 async function renameNote(note: NoteEntry): Promise<void> {
