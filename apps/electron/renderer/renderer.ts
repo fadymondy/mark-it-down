@@ -696,26 +696,43 @@ function attachCodeBlockToolbar(scope: HTMLElement): void {
     pre.classList.add('mid-pre');
 
     const lang = detectCodeLanguage(code);
-    if (lang) {
-      const badge = document.createElement('span');
-      badge.className = 'mid-code-lang';
-      badge.textContent = lang;
-      pre.appendChild(badge);
-    }
+
+    // Wrap each <pre> in a macOS-window chrome container — visible in the preview
+    // and naturally captured by the PNG export.
+    const chrome = document.createElement('div');
+    chrome.className = 'mid-code-window';
+    const header = document.createElement('div');
+    header.className = 'mid-code-window-header';
+    header.innerHTML = `
+      <span class="mid-code-window-dots">
+        <span class="mid-code-window-dot mid-code-window-dot--red"></span>
+        <span class="mid-code-window-dot mid-code-window-dot--amber"></span>
+        <span class="mid-code-window-dot mid-code-window-dot--green"></span>
+      </span>
+      <span class="mid-code-window-title"></span>
+      <span class="mid-code-window-spacer"></span>
+    `;
+    const titleEl = header.querySelector('.mid-code-window-title') as HTMLSpanElement;
+    titleEl.textContent = lang ? `snippet.${LANG_TO_EXT[lang] ?? lang}` : 'snippet.txt';
+
+    pre.parentElement?.insertBefore(chrome, pre);
+    chrome.appendChild(header);
+    chrome.appendChild(pre);
 
     addLineNumbers(pre, code);
 
-    pre.addEventListener('contextmenu', e => {
+    const onMenu = (e: MouseEvent): void => {
       e.preventDefault();
       e.stopPropagation();
       openContextMenu([
         { icon: 'copy', label: 'Copy', kbd: '⌘C', action: () => void navigator.clipboard.writeText(code.innerText) },
         { icon: 'download', label: 'Download as file', action: () => downloadCode(code.innerText, lang) },
-        { icon: 'image', label: 'Export as PNG', action: () => void exportCodeBlockAsPNG(pre) },
+        { icon: 'image', label: 'Export as PNG', action: () => void exportCodeBlockAsPNG(chrome) },
         { separator: true, label: '' },
         { icon: 'list-ul', label: pre.classList.contains('with-lines') ? 'Hide line numbers' : 'Show line numbers', action: () => pre.classList.toggle('with-lines') },
       ], e.clientX, e.clientY);
-    });
+    };
+    chrome.addEventListener('contextmenu', onMenu);
   });
 }
 
@@ -807,24 +824,17 @@ function downloadCode(text: string, lang?: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function exportCodeBlockAsPNG(pre: HTMLPreElement): Promise<void> {
-  // Capture the live <pre> directly — clean shadcn-aligned image, no extra chrome.
-  // Hide the language pill during capture so the output has just the code surface.
-  const lang = pre.querySelector<HTMLElement>('.mid-code-lang');
-  const langDisplay = lang?.style.display ?? '';
-  if (lang) lang.style.display = 'none';
-  try {
-    const dataUrl = await toPng(pre, {
-      pixelRatio: 2,
-      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-code-bg').trim() || '#0d1117',
-    });
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = 'code.png';
-    a.click();
-  } finally {
-    if (lang) lang.style.display = langDisplay;
-  }
+async function exportCodeBlockAsPNG(target: HTMLElement): Promise<void> {
+  // Captures the macOS-window chrome wrapper directly so the export naturally
+  // shows the traffic lights + filename + code surface as a whole.
+  const dataUrl = await toPng(target, {
+    pixelRatio: 2,
+    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#0d1117',
+  });
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = 'code.png';
+  a.click();
 }
 
 function addLineNumbers(pre: HTMLPreElement, code: HTMLElement): void {

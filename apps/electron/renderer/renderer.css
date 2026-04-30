@@ -600,6 +600,52 @@ main.splitting .mid-preview {
 }
 .mid-preview pre code { background: transparent; padding: 0; font-size: 0.88em; }
 
+/* macOS-window chrome wrapper around each preview <pre> */
+.mid-code-window {
+  position: relative;
+  margin: 1em 0;
+  border-radius: var(--mid-radius-md);
+  overflow: hidden;
+  background: var(--mid-code-bg);
+  box-shadow: inset 0 0 0 1px var(--mid-border), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.mid-code-window-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--mid-space-3);
+  padding: 8px var(--mid-space-3);
+  background: var(--mid-surface);
+  border-bottom: 1px solid var(--mid-border);
+  user-select: none;
+}
+.mid-code-window-dots { display: inline-flex; gap: 6px; align-items: center; }
+.mid-code-window-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.mid-code-window-dot--red { background: #ff5f57; }
+.mid-code-window-dot--amber { background: #febc2e; }
+.mid-code-window-dot--green { background: #28c840; }
+.mid-code-window-title {
+  text-align: center;
+  font-family: var(--mid-font-mono);
+  font-size: 12px;
+  color: var(--mid-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mid-code-window-spacer { width: 60px; }
+.mid-code-window > pre {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none !important;
+  background: var(--mid-code-bg);
+}
+
 /* Code-block toolbar (Copy / Download / Image / Lines) + language badge */
 .mid-pre { padding-top: var(--mid-space-6); }
 .mid-pre.with-lines {
@@ -610,18 +656,7 @@ main.splitting .mid-preview {
 }
 .mid-pre.with-lines .mid-code-gutter { display: block; }
 
-.mid-code-lang {
-  position: absolute;
-  top: var(--mid-space-2);
-  right: var(--mid-space-3);
-  font-family: var(--mid-font-mono);
-  font-size: 10px;
-  font-weight: var(--mid-weight-medium);
-  text-transform: lowercase;
-  letter-spacing: 0.06em;
-  color: var(--mid-fg-subtle);
-  pointer-events: none;
-}
+.mid-code-lang { display: none; }
 
 /* Context menu (replaces hover toolbars on code / table / mermaid / file-tree / notes) */
 .mid-context-menu {
