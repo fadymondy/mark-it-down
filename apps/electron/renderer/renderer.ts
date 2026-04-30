@@ -987,6 +987,8 @@ function attachTableTools(scope: HTMLElement): void {
 
     headers.forEach((th, idx) => {
       th.classList.add('mid-table-sortable');
+      const labelText = th.innerHTML;
+      th.innerHTML = `<span class="mid-table-th-label">${labelText}</span>${iconHTML('chevron-right', 'mid-icon--sm mid-table-sort-indicator')}`;
       th.addEventListener('click', () => {
         if (state.sortColumn !== idx) { state.sortColumn = idx; state.sortDir = 'asc'; }
         else if (state.sortDir === 'asc') { state.sortDir = 'desc'; }
