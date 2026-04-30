@@ -1059,10 +1059,17 @@ function renderKatex(expr: string, displayMode: boolean): string {
   }
 }
 
-interface TableState {
+// (Old TableState/applyTableState removed in #210 in favor of the DataTable component below.)
+
+type Density = 'comfy' | 'compact' | 'spacious';
+interface DataTableState {
+  filter: string;
   sortColumn: number | null;
   sortDir: 'asc' | 'desc' | null;
-  filter: string;
+  page: number;
+  pageSize: number;
+  density: Density;
+  hidden: Set<number>;
 }
 
 function attachTableTools(scope: HTMLElement): void {
@@ -1072,46 +1079,116 @@ function attachTableTools(scope: HTMLElement): void {
     const tbody = table.querySelector('tbody');
     if (!thead || !tbody) return;
     const headers = Array.from(thead.querySelectorAll<HTMLTableCellElement>('th'));
-    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr'));
-    if (headers.length === 0 || rows.length === 0) return;
+    const allRows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr'));
+    if (headers.length === 0 || allRows.length === 0) return;
     table.dataset.midTable = '1';
+    table.classList.add('mid-dt-table');
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'mid-table';
-    table.replaceWith(wrapper);
-    const scroller = document.createElement('div');
-    scroller.className = 'mid-table-scroll';
+    // Card shell
+    const card = document.createElement('div');
+    card.className = 'mid-data-table';
+    table.replaceWith(card);
 
-    // Compact filter chip — only shown for tables with > 5 rows so small tables stay clean.
-    const showChip = rows.length > 5;
-    const chip = document.createElement('div');
-    chip.className = 'mid-table-chip';
+    const state: DataTableState = {
+      filter: '',
+      sortColumn: null,
+      sortDir: null,
+      page: 0,
+      pageSize: 20,
+      density: 'comfy',
+      hidden: new Set(),
+    };
+    card.dataset.density = state.density;
+
+    // ===== Toolbar =====
+    const toolbar = document.createElement('div');
+    toolbar.className = 'mid-dt-toolbar';
+
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'mid-dt-search-wrap';
+    searchWrap.innerHTML = iconHTML('search', 'mid-icon--sm mid-icon--muted');
     const filterInput = document.createElement('input');
     filterInput.type = 'search';
-    filterInput.className = 'mid-table-filter';
+    filterInput.className = 'mid-dt-search';
     filterInput.placeholder = 'Filter…';
+    searchWrap.appendChild(filterInput);
+
     const counter = document.createElement('span');
-    counter.className = 'mid-table-counter';
-    chip.append(filterInput, counter);
-    if (!showChip) chip.hidden = true;
+    counter.className = 'mid-dt-counter';
 
-    scroller.appendChild(table);
-    wrapper.append(chip, scroller);
+    const spacer = document.createElement('div');
+    spacer.className = 'mid-dt-spacer';
 
-    const state: TableState = { sortColumn: null, sortDir: null, filter: '' };
-    const getVisible = (): HTMLTableRowElement[] => rows.filter(r => !r.hidden);
-    const apply = (): void => applyTableState(headers, rows, state, counter);
-    apply();
+    const densityBtn = makeIconActionButton('list-ul', 'Density', e => openContextMenu([
+      { icon: 'list-ul', label: 'Comfortable', action: () => { state.density = 'comfy'; card.dataset.density = 'comfy'; } },
+      { icon: 'list-ul', label: 'Compact', action: () => { state.density = 'compact'; card.dataset.density = 'compact'; } },
+      { icon: 'list-ul', label: 'Spacious', action: () => { state.density = 'spacious'; card.dataset.density = 'spacious'; } },
+    ], (e.currentTarget as HTMLElement).getBoundingClientRect().left, (e.currentTarget as HTMLElement).getBoundingClientRect().bottom + 4));
 
+    const columnsBtn = makeIconActionButton('columns', 'Columns', e => {
+      const items: MenuItem[] = headers.map((th, idx) => ({
+        icon: state.hidden.has(idx) ? 'x' : 'show',
+        label: cleanText(th.textContent ?? `Column ${idx + 1}`),
+        action: () => {
+          if (state.hidden.has(idx)) state.hidden.delete(idx);
+          else state.hidden.add(idx);
+          render();
+        },
+      }));
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      openContextMenu(items, rect.left, rect.bottom + 4);
+    });
+
+    const exportBtn = makeIconActionButton('download', 'Export', e => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      openContextMenu([
+        { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getFiltered()) },
+        { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getFiltered(), 'csv') },
+        { icon: 'download', label: 'Download Excel (.xlsx)', action: () => downloadTable(headers, getFiltered(), 'xlsx') },
+        { icon: 'github', label: 'Share to Google Sheets', action: () => void shareTableToSheets(headers, getFiltered()) },
+        { icon: 'list-ul', label: 'Download JSON', action: () => downloadTable(headers, getFiltered(), 'json') },
+      ], rect.left, rect.bottom + 4);
+    });
+
+    toolbar.append(searchWrap, counter, spacer, densityBtn, columnsBtn, exportBtn);
+
+    // ===== Scroll area =====
+    const scroll = document.createElement('div');
+    scroll.className = 'mid-dt-scroll';
+    scroll.appendChild(table);
+
+    // ===== Footer =====
+    const footer = document.createElement('div');
+    footer.className = 'mid-dt-footer';
+    const pageInfo = document.createElement('span');
+    pageInfo.className = 'mid-dt-page-info';
+    const pager = document.createElement('div');
+    pager.className = 'mid-dt-pager';
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+    prevBtn.innerHTML = iconHTML('chevron-right', 'mid-icon--sm');
+    prevBtn.style.transform = 'rotate(180deg)';
+    prevBtn.title = 'Previous page';
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+    nextBtn.innerHTML = iconHTML('chevron-right', 'mid-icon--sm');
+    nextBtn.title = 'Next page';
+    pager.append(prevBtn, nextBtn);
+    footer.append(pageInfo, pager);
+
+    card.append(toolbar, scroll, footer);
+
+    // ===== Headers (sortable) =====
     headers.forEach((th, idx) => {
-      th.classList.add('mid-table-sortable');
+      th.classList.add('mid-dt-th');
       const labelText = th.innerHTML;
-      th.innerHTML = `<span class="mid-table-th-label">${labelText}</span>${iconHTML('chevron-right', 'mid-icon--sm mid-table-sort-indicator')}`;
+      th.innerHTML = `<span class="mid-dt-th-label">${labelText}</span>${iconHTML('chevron-right', 'mid-icon--sm mid-dt-sort')}`;
       th.addEventListener('click', () => {
         if (state.sortColumn !== idx) { state.sortColumn = idx; state.sortDir = 'asc'; }
         else if (state.sortDir === 'asc') { state.sortDir = 'desc'; }
         else { state.sortColumn = null; state.sortDir = null; }
-        apply();
+        state.page = 0;
+        render();
       });
     });
 
@@ -1120,80 +1197,101 @@ function attachTableTools(scope: HTMLElement): void {
       window.clearTimeout(debounce);
       debounce = window.setTimeout(() => {
         state.filter = filterInput.value.trim().toLowerCase();
-        apply();
+        state.page = 0;
+        render();
       }, 120);
     });
+    prevBtn.addEventListener('click', () => { if (state.page > 0) { state.page--; render(); } });
+    nextBtn.addEventListener('click', () => { state.page++; render(); });
 
-    wrapper.addEventListener('contextmenu', e => {
+    function getFiltered(): HTMLTableRowElement[] {
+      const q = state.filter;
+      let out = q ? allRows.filter(r => (r.textContent ?? '').toLowerCase().includes(q)) : allRows.slice();
+      if (state.sortColumn !== null && state.sortDir !== null) {
+        const col = state.sortColumn;
+        const t = (r: HTMLTableRowElement): string => r.children[col]?.textContent?.trim() ?? '';
+        const numeric = allRows.every(r => {
+          const x = t(r);
+          return x === '' || !Number.isNaN(Number(x.replace(/[$,%\s]/g, '')));
+        });
+        out.sort((a, b) => {
+          const av = t(a), bv = t(b);
+          const cmp = numeric
+            ? (Number(av.replace(/[$,%\s]/g, '')) || 0) - (Number(bv.replace(/[$,%\s]/g, '')) || 0)
+            : av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+          return state.sortDir === 'asc' ? cmp : -cmp;
+        });
+      }
+      return out;
+    }
+
+    function render(): void {
+      // Sort indicator state on headers
+      headers.forEach((th, idx) => {
+        th.classList.remove('is-sort-asc', 'is-sort-desc', 'is-hidden');
+        if (state.sortColumn === idx && state.sortDir === 'asc') th.classList.add('is-sort-asc');
+        if (state.sortColumn === idx && state.sortDir === 'desc') th.classList.add('is-sort-desc');
+        if (state.hidden.has(idx)) th.classList.add('is-hidden');
+      });
+      // Apply column visibility on cells
+      allRows.forEach(r => {
+        Array.from(r.children).forEach((c, idx) => {
+          (c as HTMLElement).classList.toggle('is-hidden', state.hidden.has(idx));
+        });
+      });
+
+      const filtered = getFiltered();
+      const totalPages = Math.max(1, Math.ceil(filtered.length / state.pageSize));
+      if (state.page >= totalPages) state.page = totalPages - 1;
+      const pageStart = state.page * state.pageSize;
+      const pageRows = filtered.slice(pageStart, pageStart + state.pageSize);
+      const pageRowsSet = new Set(pageRows);
+
+      // Reorder + hide rows
+      tbody!.replaceChildren(...pageRows);
+      allRows.forEach(r => { r.hidden = !pageRowsSet.has(r); });
+
+      // Counter
+      counter.textContent = state.filter
+        ? `${filtered.length} of ${allRows.length}`
+        : `${allRows.length} ${allRows.length === 1 ? 'row' : 'rows'}`;
+
+      // Footer
+      const showFooter = filtered.length > state.pageSize;
+      footer.hidden = !showFooter;
+      pageInfo.textContent = showFooter ? `Page ${state.page + 1} of ${totalPages}` : '';
+      prevBtn.disabled = state.page <= 0;
+      nextBtn.disabled = state.page >= totalPages - 1;
+    }
+    render();
+
+    card.addEventListener('contextmenu', e => {
       if ((e.target as HTMLElement).closest('input, button')) return;
       e.preventDefault();
       e.stopPropagation();
       openContextMenu([
-        { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getVisible()) },
-        { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getVisible(), 'csv') },
-        { icon: 'download', label: 'Download Excel (.xlsx)', action: () => downloadTable(headers, getVisible(), 'xlsx') },
-        { icon: 'github', label: 'Share to Google Sheets', action: () => void shareTableToSheets(headers, getVisible()) },
-        { icon: 'list-ul', label: 'Download JSON', action: () => downloadTable(headers, getVisible(), 'json') },
+        { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getFiltered()) },
+        { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getFiltered(), 'csv') },
+        { icon: 'download', label: 'Download Excel (.xlsx)', action: () => downloadTable(headers, getFiltered(), 'xlsx') },
+        { icon: 'github', label: 'Share to Google Sheets', action: () => void shareTableToSheets(headers, getFiltered()) },
+        { icon: 'list-ul', label: 'Download JSON', action: () => downloadTable(headers, getFiltered(), 'json') },
         { separator: true, label: '' },
-        { icon: state.sortColumn === null ? 'x' : 'refresh', label: state.sortColumn === null ? 'No sort active' : 'Reset sort', disabled: state.sortColumn === null, action: () => { state.sortColumn = null; state.sortDir = null; apply(); } },
+        { icon: state.sortColumn === null ? 'x' : 'refresh', label: state.sortColumn === null ? 'No sort active' : 'Reset sort', disabled: state.sortColumn === null, action: () => { state.sortColumn = null; state.sortDir = null; render(); } },
       ], e.clientX, e.clientY);
     });
   });
 }
 
-function applyTableState(
-  headers: HTMLTableCellElement[],
-  rows: HTMLTableRowElement[],
-  state: TableState,
-  counter: HTMLSpanElement,
-): void {
-  headers.forEach((th, idx) => {
-    th.classList.remove('is-sort-asc', 'is-sort-desc');
-    if (state.sortColumn === idx && state.sortDir === 'asc') th.classList.add('is-sort-asc');
-    if (state.sortColumn === idx && state.sortDir === 'desc') th.classList.add('is-sort-desc');
-  });
-
-  const tbody = rows[0]?.parentElement;
-  if (!tbody) return;
-
-  const sorted = [...rows];
-  if (state.sortColumn !== null && state.sortDir !== null) {
-    const col = state.sortColumn;
-    const cellText = (r: HTMLTableRowElement): string => r.children[col]?.textContent?.trim() ?? '';
-    const allNumeric = rows.every(r => {
-      const t = cellText(r);
-      return t === '' || !Number.isNaN(Number(t.replace(/[$,%\s]/g, '')));
-    });
-    sorted.sort((a, b) => {
-      const av = cellText(a);
-      const bv = cellText(b);
-      let cmp: number;
-      if (allNumeric) {
-        cmp = (Number(av.replace(/[$,%\s]/g, '')) || 0) - (Number(bv.replace(/[$,%\s]/g, '')) || 0);
-      } else {
-        cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
-      }
-      return state.sortDir === 'asc' ? cmp : -cmp;
-    });
-  }
-
-  for (const r of sorted) tbody.appendChild(r);
-
-  let visible = 0;
-  rows.forEach(r => {
-    if (!state.filter) {
-      r.hidden = false;
-      visible++;
-      return;
-    }
-    const haystack = (r.textContent ?? '').toLowerCase();
-    const match = haystack.includes(state.filter);
-    r.hidden = !match;
-    if (match) visible++;
-  });
-
-  counter.textContent = state.filter ? `${visible} of ${rows.length} rows` : `${rows.length} rows`;
+function makeIconActionButton(icon: IconName, title: string, onClick: (e: MouseEvent) => void): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mid-dt-action';
+  btn.title = title;
+  btn.innerHTML = iconHTML(icon, 'mid-icon--sm');
+  btn.addEventListener('click', onClick);
+  return btn;
 }
+
 
 function rowToValues(row: HTMLTableRowElement): string[] {
   return Array.from(row.children).map(c => c.textContent?.trim() ?? '');
