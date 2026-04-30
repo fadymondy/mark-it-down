@@ -144,4 +144,7 @@ window.mid.onThemeChanged(applyTheme);
 window.mid.onMenuOpen(() => void openFile());
 window.mid.onMenuSave(() => void saveFile());
 
-void window.mid.getAppInfo().then(info => applyTheme(info.isDark));
+void window.mid.getAppInfo().then(info => {
+  document.body.classList.toggle('is-mac', info.platform === 'darwin');
+  applyTheme(info.isDark);
+});
