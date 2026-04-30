@@ -5,6 +5,7 @@ import katex from 'katex';
 import yaml from 'js-yaml';
 import { toPng } from 'html-to-image';
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
+import { THEMES, ThemeDefinition } from '../../../packages/core/src/themes/themes';
 
 interface TreeEntry {
   name: string;
@@ -14,7 +15,8 @@ interface TreeEntry {
 }
 
 type FontFamilyChoice = 'system' | 'sans' | 'serif' | 'mono';
-type ThemeChoice = 'auto' | 'light' | 'dark' | 'sepia';
+/** A theme is either one of the built-in modes or a named theme id prefixed with `theme:`. */
+type ThemeChoice = 'auto' | 'light' | 'dark' | 'sepia' | `theme:${string}`;
 
 interface AppState {
   lastFolder?: string;
@@ -128,8 +130,56 @@ function applyTheme(isDark: boolean): void {
   applyResolvedTheme();
 }
 
+const NAMED_THEME_PROPS: Array<keyof ThemeDefinition['palette']> = [
+  'bg', 'fg', 'fgMuted', 'border', 'link', 'linkHover', 'codeBg', 'inlineCodeBg', 'tableStripe', 'accent',
+];
+
+function clearNamedThemeProps(root: HTMLElement): void {
+  root.style.removeProperty('--mid-bg');
+  root.style.removeProperty('--mid-fg');
+  root.style.removeProperty('--mid-fg-muted');
+  root.style.removeProperty('--mid-border');
+  root.style.removeProperty('--mid-link');
+  root.style.removeProperty('--mid-link-hover');
+  root.style.removeProperty('--mid-code-bg');
+  root.style.removeProperty('--mid-inline-code-bg');
+  root.style.removeProperty('--mid-table-stripe');
+  root.style.removeProperty('--mid-accent');
+  root.style.removeProperty('--mid-surface');
+  root.style.removeProperty('--mid-surface-hover');
+}
+
+function applyNamedTheme(theme: ThemeDefinition): void {
+  const root = document.documentElement;
+  root.classList.remove('dark', 'sepia');
+  if (theme.kind === 'dark') root.classList.add('dark');
+  const p = theme.palette;
+  root.style.setProperty('--mid-bg', p.bg);
+  root.style.setProperty('--mid-fg', p.fg);
+  root.style.setProperty('--mid-fg-muted', p.fgMuted);
+  root.style.setProperty('--mid-border', p.border);
+  root.style.setProperty('--mid-link', p.link);
+  root.style.setProperty('--mid-link-hover', p.linkHover);
+  root.style.setProperty('--mid-code-bg', p.codeBg);
+  root.style.setProperty('--mid-inline-code-bg', p.inlineCodeBg);
+  root.style.setProperty('--mid-table-stripe', p.tableStripe);
+  root.style.setProperty('--mid-accent', p.accent);
+  // Derive a surface from codeBg for sidebars / status / chips so the theme feels coherent.
+  root.style.setProperty('--mid-surface', p.codeBg);
+  initMermaid(theme.kind === 'dark' ? 2 : 1);
+}
+
 function applyResolvedTheme(): void {
   const root = document.documentElement;
+  if (settings.theme.startsWith('theme:')) {
+    const id = settings.theme.slice('theme:'.length);
+    const theme = THEMES.find(t => t.id === id);
+    if (theme) {
+      applyNamedTheme(theme);
+      return;
+    }
+  }
+  clearNamedThemeProps(root);
   root.classList.remove('dark', 'sepia');
   let resolvedDark = false;
   if (settings.theme === 'dark') {
@@ -1589,11 +1639,38 @@ document.addEventListener('contextmenu', e => {
 hydrateIconButtons(document);
 wireSettingsPanel();
 
+function populateThemeOptions(sel: HTMLSelectElement): void {
+  // Modes group
+  const modes = document.createElement('optgroup');
+  modes.label = 'Modes';
+  for (const [v, l] of [['auto', 'Auto (follow OS)'], ['light', 'Light'], ['dark', 'Dark'], ['sepia', 'Sepia']]) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = l;
+    modes.appendChild(opt);
+  }
+  sel.append(modes);
+  // Light + dark themes from the core themes module
+  for (const kind of ['light', 'dark'] as const) {
+    const group = document.createElement('optgroup');
+    group.label = `${kind === 'light' ? 'Light' : 'Dark'} themes`;
+    for (const t of THEMES.filter(t => t.kind === kind)) {
+      const opt = document.createElement('option');
+      opt.value = `theme:${t.id}`;
+      opt.textContent = t.label;
+      group.appendChild(opt);
+    }
+    sel.append(group);
+  }
+}
+
 function wireSettingsPanel(): void {
   const panel = document.getElementById('settings-panel') as HTMLElement;
   const openBtn = document.getElementById('settings-btn') as HTMLButtonElement;
   const closeBtn = document.getElementById('settings-close') as HTMLButtonElement;
   const themeSel = document.getElementById('setting-theme') as HTMLSelectElement;
+  themeSel.replaceChildren();
+  populateThemeOptions(themeSel);
   const fontSel = document.getElementById('setting-font') as HTMLSelectElement;
   const sizeRange = document.getElementById('setting-font-size') as HTMLInputElement;
   const sizeVal = document.getElementById('setting-font-size-value') as HTMLSpanElement;
