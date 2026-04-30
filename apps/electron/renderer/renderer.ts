@@ -111,6 +111,11 @@ const btnOpen = document.getElementById('open-btn') as HTMLButtonElement;
 const btnOpenFolder = document.getElementById('open-folder-btn') as HTMLButtonElement;
 const btnSave = document.getElementById('save-btn') as HTMLButtonElement;
 const sidebar = document.getElementById('sidebar') as HTMLElement;
+const activityFiles = document.getElementById('activity-files') as HTMLButtonElement;
+const activityNotes = document.getElementById('activity-notes') as HTMLButtonElement;
+const activitySearch = document.getElementById('activity-search') as HTMLButtonElement;
+const activityGithub = document.getElementById('activity-github') as HTMLButtonElement;
+const activitySettings = document.getElementById('activity-settings') as HTMLButtonElement;
 const sidebarFolderName = document.getElementById('sidebar-folder-name') as HTMLSpanElement;
 const sidebarRefresh = document.getElementById('sidebar-refresh') as HTMLButtonElement;
 const treeRoot = document.getElementById('tree-root') as HTMLDivElement;
@@ -1725,6 +1730,42 @@ btnSave.addEventListener('click', () => void saveFile());
 sidebarRefresh.addEventListener('click', () => void refreshFolder());
 modeFilesBtn.addEventListener('click', () => setSidebarMode('files'));
 modeNotesBtn.addEventListener('click', () => setSidebarMode('notes'));
+
+// Activity bar — VSCode-style icon tray. Clicking the active icon toggles the sidebar.
+type ActivityTarget = 'files' | 'notes' | 'search' | 'github';
+let activeActivity: ActivityTarget = 'files';
+function selectActivity(target: ActivityTarget): void {
+  if (target === activeActivity && !sidebar.hidden) {
+    // Re-click on active icon → collapse the sidebar
+    sidebar.hidden = true;
+    document.body.classList.remove('has-sidebar');
+    return;
+  }
+  activeActivity = target;
+  if (currentFolder) {
+    sidebar.hidden = false;
+    document.body.classList.add('has-sidebar');
+  }
+  for (const [t, btn] of [
+    ['files', activityFiles], ['notes', activityNotes],
+    ['search', activitySearch], ['github', activityGithub],
+  ] as const) {
+    btn.classList.toggle('is-active', t === target);
+  }
+  if (target === 'files') setSidebarMode('files');
+  else if (target === 'notes') setSidebarMode('notes');
+  else if (target === 'search') {
+    setSidebarMode('notes');
+    notesFilter.focus();
+  } else if (target === 'github') {
+    void promptConnectRepo();
+  }
+}
+activityFiles.addEventListener('click', () => selectActivity('files'));
+activityNotes.addEventListener('click', () => selectActivity('notes'));
+activitySearch.addEventListener('click', () => selectActivity('search'));
+activityGithub.addEventListener('click', () => selectActivity('github'));
+activitySettings.addEventListener('click', () => document.getElementById('settings-btn')?.dispatchEvent(new MouseEvent('click')));
 notesNewBtn.addEventListener('click', () => void promptCreateNote());
 notesFilter.addEventListener('input', () => {
   notesFilterText = notesFilter.value.trim().toLowerCase();
