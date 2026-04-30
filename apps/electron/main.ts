@@ -529,6 +529,7 @@ interface AppState {
   previewMaxWidth?: number;
   recentFiles?: string[];
   codeExportGradient?: string;
+  pinnedFolders?: { path: string; name: string; icon: string; color: string }[];
 }
 
 function resolveMCPServerScript(): string {
