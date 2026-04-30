@@ -597,14 +597,44 @@ function downloadCode(text: string, lang?: string): void {
 }
 
 async function exportCodeBlockAsPNG(pre: HTMLPreElement): Promise<void> {
-  const dataUrl = await toPng(pre, {
-    pixelRatio: 2,
-    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-code-bg').trim() || '#0d1117',
-  });
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = 'code.png';
-  a.click();
+  // Build a Carbon-style frame off-screen with macOS traffic lights + filename label.
+  const frame = document.createElement('div');
+  frame.className = 'mid-code-export-frame';
+  frame.style.cssText = 'position: fixed; left: -10000px; top: 0;';
+
+  const chrome = document.createElement('div');
+  chrome.className = 'mid-code-export-chrome';
+  chrome.innerHTML = `
+    <span class="mid-code-export-dot" style="background: #ff5f57"></span>
+    <span class="mid-code-export-dot" style="background: #febc2e"></span>
+    <span class="mid-code-export-dot" style="background: #28c840"></span>
+    <span class="mid-code-export-title"></span>
+  `;
+  const lang = pre.querySelector<HTMLElement>('.mid-code-lang')?.textContent ?? '';
+  const titleEl = chrome.querySelector('.mid-code-export-title') as HTMLSpanElement;
+  titleEl.textContent = lang ? `snippet.${LANG_TO_EXT[lang] ?? 'txt'}` : 'snippet.txt';
+
+  const cloneHost = document.createElement('div');
+  cloneHost.className = 'mid-code-export-body';
+  const preClone = pre.cloneNode(true) as HTMLElement;
+  preClone.querySelector('.mid-code-lang')?.remove();
+  cloneHost.appendChild(preClone);
+
+  frame.append(chrome, cloneHost);
+  document.body.appendChild(frame);
+
+  try {
+    const dataUrl = await toPng(frame, {
+      pixelRatio: 2,
+      backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#0d1117',
+    });
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'code.png';
+    a.click();
+  } finally {
+    frame.remove();
+  }
 }
 
 function addLineNumbers(pre: HTMLPreElement, code: HTMLElement): void {
