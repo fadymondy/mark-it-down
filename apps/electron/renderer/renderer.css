@@ -9,12 +9,53 @@ body {
 
 .mid-shell {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 44px 1fr;
   min-height: 0;
   overflow: hidden;
 }
 body.has-sidebar .mid-shell {
-  grid-template-columns: var(--mid-sidebar-w) 1fr;
+  grid-template-columns: 44px var(--mid-sidebar-w) 1fr;
+}
+
+/* Activity bar — VSCode-style vertical icon tray */
+.mid-activity-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--mid-space-2) 0;
+  background: var(--mid-bg);
+  border-right: 1px solid var(--mid-border);
+}
+.mid-activity-spacer { flex: 1; }
+.mid-activity-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--mid-fg-muted);
+  border-radius: var(--mid-radius-md);
+  cursor: pointer;
+  transition: background var(--mid-motion-fast), color var(--mid-motion-fast);
+}
+.mid-activity-btn:hover { background: var(--mid-surface); color: var(--mid-fg); }
+.mid-activity-btn.is-active {
+  color: var(--mid-fg);
+  background: var(--mid-surface);
+  position: relative;
+}
+.mid-activity-btn.is-active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--mid-accent);
+  border-radius: 2px;
 }
 
 .mid-sidebar {
@@ -776,12 +817,12 @@ main.splitting .mid-preview {
 .mid-table-sort-indicator {
   margin-left: var(--mid-space-1);
   vertical-align: middle;
-  opacity: 0;
+  opacity: 0.35;
   transform: rotate(90deg);
   transition: opacity var(--mid-motion-fast) var(--mid-ease-out), transform var(--mid-motion-fast) var(--mid-ease-out);
 }
 .mid-table-sortable:hover { color: var(--mid-fg); }
-.mid-table-sortable:hover .mid-table-sort-indicator { opacity: 0.5; }
+.mid-table-sortable:hover .mid-table-sort-indicator { opacity: 0.7; }
 .mid-table-sortable.is-sort-asc { color: var(--mid-fg); }
 .mid-table-sortable.is-sort-asc .mid-table-sort-indicator { opacity: 1; transform: rotate(-90deg); }
 .mid-table-sortable.is-sort-desc { color: var(--mid-fg); }
@@ -887,7 +928,7 @@ main.splitting .mid-preview {
 }
 .mid-preview tr:last-child td { border-bottom: 0; }
 
-/* Header refinement v2 — uppercase tracking + subtle surface */
+/* Header refinement v3 — always-visible sort affordance, more presence */
 .mid-preview thead { background: var(--mid-surface); }
 .mid-preview th {
   text-transform: uppercase;
@@ -895,8 +936,8 @@ main.splitting .mid-preview {
   font-size: var(--mid-font-size-xs);
   font-weight: var(--mid-weight-semibold);
   color: var(--mid-fg-muted);
-  padding: var(--mid-space-2) var(--mid-space-4);
-  border-bottom: 1px solid var(--mid-border);
+  padding: var(--mid-space-3) var(--mid-space-4);
+  border-bottom: 1px solid var(--mid-border-strong);
 }
 
 /* Print mode — hides chrome so PDF export captures only the document */

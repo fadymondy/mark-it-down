@@ -558,7 +558,14 @@ function setMCPStatus(s: MCPStatus, err?: string): void {
 }
 
 function startMCP(): void {
-  if (mcpProcess) return;
+  // Defensive: clear stale process refs from a prior failed start.
+  if (mcpProcess && (mcpProcess.killed || mcpProcess.exitCode !== null)) {
+    mcpProcess = null;
+  }
+  if (mcpProcess) {
+    setMCPStatus('running');
+    return;
+  }
   const script = resolveMCPServerScript();
   if (!script) {
     setMCPStatus('error', 'MCP server script not found');
@@ -575,7 +582,10 @@ function startMCP(): void {
     mcpProcess.stderr?.on('data', chunk => {
       stderrTail = (stderrTail + chunk.toString()).slice(-500);
     });
-    mcpProcess.on('error', e => setMCPStatus('error', e.message));
+    mcpProcess.on('error', e => {
+      mcpProcess = null;
+      setMCPStatus('error', e.message);
+    });
     mcpProcess.on('exit', code => {
       mcpProcess = null;
       if (code !== 0 && mcpStatus !== 'stopped') {
@@ -586,6 +596,7 @@ function startMCP(): void {
       }
     });
   } catch (err) {
+    mcpProcess = null;
     setMCPStatus('error', (err as Error).message);
   }
 }
