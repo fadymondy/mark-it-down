@@ -113,9 +113,9 @@ const btnSave = document.getElementById('save-btn') as HTMLButtonElement;
 const sidebar = document.getElementById('sidebar') as HTMLElement;
 const activityFiles = document.getElementById('activity-files') as HTMLButtonElement;
 const activityNotes = document.getElementById('activity-notes') as HTMLButtonElement;
-const activitySearch = document.getElementById('activity-search') as HTMLButtonElement;
-const activityGithub = document.getElementById('activity-github') as HTMLButtonElement;
+const activitySpotlight = document.getElementById('activity-spotlight') as HTMLButtonElement;
 const activitySettings = document.getElementById('activity-settings') as HTMLButtonElement;
+const activityPinned = document.getElementById('activity-pinned') as HTMLDivElement;
 const sidebarFolderName = document.getElementById('sidebar-folder-name') as HTMLSpanElement;
 const sidebarRefresh = document.getElementById('sidebar-refresh') as HTMLButtonElement;
 const treeRoot = document.getElementById('tree-root') as HTMLDivElement;
@@ -146,6 +146,7 @@ let notes: NoteEntry[] = [];
 let notesFilterText = '';
 let recentFiles: string[] = [];
 let warehouses: Warehouse[] = [];
+let pinnedFolders: PinnedFolder[] = [];
 const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
 
@@ -1444,6 +1445,18 @@ function renderTreeEntry(entry: TreeEntry): HTMLElement {
       const fresh = renderTreeEntry(entry);
       wrapper.replaceWith(fresh);
     });
+    item.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const isPinned = pinnedFolders.some(p => p.path === entry.path);
+      openContextMenu([
+        { icon: 'folder-open', label: 'Reveal in Finder', action: () => void window.mid.openExternal(`file://${entry.path}`) },
+        { separator: true, label: '' },
+        isPinned
+          ? { icon: 'trash', label: 'Unpin from sidebar', action: () => unpinFolder(entry.path) }
+          : { icon: 'bookmark', label: 'Pin to sidebar…', action: () => void pinFolder(entry.path, entry.name) },
+      ], e.clientX, e.clientY);
+    });
     wrapper.appendChild(item);
     if (isOpen && entry.children) {
       const children = document.createElement('div');
@@ -1731,12 +1744,13 @@ sidebarRefresh.addEventListener('click', () => void refreshFolder());
 modeFilesBtn.addEventListener('click', () => setSidebarMode('files'));
 modeNotesBtn.addEventListener('click', () => setSidebarMode('notes'));
 
-// Activity bar — VSCode-style icon tray. Clicking the active icon toggles the sidebar.
-type ActivityTarget = 'files' | 'notes' | 'search' | 'github';
+// Activity bar — VSCode-style icon tray.
+type ActivityTarget = 'files' | 'notes' | `pinned:${string}`;
 let activeActivity: ActivityTarget = 'files';
+let pinnedFilterPath: string | null = null;
+
 function selectActivity(target: ActivityTarget): void {
   if (target === activeActivity && !sidebar.hidden) {
-    // Re-click on active icon → collapse the sidebar
     sidebar.hidden = true;
     document.body.classList.remove('has-sidebar');
     return;
@@ -1746,26 +1760,220 @@ function selectActivity(target: ActivityTarget): void {
     sidebar.hidden = false;
     document.body.classList.add('has-sidebar');
   }
-  for (const [t, btn] of [
-    ['files', activityFiles], ['notes', activityNotes],
-    ['search', activitySearch], ['github', activityGithub],
-  ] as const) {
-    btn.classList.toggle('is-active', t === target);
-  }
-  if (target === 'files') setSidebarMode('files');
-  else if (target === 'notes') setSidebarMode('notes');
-  else if (target === 'search') {
+  activityFiles.classList.toggle('is-active', target === 'files');
+  activityNotes.classList.toggle('is-active', target === 'notes');
+  activityPinned.querySelectorAll<HTMLButtonElement>('.mid-activity-btn').forEach(btn => {
+    btn.classList.toggle('is-active', `pinned:${btn.dataset.path}` === target);
+  });
+  if (target === 'files') {
+    pinnedFilterPath = null;
+    setSidebarMode('files');
+    if (currentFolder) void refreshFolder();
+  } else if (target === 'notes') {
+    pinnedFilterPath = null;
     setSidebarMode('notes');
-    notesFilter.focus();
-  } else if (target === 'github') {
-    void promptConnectRepo();
+  } else if (target.startsWith('pinned:')) {
+    const path = target.slice('pinned:'.length);
+    pinnedFilterPath = path;
+    setSidebarMode('files');
+    void loadPinnedTree(path);
   }
 }
+
+async function loadPinnedTree(folderPath: string): Promise<void> {
+  try {
+    const tree = await window.mid.listFolderMd(folderPath);
+    const name = pinnedFolders.find(p => p.path === folderPath)?.name ?? folderPath.split('/').pop() ?? folderPath;
+    sidebarFolderName.textContent = name;
+    sidebarFolderName.title = folderPath;
+    treeRoot.replaceChildren(...renderTree(tree));
+    if (tree.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'mid-tree-empty';
+      empty.textContent = 'No markdown files in this folder.';
+      treeRoot.appendChild(empty);
+    }
+  } catch {
+    flashStatus('Pinned folder is gone — unpinning');
+    pinnedFolders = pinnedFolders.filter(p => p.path !== folderPath);
+    void window.mid.patchAppState({ pinnedFolders });
+    renderActivityPinned();
+    selectActivity('files');
+  }
+}
+
+function renderActivityPinned(): void {
+  activityPinned.replaceChildren();
+  for (const pin of pinnedFolders) {
+    const btn = document.createElement('button');
+    btn.className = 'mid-activity-btn mid-activity-btn--pinned';
+    btn.title = `${pin.name} (${pin.path})`;
+    btn.dataset.path = pin.path;
+    btn.style.color = pin.color;
+    btn.innerHTML = iconHTML((pin.icon as IconName) ?? 'folder');
+    btn.addEventListener('click', () => selectActivity(`pinned:${pin.path}`));
+    btn.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      openContextMenu([
+        { icon: 'edit', label: 'Rename pin…', action: () => void renamePin(pin) },
+        { icon: 'cog', label: 'Change icon / color…', action: () => void editPinAppearance(pin) },
+        { separator: true, label: '' },
+        { icon: 'trash', label: 'Unpin', action: () => unpinFolder(pin.path) },
+      ], e.clientX, e.clientY);
+    });
+    activityPinned.appendChild(btn);
+  }
+}
+
+async function pinFolder(folderPath: string, name: string): Promise<void> {
+  if (pinnedFolders.find(p => p.path === folderPath)) {
+    flashStatus('Already pinned');
+    return;
+  }
+  pinnedFolders = [...pinnedFolders, {
+    path: folderPath,
+    name,
+    icon: 'folder',
+    color: '#2563eb',
+  }];
+  await window.mid.patchAppState({ pinnedFolders });
+  renderActivityPinned();
+  flashStatus(`Pinned "${name}"`);
+}
+
+function unpinFolder(folderPath: string): void {
+  pinnedFolders = pinnedFolders.filter(p => p.path !== folderPath);
+  void window.mid.patchAppState({ pinnedFolders });
+  renderActivityPinned();
+  if (activeActivity === `pinned:${folderPath}`) selectActivity('files');
+}
+
+async function renamePin(pin: PinnedFolder): Promise<void> {
+  const name = await midPrompt('Rename pin', 'Display name', pin.name);
+  if (!name) return;
+  pin.name = name;
+  await window.mid.patchAppState({ pinnedFolders });
+  renderActivityPinned();
+}
+
+async function editPinAppearance(pin: PinnedFolder): Promise<void> {
+  const icon = await midPrompt('Pin icon', 'Boxicon name (folder, bookmark, tag, list-ul, image, github)', pin.icon);
+  if (icon !== null && icon.trim()) pin.icon = icon.trim();
+  const color = await midPrompt('Pin color', 'Hex color', pin.color);
+  if (color !== null && color.trim()) pin.color = color.trim();
+  await window.mid.patchAppState({ pinnedFolders });
+  renderActivityPinned();
+}
+
 activityFiles.addEventListener('click', () => selectActivity('files'));
 activityNotes.addEventListener('click', () => selectActivity('notes'));
-activitySearch.addEventListener('click', () => selectActivity('search'));
-activityGithub.addEventListener('click', () => selectActivity('github'));
+activitySpotlight.addEventListener('click', () => openSpotlight());
 activitySettings.addEventListener('click', () => document.getElementById('settings-btn')?.dispatchEvent(new MouseEvent('click')));
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !e.shiftKey) {
+    e.preventDefault();
+    openSpotlight();
+  }
+});
+
+// ===== Spotlight =====
+function openSpotlight(): void {
+  const dlg = document.getElementById('mid-spotlight') as HTMLDialogElement;
+  const input = document.getElementById('mid-spotlight-input') as HTMLInputElement;
+  const results = document.getElementById('mid-spotlight-results') as HTMLDivElement;
+  const tabs = dlg.querySelectorAll<HTMLButtonElement>('.mid-spotlight-tab');
+  let scope: 'workspace' | 'file' = 'workspace';
+  let workspaceFiles: { path: string; name: string }[] = [];
+  let renderTimer: number | null = null;
+
+  const collectWorkspaceFiles = async (): Promise<void> => {
+    if (!currentFolder) return;
+    const tree = await window.mid.listFolderMd(currentFolder);
+    workspaceFiles = [];
+    const walk = (entries: TreeEntry[]): void => {
+      for (const e of entries) {
+        if (e.kind === 'file') workspaceFiles.push({ path: e.path, name: e.name });
+        else if (e.children) walk(e.children);
+      }
+    };
+    walk(tree);
+  };
+
+  const renderResults = (): void => {
+    const q = input.value.trim().toLowerCase();
+    results.replaceChildren();
+    if (scope === 'workspace') {
+      const matches = q
+        ? workspaceFiles.filter(f => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
+        : workspaceFiles;
+      for (const m of matches.slice(0, 50)) {
+        const row = document.createElement('button');
+        row.className = 'mid-spotlight-row';
+        row.innerHTML = `${iconHTML('file', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">${escapeHTML(m.name)}</span><span class="mid-spotlight-row-path">${escapeHTML(m.path.replace(currentFolder ?? '', '').replace(/^\//, ''))}</span>`;
+        row.addEventListener('click', () => {
+          close();
+          void openRecent(m.path);
+        });
+        results.appendChild(row);
+      }
+      if (matches.length === 0) results.innerHTML = '<div class="mid-spotlight-empty">No files match.</div>';
+    } else {
+      // current file: heading + content matches
+      if (!currentText) { results.innerHTML = '<div class="mid-spotlight-empty">No active document.</div>'; return; }
+      if (!q) { results.innerHTML = '<div class="mid-spotlight-empty">Type to search the active document.</div>'; return; }
+      const lines = currentText.split('\n');
+      const hits: { line: number; text: string; isHeading: boolean }[] = [];
+      for (let i = 0; i < lines.length; i++) {
+        const text = lines[i];
+        if (text.toLowerCase().includes(q)) {
+          hits.push({ line: i + 1, text: text.trim(), isHeading: /^#+\s/.test(text) });
+          if (hits.length >= 100) break;
+        }
+      }
+      for (const h of hits) {
+        const row = document.createElement('button');
+        row.className = 'mid-spotlight-row';
+        row.innerHTML = `${iconHTML(h.isHeading ? 'list-ul' : 'file', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">${escapeHTML(h.text.slice(0, 80))}</span><span class="mid-spotlight-row-path">L${h.line}</span>`;
+        row.addEventListener('click', () => {
+          close();
+          // No live scroll-to-line; flash status indicates target.
+          flashStatus(`Match at line ${h.line}`);
+        });
+        results.appendChild(row);
+      }
+      if (hits.length === 0) results.innerHTML = '<div class="mid-spotlight-empty">No matches in this file.</div>';
+    }
+  };
+
+  const onInput = (): void => {
+    if (renderTimer !== null) window.clearTimeout(renderTimer);
+    renderTimer = window.setTimeout(renderResults, 80);
+  };
+  const setScope = (s: 'workspace' | 'file'): void => {
+    scope = s;
+    tabs.forEach(t => t.classList.toggle('is-active', t.dataset.spotlightScope === s));
+    renderResults();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+  const close = (): void => {
+    input.removeEventListener('input', onInput);
+    document.removeEventListener('keydown', onKey);
+    tabs.forEach(t => t.removeEventListener('click', onTab));
+    if (dlg.open) dlg.close();
+  };
+  const onTab = (e: Event): void => setScope((e.currentTarget as HTMLButtonElement).dataset.spotlightScope as 'workspace' | 'file');
+
+  input.value = '';
+  input.addEventListener('input', onInput);
+  document.addEventListener('keydown', onKey);
+  tabs.forEach(t => t.addEventListener('click', onTab));
+  dlg.showModal();
+  void collectWorkspaceFiles().then(renderResults);
+  input.focus();
+}
 notesNewBtn.addEventListener('click', () => void promptCreateNote());
 notesFilter.addEventListener('input', () => {
   notesFilterText = notesFilter.value.trim().toLowerCase();
@@ -2306,6 +2514,10 @@ void window.mid.readAppState().then(async state => {
   if (Array.isArray(state.recentFiles)) recentFiles = state.recentFiles.slice(0, 10);
   if (state.codeExportGradient && state.codeExportGradient in CODE_EXPORT_GRADIENTS) {
     settings.codeExportGradient = state.codeExportGradient as CodeExportGradient;
+  }
+  if (Array.isArray(state.pinnedFolders)) {
+    pinnedFolders = state.pinnedFolders;
+    renderActivityPinned();
   }
   applySettings();
   if (state.lastFolder) {

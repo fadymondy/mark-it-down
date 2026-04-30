@@ -76,18 +76,25 @@
 </aside>
 <div class="mid-shell">
   <nav class="mid-activity-bar" id="activity-bar" aria-label="Activity bar">
+    <button id="activity-spotlight" class="mid-activity-btn" title="Spotlight search (Cmd/Ctrl+K)" data-icon="search"></button>
+    <span class="mid-activity-divider"></span>
     <button id="activity-files" class="mid-activity-btn is-active" title="Files (toggle)" data-icon="folder"></button>
     <button id="activity-notes" class="mid-activity-btn" title="Notes (toggle)" data-icon="bookmark"></button>
-    <button id="activity-search" class="mid-activity-btn" title="Search (toggle)" data-icon="search"></button>
-    <button id="activity-github" class="mid-activity-btn" title="GitHub (toggle)" data-icon="github"></button>
+    <div id="activity-pinned" class="mid-activity-pinned"></div>
     <span class="mid-activity-spacer"></span>
     <button id="activity-settings" class="mid-activity-btn" title="Settings (Cmd/Ctrl+,)" data-icon="cog"></button>
   </nav>
-  <aside class="mid-sidebar" id="sidebar" hidden>
-    <div class="mid-sidebar-mode" role="tablist">
-      <button id="mode-files" class="mid-sidebar-mode-btn is-active" role="tab">Files</button>
-      <button id="mode-notes" class="mid-sidebar-mode-btn" role="tab">Notes</button>
+  <dialog id="mid-spotlight" class="mid-spotlight">
+    <div class="mid-spotlight-frame">
+      <div class="mid-spotlight-tabs">
+        <button class="mid-spotlight-tab is-active" data-spotlight-scope="workspace">Workspace</button>
+        <button class="mid-spotlight-tab" data-spotlight-scope="file">Current file</button>
+      </div>
+      <input id="mid-spotlight-input" class="mid-spotlight-input" type="text" placeholder="Type to search…" autocomplete="off" />
+      <div id="mid-spotlight-results" class="mid-spotlight-results"></div>
     </div>
+  </dialog>
+  <aside class="mid-sidebar" id="sidebar" hidden>
     <div class="mid-sidebar-header" id="sidebar-files-header">
       <span class="mid-sidebar-title" id="sidebar-folder-name">Files</span>
       <button id="sidebar-refresh" class="mid-btn mid-btn--icon mid-btn--ghost" title="Refresh" data-icon="refresh"></button>

@@ -28,6 +28,22 @@ body.has-sidebar .mid-shell {
   border-right: 1px solid var(--mid-border);
 }
 .mid-activity-spacer { flex: 1; }
+.mid-activity-divider {
+  width: 22px;
+  height: 1px;
+  background: var(--mid-border);
+  margin: var(--mid-space-1) 0;
+}
+.mid-activity-pinned {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--mid-space-2);
+  padding-top: var(--mid-space-2);
+  border-top: 1px solid var(--mid-border);
+}
+.mid-activity-btn--pinned { color: inherit; }
 .mid-activity-btn {
   width: 36px;
   height: 36px;
@@ -126,28 +142,7 @@ body.has-sidebar .mid-shell {
   font-size: var(--mid-font-size-sm);
 }
 
-/* Sidebar mode toggle (Files / Notes) */
-.mid-sidebar-mode {
-  display: flex;
-  border-bottom: 1px solid var(--mid-border);
-}
-.mid-sidebar-mode-btn {
-  flex: 1;
-  padding: var(--mid-space-2);
-  font-family: inherit;
-  font-size: var(--mid-font-size-sm);
-  font-weight: var(--mid-weight-medium);
-  color: var(--mid-fg-muted);
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-}
-.mid-sidebar-mode-btn:hover { color: var(--mid-fg); background: var(--mid-surface-hover); }
-.mid-sidebar-mode-btn.is-active {
-  color: var(--mid-fg);
-  border-bottom-color: var(--mid-accent);
-}
+/* Sidebar mode toggle removed — activity bar drives sidebar content (#187) */
 
 /* Notes list */
 .mid-notes-list {
@@ -253,6 +248,76 @@ body.has-sidebar .mid-shell {
   color: var(--mid-success);
 }
 .mid-status-dot.is-dirty { color: var(--mid-warning); }
+
+/* Spotlight — Cmd/Ctrl+K palette */
+.mid-spotlight {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  margin: auto;
+  width: min(640px, 92vw);
+}
+.mid-spotlight::backdrop { background: rgba(0, 0, 0, 0.5); }
+.mid-spotlight-frame {
+  background: var(--mid-bg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-lg);
+  box-shadow: var(--mid-shadow-lg);
+  overflow: hidden;
+}
+.mid-spotlight-tabs {
+  display: flex;
+  gap: 2px;
+  padding: var(--mid-space-2) var(--mid-space-3);
+  border-bottom: 1px solid var(--mid-border);
+}
+.mid-spotlight-tab {
+  padding: 4px var(--mid-space-3);
+  font-family: inherit;
+  font-size: var(--mid-font-size-sm);
+  color: var(--mid-fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+}
+.mid-spotlight-tab:hover { background: var(--mid-surface); color: var(--mid-fg); }
+.mid-spotlight-tab.is-active { background: var(--mid-surface); color: var(--mid-fg); }
+.mid-spotlight-input {
+  width: 100%;
+  padding: var(--mid-space-3) var(--mid-space-4);
+  font-family: inherit;
+  font-size: var(--mid-font-size-lg);
+  color: var(--mid-fg);
+  background: var(--mid-bg);
+  border: 0;
+  border-bottom: 1px solid var(--mid-border);
+  outline: none;
+}
+.mid-spotlight-results {
+  max-height: 50vh;
+  overflow: auto;
+  padding: var(--mid-space-1);
+}
+.mid-spotlight-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--mid-space-2);
+  width: 100%;
+  padding: var(--mid-space-2) var(--mid-space-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+  font: inherit;
+  color: var(--mid-fg);
+  text-align: left;
+}
+.mid-spotlight-row:hover { background: var(--mid-surface); }
+.mid-spotlight-row-name { font-weight: var(--mid-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mid-spotlight-row-path { font-family: var(--mid-font-mono); font-size: var(--mid-font-size-xs); color: var(--mid-fg-muted); white-space: nowrap; }
+.mid-spotlight-empty { padding: var(--mid-space-4); text-align: center; color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); }
 
 /* Mermaid editor modal — split textarea + live preview */
 .mid-mermaid-editor {
