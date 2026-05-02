@@ -1973,13 +1973,13 @@ function openRepoPicker(repos: { nameWithOwner: string; description: string; vis
       // Always offer "Create new repo…" at the top
       const createRow = document.createElement('button');
       createRow.className = 'mid-spotlight-row';
-      createRow.innerHTML = `${iconHTML('plus', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">Create new repo…</span><span class="mid-spotlight-row-path">${q ? escapeHTML(q) : 'enter name'}</span>`;
+      createRow.innerHTML = `${iconHTML('plus', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-body"><span class="mid-spotlight-row-name">Create new repo…</span><span class="mid-spotlight-row-desc">${q ? escapeHTML(q) : 'enter name'}</span></span>`;
       createRow.addEventListener('click', () => { void onCreateNew(q || ''); });
       results.appendChild(createRow);
       for (const r of matches.slice(0, 50)) {
         const row = document.createElement('button');
         row.className = 'mid-spotlight-row';
-        row.innerHTML = `${iconHTML('github', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">${escapeHTML(r.nameWithOwner)}</span><span class="mid-spotlight-row-path">${escapeHTML(r.visibility?.toLowerCase() ?? '')}</span>`;
+        row.innerHTML = `${iconHTML('github', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-body"><span class="mid-spotlight-row-name">${escapeHTML(r.nameWithOwner)}</span><span class="mid-spotlight-row-desc">${escapeHTML(r.visibility?.toLowerCase() ?? '')}</span></span>`;
         if (r.description) row.title = r.description;
         row.addEventListener('click', () => { close(r.nameWithOwner); });
         results.appendChild(row);
@@ -3388,9 +3388,13 @@ function openSpotlight(): void {
   const results = document.getElementById('mid-spotlight-results') as HTMLDivElement;
   const footer = document.getElementById('mid-spotlight-footer') as HTMLDivElement | null;
   const tabs = dlg.querySelectorAll<HTMLButtonElement>('.mid-spotlight-tab');
+  const inputIcon = document.getElementById('mid-spotlight-input-icon') as HTMLSpanElement | null;
   // Reset tabs + footer + placeholder (history viewer / repo picker mutate these).
   tabs.forEach(t => { t.style.display = ''; });
   if (footer) footer.style.display = '';
+  if (inputIcon && !inputIcon.firstChild) {
+    inputIcon.innerHTML = iconHTML('search', 'mid-icon--sm mid-icon--muted');
+  }
   input.placeholder = 'Type to search…';
 
   let scope: 'workspace' | 'file' = 'workspace';
@@ -3525,10 +3529,15 @@ function openSpotlight(): void {
       row.type = 'button';
       row.className = 'mid-spotlight-row' + (idx === activeIndex ? ' is-active' : '');
       const iconKey = item.kind === 'heading' ? 'list-ul' : item.kind === 'line' ? 'search' : 'file';
+      const descHTML = item.meta
+        ? `<span class="mid-spotlight-row-desc">${escapeHTML(item.meta)}</span>`
+        : '';
       row.innerHTML =
         `${iconHTML(iconKey, 'mid-icon--sm mid-icon--muted')}` +
-        `<span class="mid-spotlight-row-name">${spotlightHighlightedName(item.name, item.matchStart, item.matchEnd)}</span>` +
-        `<span class="mid-spotlight-row-path">${escapeHTML(item.meta)}</span>`;
+        `<span class="mid-spotlight-row-body">` +
+          `<span class="mid-spotlight-row-name">${spotlightHighlightedName(item.name, item.matchStart, item.matchEnd)}</span>` +
+          descHTML +
+        `</span>`;
       row.addEventListener('click', () => item.activate());
       row.addEventListener('mouseenter', () => {
         activeIndex = idx;
