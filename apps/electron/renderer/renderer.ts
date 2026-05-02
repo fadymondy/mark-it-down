@@ -1309,6 +1309,7 @@ function attachTableTools(scope: HTMLElement): void {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       openContextMenu([
         { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getFiltered()) },
+        { icon: 'image', label: 'Export as PNG', action: () => void exportTableAsPNG(card) },
         { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getFiltered(), 'csv') },
         { icon: 'download', label: 'Download Excel (.xlsx)', action: () => downloadTable(headers, getFiltered(), 'xlsx') },
         { icon: 'github', label: 'Share to Google Sheets', action: () => void shareTableToSheets(headers, getFiltered()) },
@@ -1437,6 +1438,7 @@ function attachTableTools(scope: HTMLElement): void {
       e.stopPropagation();
       openContextMenu([
         { icon: 'copy', label: 'Copy as Markdown', action: () => copyTableAsMarkdown(headers, getFiltered()) },
+        { icon: 'image', label: 'Export as PNG', action: () => void exportTableAsPNG(card) },
         { icon: 'download', label: 'Download CSV', action: () => downloadTable(headers, getFiltered(), 'csv') },
         { icon: 'download', label: 'Download Excel (.xlsx)', action: () => downloadTable(headers, getFiltered(), 'xlsx') },
         { icon: 'github', label: 'Share to Google Sheets', action: () => void shareTableToSheets(headers, getFiltered()) },
@@ -1471,6 +1473,65 @@ function copyTableAsMarkdown(headers: HTMLTableCellElement[], rows: HTMLTableRow
     ...rows.map(r => `| ${rowToValues(r).join(' | ')} |`),
   ];
   void navigator.clipboard.writeText(lines.join('\n'));
+}
+
+/**
+ * Snapshot the live DataTable card into a PNG. Wraps the card in chromed export
+ * window + (optional) gradient backdrop, off-screen, captures via html-to-image,
+ * removes the temp DOM. Mirrors exportCodeBlockAsPNG visually (#260, #261).
+ */
+async function exportTableAsPNG(card: HTMLElement): Promise<void> {
+  const filename = uniqueExportName('table', 'png');
+  const gradient = CODE_EXPORT_GRADIENTS[settings.codeExportGradient];
+
+  // Clone the card and inline styles needed for full-content render.
+  const cardClone = card.cloneNode(true) as HTMLElement;
+
+  const win = document.createElement('div');
+  win.className = 'mid-export-window';
+  win.innerHTML =
+    '<div class="mid-export-window-header">' +
+      '<div class="mid-export-window-dots">' +
+        '<span class="mid-export-window-dot mid-export-window-dot--red"></span>' +
+        '<span class="mid-export-window-dot mid-export-window-dot--amber"></span>' +
+        '<span class="mid-export-window-dot mid-export-window-dot--green"></span>' +
+      '</div>' +
+      '<div class="mid-export-window-title">table</div>' +
+      '<div class="mid-export-window-spacer"></div>' +
+    '</div>';
+  const body = document.createElement('div');
+  body.className = 'mid-export-window-body';
+  body.appendChild(cardClone);
+  win.appendChild(body);
+
+  const wrapper = document.createElement('div');
+  wrapper.style.position = 'fixed';
+  wrapper.style.left = '0';
+  wrapper.style.top = '0';
+  wrapper.style.transform = 'translate(-200vw, 0)';
+  wrapper.style.pointerEvents = 'none';
+  if (gradient) {
+    wrapper.className = 'mid-code-export-bg';
+    wrapper.style.background = gradient;
+  } else {
+    wrapper.style.padding = '32px';
+    wrapper.style.background = getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#0d1117';
+  }
+  wrapper.appendChild(win);
+  document.body.appendChild(wrapper);
+  try {
+    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+    const dataUrl = await toPng(wrapper, {
+      pixelRatio: 2,
+      style: { transform: 'none' },
+    });
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    a.click();
+  } finally {
+    wrapper.remove();
+  }
 }
 
 async function shareTableToSheets(headers: HTMLTableCellElement[], rows: HTMLTableRowElement[]): Promise<void> {

@@ -1121,11 +1121,70 @@ select.mid-settings-control {
 /* Gradient backdrop for code-block PNG export (Carbon-style) */
 .mid-code-export-bg {
   display: inline-block;
-  padding: 60px;
+  padding: 96px;
   width: max-content;
 }
 .mid-code-export-bg .mid-code-window {
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+/* Loosen the inner code padding when captured for export — the live preview
+   keeps its tighter ~16px padding so terminal-feel reading isn't airy. */
+.mid-code-export-bg .mid-code-window > pre {
+  padding: 28px var(--mid-space-6);
+}
+
+/* Generic chrome window used by table-as-PNG export (#261). Mirrors
+   `.mid-code-window` visually so the brand stays consistent. */
+.mid-export-window {
+  position: relative;
+  border-radius: var(--mid-radius-md);
+  overflow: hidden;
+  background: var(--mid-bg);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.mid-export-window-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--mid-space-3);
+  padding: 8px var(--mid-space-3);
+  background: var(--mid-surface);
+  border-bottom: 1px solid var(--mid-border);
+  user-select: none;
+}
+.mid-export-window-dots { display: inline-flex; gap: 6px; align-items: center; }
+.mid-export-window-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.mid-export-window-dot--red { background: #ff5f57; }
+.mid-export-window-dot--amber { background: #febc2e; }
+.mid-export-window-dot--green { background: #28c840; }
+.mid-export-window-title {
+  text-align: center;
+  font-family: var(--mid-font-mono);
+  font-size: 12px;
+  color: var(--mid-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mid-export-window-spacer { width: 60px; }
+.mid-export-window > .mid-export-window-body { padding: var(--mid-space-4); }
+/* When the table is rendered inside the export chrome it shouldn't scroll —
+   the full content needs to be in the snapshot. */
+.mid-export-window .mid-data-table {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+.mid-export-window .mid-dt-toolbar,
+.mid-export-window .mid-dt-footer { display: none; }
+.mid-export-window .mid-dt-scroll {
+  overflow: visible !important;
+  max-height: none !important;
 }
 
 /* Code-block toolbar (Copy / Download / Image / Lines) + language badge */
