@@ -4,6 +4,27 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-05-03
+
+### Fixed — packaged build broken on macOS (#270, #271)
+
+- **Tray icon + MCP server** were unreachable in the v0.2.0 .dmg because `apps/electron/main.ts` resolved every runtime asset via `process.cwd()`. In dev `cwd` is the repo root; in a packaged .app it's wherever the user launched from, so `media/brand/iconTemplate.png`, `out/mcp/server.js`, and `build/icons/16.png` all 404'd. New `bundleAsset(...segments)` helper resolves both dev and packaged paths via `__dirname` walk + transparent `app.asar.unpacked` fallback. Replaces every `process.cwd()` lookup.
+- **Bundle config** — added `out/mcp/**`, `media/brand/**`, `build/icons/**` to `package.json#build.files`. `out/mcp/**` and `node_modules/better-sqlite3/**` are `asarUnpack`'d so `fork()` can spawn the MCP server and the native sqlite binary loads.
+- **Universal macOS DMG** (#271) — switched `mac.target` from per-arch (arm64 + x64) to a single `universal` slice. No more Rosetta-deprecation warning when an arm Mac downloads the x64 DMG; one installer that runs natively on both architectures.
+- **Tray "Check for Updates…"** entry. Label flips to *Downloading v…* → *Restart and install v…* as the auto-updater progresses; local builds (no `app-update.yml`) get a friendly *only available in published releases* dialog.
+
+### Fixed — release pipeline (#269)
+
+- vsix job was racing the electron jobs to upload and failing with `release not found`. Made the upload idempotent (creates the release as a draft if it doesn't exist) and decoupled the release-notes job from the vsix job so a vsix retry doesn't re-block release-notes.
+
+### Added — Mac App Store target (#266)
+
+- New opt-in `mas` target for App Store distribution (sibling to the regular DMG). Sandboxed entitlements, 3rd-party Mac Developer signing, separate workflow file gated on `vars.MAS_ENABLED=1`. Regular DMG releases unchanged.
+
+### Added — Right-side outline rail (#252)
+
+- New table-of-contents rail on the right side of the preview, listing every heading in the active markdown file with indent matching heading level. Click → scroll to that section. IntersectionObserver highlights the current section as you scroll. Toggle from the status-bar *Outline* button or `⌘⇧L`. Hidden in edit-only mode and during PDF export. Persists across restart.
+
 ## [0.2.0] — 2026-05-03
 
 ### Added — Desktop app (Electron) — release engineering
