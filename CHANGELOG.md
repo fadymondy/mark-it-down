@@ -4,6 +4,32 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-05-03
+
+### Fixed — packaged-build polish (#288, #289, #291)
+
+- **MCP server now auto-starts cleanly on packaged launch** (#289). `fork()` in packaged Electron uses `process.execPath` which is the Electron binary, NOT Node — without `ELECTRON_RUN_AS_NODE=1` in the fork env, the child re-launched the desktop app instead of running the MCP server. Tray label now flips to "● MCP server: running" within ~2s of launch.
+- **Warehouse onboarding visibility** (#288). Added a *Connect GitHub warehouse* CTA on the welcome screen (`force=true` bypasses the dismissed list, so users can always re-trigger). Added `console.debug` breadcrumbs at every short-circuit in `shouldAutoShowOnboarding()` so DevTools shows exactly why it skipped.
+- **Workspace-switch indexing loader** (#291). Folder-open / workspace-switch with a slow file-tree fetch now shows a delay-shown (150ms) spinner inside the sidebar tree pane. Cached folders stay instant — no flash. `openFolderDialog` also caches the pre-fetched tree so a re-open is instant.
+
+### Added — Drag-drop file → activity-bar pinned folder v2 (#189)
+
+- Drag any file from the tree onto a pinned-folder activity-bar icon to add it to the pin's `files` list. Visual feedback distinguishes file-drop targets from reorder targets. Right-click an assigned file → *Remove from pin*. Persists via SQLite.
+
+### Added — Spotlight visual polish (#282)
+
+- Leading search icon inside the input row, scope tabs as inline pills, two-line result rows with name + dim description. Logic from #235 unchanged.
+
+### Added — Typed notes MVP (#255)
+
+- Notes carry a **type** (`note` default, `secret`, `task-list`, `meeting`, `reference`, `snippet`); legacy notes auto-default to `note`. Type registry at `apps/electron/notes/note-types.ts` is the single source of truth (icon + color + viewKind for each).
+- Notes-list rows render the type's icon + color chip (replacing the old free-form tag chips).
+- Horizontal type-filter strip at the top of the notes sidebar — click an icon to filter, click again to clear.
+- "+" new-note button now opens a chooser modal listing types (defaults to `note` if dismissed).
+- Right-click a note → *Change type → ...* lists every type.
+- **Secret type** custom view: key/value editor with reveal/copy buttons, instead of the markdown editor. Persists as YAML frontmatter `secrets: { key: value }` so the underlying `.md` stays human-readable.
+- Three follow-ups deferred: #295 task-list custom view, #296 meeting custom view, #297 user-defined types.
+
 ## [0.2.2] — 2026-05-03
 
 ### Added — Settings page + 25-theme picker (#232, #233, #234)
