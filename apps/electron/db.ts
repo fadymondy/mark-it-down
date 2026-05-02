@@ -52,6 +52,22 @@ export interface ExportHistoryRow {
   exported_at: number;
 }
 
+/**
+ * #297 — User-defined note types persisted in SQLite. Built-in rows are seeded
+ * on first read with `builtin = 1` so the settings UI can lock them down. User
+ * types appear with `builtin = 0` and may be edited / deleted.
+ */
+export interface NoteTypeRow {
+  id: string;
+  label: string;
+  icon: string;
+  color: string;
+  view_kind: string;
+  description: string | null;
+  builtin: number;
+  sort: number;
+}
+
 export function openDB(userDataDir: string): Database.Database {
   if (db) return db;
   dbPath = path.join(userDataDir, 'mid.sqlite');
@@ -124,6 +140,16 @@ function applySchema(d: Database.Database): void {
       active INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (strip_id, idx)
     );
+    CREATE TABLE IF NOT EXISTS note_types (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      icon TEXT NOT NULL,
+      color TEXT NOT NULL,
+      view_kind TEXT NOT NULL,
+      description TEXT,
+      builtin INTEGER NOT NULL DEFAULT 0,
+      sort INTEGER NOT NULL DEFAULT 0
+    );
     CREATE INDEX IF NOT EXISTS idx_recent_files_opened ON recent_files(opened_at DESC);
     CREATE INDEX IF NOT EXISTS idx_export_history_exported ON export_history(exported_at DESC);
     CREATE INDEX IF NOT EXISTS idx_open_tabs_strip ON open_tabs(strip_id, idx);
@@ -162,6 +188,62 @@ export function replaceOpenTabs(rows: OpenTabRow[]): void {
     for (const r of all) stmt.run(r.strip_id, r.idx, r.path, r.active ? 1 : 0);
   });
   tx(rows);
+}
+
+/* ── note types (#297) ─────────────────────────────────── */
+
+/**
+ * Return every registered note type ordered by `sort` (ascending). Caller is
+ * expected to seed built-ins separately — `listNoteTypeRows()` is purely a
+ * persistence read; we don't merge the in-memory built-in registry here so the
+ * SQL surface stays predictable for tests.
+ */
+export function listNoteTypeRows(): NoteTypeRow[] {
+  return getDB()
+    .prepare('SELECT id, label, icon, color, view_kind, description, builtin, sort FROM note_types ORDER BY sort ASC, label ASC')
+    .all() as NoteTypeRow[];
+}
+
+/** Upsert a note type by id. `sort` is preserved if the row already exists. */
+export function upsertNoteTypeRow(row: NoteTypeRow): void {
+  getDB()
+    .prepare(`
+      INSERT INTO note_types(id, label, icon, color, view_kind, description, builtin, sort)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        label = excluded.label,
+        icon = excluded.icon,
+        color = excluded.color,
+        view_kind = excluded.view_kind,
+        description = excluded.description,
+        builtin = excluded.builtin,
+        sort = excluded.sort
+    `)
+    .run(row.id, row.label, row.icon, row.color, row.view_kind, row.description ?? null, row.builtin, row.sort);
+}
+
+/** Delete a user-defined note type. Built-in rows are protected — callers
+ * should refuse the request before reaching this helper, but we double-check
+ * here so a stray IPC can't blow away the seed. */
+export function deleteNoteTypeRow(id: string): boolean {
+  const row = getDB().prepare('SELECT builtin FROM note_types WHERE id = ?').get(id) as { builtin: number } | undefined;
+  if (!row) return false;
+  if (row.builtin === 1) return false;
+  getDB().prepare('DELETE FROM note_types WHERE id = ?').run(id);
+  return true;
+}
+
+/**
+ * Replace the `sort` column for the given ids in order (idx → sort). Used by
+ * the filter-strip drag-to-reorder control (#302). Unknown ids are skipped.
+ */
+export function reorderNoteTypeRows(orderedIds: string[]): void {
+  const d = getDB();
+  const tx = d.transaction((ids: string[]) => {
+    const stmt = d.prepare('UPDATE note_types SET sort = ? WHERE id = ?');
+    ids.forEach((id, idx) => { stmt.run(idx, id); });
+  });
+  tx(orderedIds);
 }
 
 /* ── settings (JSON-blob valued) ────────────────────────── */

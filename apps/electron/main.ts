@@ -22,8 +22,12 @@ import {
   listOpenTabs,
   replaceOpenTabs,
   type OpenTabRow,
+  listNoteTypeRows,
+  upsertNoteTypeRow,
+  deleteNoteTypeRow,
+  reorderNoteTypeRows,
 } from './db';
-import { DEFAULT_TYPE_ID, getNoteType } from './notes/note-types';
+import { DEFAULT_TYPE_ID, getNoteType, BUILT_IN_TYPES, isBuiltinTypeId, setRegistry, type NoteType } from './notes/note-types';
 
 const execFileP = promisify(execFile);
 
@@ -126,6 +130,9 @@ app.whenReady().then(async () => {
     const result = await migrateLegacyState(app.getPath('userData'));
     if (result.error) console.warn('[mid] state.json migration warning:', result.error);
     else if (result.migrated) console.log('[mid] migrated legacy state.json into SQLite');
+    // #297 — seed the note-types table and prime the in-memory registry so
+    // `notes-create` calls before the renderer's first IPC see user types too.
+    try { refreshNoteTypeRegistry(); } catch (err) { console.warn('[mid] note-types seed failed:', err); }
   } catch (err) {
     console.error('[mid] failed to open SQLite:', err);
   }
@@ -273,9 +280,24 @@ ipcMain.handle('mid:notes-create', async (_e, workspace: string, title: string, 
   // `secrets:` frontmatter block so the renderer's secret editor has a stable
   // place to read/write to from the very first save.
   const resolved = getNoteType(type);
-  const seed = resolved.viewKind === 'secret'
-    ? `---\nsecrets: {}\n---\n\n# ${title || 'Untitled'}\n\n`
-    : `# ${title || 'Untitled'}\n\n`;
+  // Per-viewKind seed scaffolding so the typed editor has somewhere to read /
+  // write the moment the file opens. New view kinds plug in here.
+  let seed: string;
+  switch (resolved.viewKind) {
+    case 'secret':
+      seed = `---\nsecrets: {}\n---\n\n# ${title || 'Untitled'}\n\n`;
+      break;
+    case 'meeting':
+      // #296 — frontmatter holds structured meta; body holds free-form notes.
+      seed = `---\ndate: ${new Date().toISOString().slice(0, 10)}\nattendees: []\nlocation: ''\ndecisions: []\n---\n\n# ${title || 'Untitled'}\n\n## Agenda\n\n## Notes\n\n`;
+      break;
+    case 'task-list':
+      // #295 — empty list; the editor's "Add row" appends `- [ ] ...` lines.
+      seed = `# ${title || 'Untitled'}\n\n`;
+      break;
+    default:
+      seed = `# ${title || 'Untitled'}\n\n`;
+  }
   await fs.writeFile(fullPath, seed, 'utf8');
   const entry: NoteEntry = { id, title: title || 'Untitled', path: relPath, tags: [], created: now, updated: now, type: resolved.id };
   notes.push(entry);
@@ -345,6 +367,115 @@ ipcMain.handle('mid:notes-set-type', async (_e, workspace: string, id: string, t
   note.updated = new Date().toISOString();
   await writeNotes(workspace, notes);
   return note;
+});
+
+/* ── note types registry (#297) ─────────────────────────── */
+
+/**
+ * Seed the SQLite `note_types` table with the built-in registry on first read.
+ * Idempotent — re-runs only insert rows that don't already exist (so user-edits
+ * to a built-in stay intact across restarts; the only fields we never
+ * overwrite are the user-touched ones because `INSERT OR IGNORE` is a no-op
+ * when the id collides). Built-in `sort` is recomputed each time so the
+ * shipped order survives a fresh install but a user reorder via #302 is
+ * preserved (we set `sort = idx` only on first insertion).
+ */
+function seedBuiltInNoteTypes(): void {
+  const existing = new Set(listNoteTypeRows().map(r => r.id));
+  let nextSort = listNoteTypeRows().reduce((max, r) => Math.max(max, r.sort), -1) + 1;
+  for (let i = 0; i < BUILT_IN_TYPES.length; i++) {
+    const t = BUILT_IN_TYPES[i];
+    if (existing.has(t.id)) continue;
+    upsertNoteTypeRow({
+      id: t.id,
+      label: t.label,
+      icon: t.icon,
+      color: t.color,
+      view_kind: t.viewKind ?? 'markdown',
+      description: t.description ?? null,
+      builtin: 1,
+      // Built-ins keep their declaration order on a fresh install. If user
+      // types were added before re-seeding (unlikely; we seed at startup),
+      // append after the user rows so we don't clobber their sort.
+      sort: nextSort++,
+    });
+  }
+}
+
+/**
+ * Compose the runtime registry from SQLite and push it into the in-memory
+ * registry both main and renderer rely on. Renderer pulls via IPC and calls
+ * `setRegistry()` on its side too — main keeps a copy so `notes-create` and
+ * `notes-set-type` see user-defined types without an extra round-trip.
+ */
+function refreshNoteTypeRegistry(): NoteType[] {
+  seedBuiltInNoteTypes();
+  const rows = listNoteTypeRows();
+  const composed: NoteType[] = rows.map(r => ({
+    id: r.id,
+    label: r.label,
+    icon: r.icon,
+    color: r.color,
+    viewKind: r.view_kind,
+    description: r.description ?? undefined,
+    builtin: r.builtin === 1,
+  }));
+  setRegistry(composed);
+  return composed;
+}
+
+ipcMain.handle('mid:note-types-list', async (): Promise<NoteType[]> => refreshNoteTypeRegistry());
+
+ipcMain.handle('mid:note-types-upsert', async (_e, type: NoteType): Promise<{ ok: boolean; types: NoteType[]; error?: string }> => {
+  // Validate id: slug-safe, non-empty, no collision with built-in unless the
+  // caller is editing the built-in row itself (allowed for label/color tweaks).
+  const id = String(type.id || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  if (!id) return { ok: false, types: refreshNoteTypeRegistry(), error: 'Type id is required.' };
+  if (id === DEFAULT_TYPE_ID && !isBuiltinTypeId(type.id ?? '')) {
+    return { ok: false, types: refreshNoteTypeRegistry(), error: `"${id}" is reserved.` };
+  }
+  const existing = listNoteTypeRows().find(r => r.id === id);
+  // Refuse to mutate a built-in's id / view_kind from this handler — built-ins
+  // own their dispatch contract. Label / icon / color / description are fair
+  // game so users can re-style them.
+  if (existing?.builtin === 1) {
+    upsertNoteTypeRow({
+      id: existing.id,
+      label: type.label || existing.label,
+      icon: type.icon || existing.icon,
+      color: type.color || existing.color,
+      view_kind: existing.view_kind, // immutable for built-ins
+      description: type.description ?? existing.description,
+      builtin: 1,
+      sort: existing.sort,
+    });
+    return { ok: true, types: refreshNoteTypeRegistry() };
+  }
+  const sort = existing?.sort ?? (listNoteTypeRows().reduce((max, r) => Math.max(max, r.sort), -1) + 1);
+  upsertNoteTypeRow({
+    id,
+    label: type.label || id,
+    icon: type.icon || 'bookmark',
+    color: type.color || '#6e7681',
+    view_kind: type.viewKind || 'markdown',
+    description: type.description ?? null,
+    builtin: 0,
+    sort,
+  });
+  return { ok: true, types: refreshNoteTypeRegistry() };
+});
+
+ipcMain.handle('mid:note-types-delete', async (_e, id: string): Promise<{ ok: boolean; types: NoteType[]; error?: string }> => {
+  if (isBuiltinTypeId(id)) {
+    return { ok: false, types: refreshNoteTypeRegistry(), error: 'Built-in types cannot be deleted.' };
+  }
+  const ok = deleteNoteTypeRow(id);
+  return { ok, types: refreshNoteTypeRegistry(), error: ok ? undefined : 'Type not found.' };
+});
+
+ipcMain.handle('mid:note-types-reorder', async (_e, orderedIds: string[]): Promise<NoteType[]> => {
+  reorderNoteTypeRows(orderedIds);
+  return refreshNoteTypeRegistry();
 });
 
 ipcMain.handle('mid:warehouses-list', async (_e, workspace: string): Promise<Warehouse[]> => {

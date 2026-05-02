@@ -86,6 +86,17 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:notes-tag', workspace, id, tags),
   notesSetType: (workspace: string, id: string, type: string): Promise<NoteEntry | null> =>
     ipcRenderer.invoke('mid:notes-set-type', workspace, id, type),
+  // #297 — note-type registry CRUD. The shape mirrors `NoteType` from
+  // `apps/electron/notes/note-types.ts`; we don't import the type here to keep
+  // preload free of cross-module deps.
+  noteTypesList: (): Promise<{ id: string; label: string; icon: string; color: string; viewKind?: string; description?: string; builtin?: boolean }[]> =>
+    ipcRenderer.invoke('mid:note-types-list'),
+  noteTypesUpsert: (type: { id: string; label: string; icon: string; color: string; viewKind?: string; description?: string }): Promise<{ ok: boolean; types: { id: string; label: string; icon: string; color: string; viewKind?: string; description?: string; builtin?: boolean }[]; error?: string }> =>
+    ipcRenderer.invoke('mid:note-types-upsert', type),
+  noteTypesDelete: (id: string): Promise<{ ok: boolean; types: { id: string; label: string; icon: string; color: string; viewKind?: string; description?: string; builtin?: boolean }[]; error?: string }> =>
+    ipcRenderer.invoke('mid:note-types-delete', id),
+  noteTypesReorder: (orderedIds: string[]): Promise<{ id: string; label: string; icon: string; color: string; viewKind?: string; description?: string; builtin?: boolean }[]> =>
+    ipcRenderer.invoke('mid:note-types-reorder', orderedIds),
   warehousesList: (workspace: string): Promise<Warehouse[]> =>
     ipcRenderer.invoke('mid:warehouses-list', workspace),
   warehousesAdd: (workspace: string, warehouse: Warehouse): Promise<{ ok: boolean; warehouses: Warehouse[]; error?: string }> =>

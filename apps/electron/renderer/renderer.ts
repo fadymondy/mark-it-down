@@ -9,7 +9,7 @@ import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, Tabl
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 import { iconForFile } from '../../../packages/ui-tokens/src/file-icons';
 import { THEMES, ThemeDefinition } from '../../../packages/core/src/themes/themes';
-import { listNoteTypes, getNoteType, DEFAULT_TYPE_ID, type NoteType } from '../notes/note-types';
+import { listNoteTypes, getNoteType, DEFAULT_TYPE_ID, setRegistry as setNoteTypesRegistry, isBuiltinTypeId, type NoteType } from '../notes/note-types';
 
 interface TreeEntry {
   name: string;
@@ -49,6 +49,13 @@ interface AppState {
   outlineHidden?: boolean;
   /** Workspace ids that have dismissed the first-run warehouse onboarding (#236). */
   warehouseOnboardingDismissed?: string[];
+  /** #302 — hide the type-filter strip in the notes sidebar entirely. */
+  noteTypeStripHidden?: boolean;
+  /** #302 — type ids excluded from the strip even when it's visible. */
+  noteTypeStripExclude?: string[];
+  /** #302 — per-user ordering of strip entries; ids missing from this list
+   * append in registry order. */
+  noteTypeOrder?: string[];
 }
 
 interface PinnedFolder {
@@ -119,6 +126,11 @@ interface Mid {
   notesDelete(workspace: string, id: string): Promise<boolean>;
   notesTag(workspace: string, id: string, tags: string[]): Promise<NoteEntry | null>;
   notesSetType(workspace: string, id: string, type: string): Promise<NoteEntry | null>;
+  // #297 — note-type registry CRUD.
+  noteTypesList(): Promise<NoteType[]>;
+  noteTypesUpsert(type: Partial<NoteType> & { id: string }): Promise<{ ok: boolean; types: NoteType[]; error?: string }>;
+  noteTypesDelete(id: string): Promise<{ ok: boolean; types: NoteType[]; error?: string }>;
+  noteTypesReorder(orderedIds: string[]): Promise<NoteType[]>;
   warehousesList(workspace: string): Promise<Warehouse[]>;
   warehousesAdd(workspace: string, warehouse: Warehouse): Promise<{ ok: boolean; warehouses: Warehouse[]; error?: string }>;
   notesAttachWarehouse(workspace: string, id: string, warehouseId: string | null): Promise<NoteEntry | null>;
@@ -205,6 +217,11 @@ let notesTypeFilter: string | null = null;
 /** True when the active editor is rendering a typed custom view (e.g. secret).
  * Used by `setMode` to bypass the markdown editor swap. */
 let typedViewActive = false;
+/** #302 — strip preference state, hydrated from AppState on startup and
+ * mutated by the Settings → Notes → Filter strip controls. */
+let noteTypeStripHidden = false;
+let noteTypeStripExclude: string[] = [];
+let noteTypeOrder: string[] = [];
 let recentFiles: string[] = [];
 let warehouses: Warehouse[] = [];
 let pinnedFolders: PinnedFolder[] = [];
@@ -2279,6 +2296,435 @@ function renderSecretEditor(_note: NoteEntry, fullPath: string, content: string)
 
   root.replaceChildren(wrap);
   rebuildOutline(null);
+}
+
+/**
+ * #295 — Task-list custom view.
+ *
+ * Renders a checklist editor over the same `.md` file. Each row is a `- [ ]`
+ * or `- [x]` line; we parse the body on entry, render one editable row per
+ * line, and persist back to markdown on every mutation so the underlying file
+ * stays human-readable + diff-friendly + GitHub-renderable.
+ *
+ * Drag-to-reorder uses the HTML5 DnD API on the row element. We swap by
+ * mutating the in-memory array and re-rendering rather than juggling DOM
+ * positions directly — keeps state and view in sync and makes persist trivial.
+ *
+ * Frontmatter (if any) is preserved verbatim — the editor only owns the body.
+ */
+function renderTaskListEditor(_note: NoteEntry, fullPath: string, content: string): void {
+  root.classList.remove('viewing', 'editing', 'splitting');
+  root.classList.add('typed-view');
+
+  const fm = extractFrontmatter(content);
+  const body = fm.body;
+
+  interface TaskItem { text: string; done: boolean; }
+  const items: TaskItem[] = parseTaskMarkdown(body);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-task-editor';
+
+  const header = document.createElement('div');
+  header.className = 'mid-task-header';
+  header.innerHTML = `
+    <span class="mid-task-header-icon">${iconHTML('check-square', 'mid-icon--sm')}</span>
+    <span class="mid-task-header-title">Task list</span>
+    <span class="mid-task-header-hint">Each row is a <code>- [ ]</code> / <code>- [x]</code> line in the .md body.</span>
+  `;
+  wrap.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'mid-task-list';
+  wrap.appendChild(list);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'mid-btn mid-task-add';
+  addBtn.innerHTML = `${iconHTML('plus', 'mid-icon--sm')}<span>Add row</span>`;
+  addBtn.addEventListener('click', () => {
+    items.push({ text: '', done: false });
+    rerender();
+    persist();
+    // Focus the new row's text input after the re-render.
+    const rows = list.querySelectorAll<HTMLInputElement>('.mid-task-text');
+    rows[rows.length - 1]?.focus();
+  });
+  wrap.appendChild(addBtn);
+
+  function persist(): void {
+    const taskBody = items
+      .filter(i => i.text.trim() !== '' || items.length === 1)
+      .map(i => `- [${i.done ? 'x' : ' '}] ${i.text}`)
+      .join('\n');
+    let next: string;
+    if (fm.meta) {
+      const yamlText = yaml.dump(fm.meta).trimEnd();
+      next = `---\n${yamlText}\n---\n\n${taskBody}\n`;
+    } else {
+      next = `${taskBody}\n`;
+    }
+    currentText = next;
+    void window.mid.writeFile(fullPath, next).then(() => updateSaveIndicator(true));
+  }
+
+  function rerender(): void {
+    list.replaceChildren();
+    items.forEach((item, idx) => list.appendChild(buildRow(item, idx)));
+  }
+
+  // Track drag-source index via a closure-shared variable rather than the
+  // DataTransfer object, which is read-only outside the dragstart handler in
+  // some Chromium configurations.
+  let dragFromIdx: number | null = null;
+
+  function buildRow(item: TaskItem, idx: number): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'mid-task-row';
+    row.draggable = true;
+    row.dataset.idx = String(idx);
+
+    const handle = document.createElement('span');
+    handle.className = 'mid-task-handle';
+    handle.title = 'Drag to reorder';
+    handle.textContent = '⋮⋮';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'mid-task-check';
+    checkbox.checked = item.done;
+    checkbox.addEventListener('change', () => {
+      item.done = checkbox.checked;
+      row.classList.toggle('is-done', item.done);
+      persist();
+    });
+
+    const text = document.createElement('input');
+    text.type = 'text';
+    text.className = 'mid-task-text mid-settings-control';
+    text.value = item.text;
+    text.placeholder = 'Task…';
+    text.addEventListener('input', () => { item.text = text.value; });
+    text.addEventListener('blur', persist);
+    text.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        items.splice(idx + 1, 0, { text: '', done: false });
+        rerender();
+        persist();
+        const rows = list.querySelectorAll<HTMLInputElement>('.mid-task-text');
+        rows[idx + 1]?.focus();
+      } else if (e.key === 'Backspace' && text.value === '' && items.length > 1) {
+        e.preventDefault();
+        items.splice(idx, 1);
+        rerender();
+        persist();
+        const rows = list.querySelectorAll<HTMLInputElement>('.mid-task-text');
+        rows[Math.max(0, idx - 1)]?.focus();
+      }
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+    del.title = 'Delete row';
+    del.innerHTML = iconHTML('trash', 'mid-icon--sm');
+    del.addEventListener('click', () => {
+      items.splice(idx, 1);
+      rerender();
+      persist();
+    });
+
+    if (item.done) row.classList.add('is-done');
+    row.append(handle, checkbox, text, del);
+
+    row.addEventListener('dragstart', e => {
+      dragFromIdx = idx;
+      row.classList.add('is-dragging');
+      // Required for Firefox to actually fire dragover.
+      try { e.dataTransfer?.setData('text/plain', String(idx)); } catch { /* ignore */ }
+    });
+    row.addEventListener('dragend', () => {
+      dragFromIdx = null;
+      row.classList.remove('is-dragging');
+      list.querySelectorAll('.mid-task-row').forEach(r => r.classList.remove('is-drop-target'));
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      row.classList.add('is-drop-target');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('is-drop-target'));
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      row.classList.remove('is-drop-target');
+      if (dragFromIdx === null || dragFromIdx === idx) return;
+      const [moved] = items.splice(dragFromIdx, 1);
+      items.splice(idx, 0, moved);
+      dragFromIdx = null;
+      rerender();
+      persist();
+    });
+
+    return row;
+  }
+
+  rerender();
+  root.replaceChildren(wrap);
+  rebuildOutline(null);
+}
+
+interface TaskItemParse { text: string; done: boolean; }
+/**
+ * Pull `- [ ]` and `- [x]` lines out of a markdown body. Non-task lines are
+ * dropped — the task-list view owns the file body once active. If a user
+ * mixes prose with tasks, switching back to the markdown editor (via the
+ * Change Type menu) is the explicit escape hatch.
+ */
+function parseTaskMarkdown(body: string): TaskItemParse[] {
+  const out: TaskItemParse[] = [];
+  const rx = /^\s*[-*+]\s*\[(?<state>[ xX])\]\s?(?<text>.*)$/;
+  for (const line of body.split(/\r?\n/)) {
+    const m = rx.exec(line);
+    if (!m || !m.groups) continue;
+    out.push({ done: m.groups.state.toLowerCase() === 'x', text: m.groups.text });
+  }
+  return out;
+}
+
+/**
+ * #296 — Meeting custom view.
+ *
+ * Structured meeting form on top of the markdown file:
+ *   - Frontmatter (`date`, `attendees`, `location`, `decisions`) holds the
+ *     metadata so external tools can grep / filter on it.
+ *   - Body holds two free-form markdown areas: Agenda and Notes, separated by
+ *     `## Agenda` / `## Notes` headings so the file stays a usable artifact
+ *     even when opened in another editor.
+ *
+ * Persistence is debounced via `setTimeout` for the markdown areas (300ms)
+ * since they fire `input` on every keystroke; chip / date / location fields
+ * persist on `change` / blur.
+ */
+function renderMeetingEditor(_note: NoteEntry, fullPath: string, content: string): void {
+  root.classList.remove('viewing', 'editing', 'splitting');
+  root.classList.add('typed-view');
+
+  const fm = extractFrontmatter(content);
+  const meta = (fm.meta ?? {}) as Record<string, unknown>;
+  const date = typeof meta.date === 'string' ? meta.date : (meta.date instanceof Date ? meta.date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+  const attendees: string[] = Array.isArray(meta.attendees) ? (meta.attendees as unknown[]).map(String) : [];
+  const location = typeof meta.location === 'string' ? meta.location : '';
+  const decisions: string[] = Array.isArray(meta.decisions) ? (meta.decisions as unknown[]).map(String) : [];
+
+  const { agenda, notes } = splitAgendaNotes(fm.body);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-meeting-editor';
+
+  const header = document.createElement('div');
+  header.className = 'mid-meeting-header';
+  header.innerHTML = `
+    <span class="mid-meeting-header-icon">${iconHTML('calendar', 'mid-icon--sm')}</span>
+    <span class="mid-meeting-header-title">Meeting</span>
+    <span class="mid-meeting-header-hint">Metadata persists as YAML frontmatter; agenda + notes live in the body.</span>
+  `;
+  wrap.appendChild(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'mid-meeting-grid';
+  wrap.appendChild(grid);
+
+  // Date
+  const dateLabel = document.createElement('label');
+  dateLabel.className = 'mid-meeting-field';
+  dateLabel.innerHTML = '<span class="mid-meeting-field-label">Date</span>';
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.className = 'mid-settings-control';
+  dateInput.value = date;
+  dateInput.addEventListener('change', persist);
+  dateLabel.appendChild(dateInput);
+  grid.appendChild(dateLabel);
+
+  // Location
+  const locLabel = document.createElement('label');
+  locLabel.className = 'mid-meeting-field';
+  locLabel.innerHTML = '<span class="mid-meeting-field-label">Location</span>';
+  const locInput = document.createElement('input');
+  locInput.type = 'text';
+  locInput.className = 'mid-settings-control';
+  locInput.placeholder = 'Zoom / Office / …';
+  locInput.value = location;
+  locInput.addEventListener('blur', persist);
+  locLabel.appendChild(locInput);
+  grid.appendChild(locLabel);
+
+  // Attendees (chips)
+  const attLabel = document.createElement('div');
+  attLabel.className = 'mid-meeting-field mid-meeting-field--full';
+  attLabel.innerHTML = '<span class="mid-meeting-field-label">Attendees</span>';
+  const attChips = buildChipEditor(attendees, persist, 'Add attendee…');
+  attLabel.appendChild(attChips.el);
+  grid.appendChild(attLabel);
+
+  // Agenda (markdown textarea)
+  const agendaLabel = document.createElement('div');
+  agendaLabel.className = 'mid-meeting-field mid-meeting-field--full';
+  agendaLabel.innerHTML = '<span class="mid-meeting-field-label">Agenda</span>';
+  const agendaTa = document.createElement('textarea');
+  agendaTa.className = 'mid-meeting-textarea mid-settings-control';
+  agendaTa.placeholder = '- Topic 1\n- Topic 2';
+  agendaTa.value = agenda;
+  agendaTa.rows = 5;
+  agendaTa.addEventListener('input', schedulePersist);
+  agendaTa.addEventListener('blur', persist);
+  agendaLabel.appendChild(agendaTa);
+  grid.appendChild(agendaLabel);
+
+  // Notes (markdown textarea)
+  const notesLabel = document.createElement('div');
+  notesLabel.className = 'mid-meeting-field mid-meeting-field--full';
+  notesLabel.innerHTML = '<span class="mid-meeting-field-label">Notes</span>';
+  const notesTa = document.createElement('textarea');
+  notesTa.className = 'mid-meeting-textarea mid-settings-control';
+  notesTa.placeholder = 'Free-form meeting notes (markdown).';
+  notesTa.value = notes;
+  notesTa.rows = 8;
+  notesTa.addEventListener('input', schedulePersist);
+  notesTa.addEventListener('blur', persist);
+  notesLabel.appendChild(notesTa);
+  grid.appendChild(notesLabel);
+
+  // Decisions (chips)
+  const decLabel = document.createElement('div');
+  decLabel.className = 'mid-meeting-field mid-meeting-field--full';
+  decLabel.innerHTML = '<span class="mid-meeting-field-label">Decisions</span>';
+  const decChips = buildChipEditor(decisions, persist, 'Add decision…');
+  decLabel.appendChild(decChips.el);
+  grid.appendChild(decLabel);
+
+  let persistTimer: number | null = null;
+  function schedulePersist(): void {
+    if (persistTimer !== null) window.clearTimeout(persistTimer);
+    persistTimer = window.setTimeout(() => { persist(); persistTimer = null; }, 300);
+  }
+
+  function persist(): void {
+    if (persistTimer !== null) { window.clearTimeout(persistTimer); persistTimer = null; }
+    const nextMeta: Record<string, unknown> = {
+      ...meta,
+      date: dateInput.value,
+      attendees: attChips.values(),
+      location: locInput.value,
+      decisions: decChips.values(),
+    };
+    const yamlText = yaml.dump(nextMeta).trimEnd();
+    const body = `## Agenda\n\n${agendaTa.value.trim()}\n\n## Notes\n\n${notesTa.value.trim()}\n`;
+    const next = `---\n${yamlText}\n---\n\n${body}`;
+    currentText = next;
+    void window.mid.writeFile(fullPath, next).then(() => updateSaveIndicator(true));
+  }
+
+  root.replaceChildren(wrap);
+  rebuildOutline(null);
+}
+
+/**
+ * Split a meeting body into the `## Agenda` and `## Notes` sections. If the
+ * file has no headings (e.g. a freshly created note imported from elsewhere),
+ * the entire body becomes the Notes section so we don't lose content.
+ */
+function splitAgendaNotes(body: string): { agenda: string; notes: string } {
+  const agendaRx = /^##\s*Agenda\s*$/im;
+  const notesRx = /^##\s*Notes\s*$/im;
+  const agendaMatch = agendaRx.exec(body);
+  const notesMatch = notesRx.exec(body);
+  if (!agendaMatch && !notesMatch) {
+    return { agenda: '', notes: body.replace(/^#\s+.+\n+/, '').trim() };
+  }
+  let agenda = '';
+  let notes = '';
+  if (agendaMatch && notesMatch) {
+    if (agendaMatch.index < notesMatch.index) {
+      agenda = body.slice(agendaMatch.index + agendaMatch[0].length, notesMatch.index).trim();
+      notes = body.slice(notesMatch.index + notesMatch[0].length).trim();
+    } else {
+      notes = body.slice(notesMatch.index + notesMatch[0].length, agendaMatch.index).trim();
+      agenda = body.slice(agendaMatch.index + agendaMatch[0].length).trim();
+    }
+  } else if (agendaMatch) {
+    agenda = body.slice(agendaMatch.index + agendaMatch[0].length).trim();
+  } else if (notesMatch) {
+    notes = body.slice(notesMatch.index + notesMatch[0].length).trim();
+  }
+  return { agenda, notes };
+}
+
+interface ChipEditor { el: HTMLElement; values(): string[]; }
+/**
+ * Generic chip editor used by the meeting view for attendees / decisions.
+ * Returns the wrapper element and a `values()` accessor for persistence.
+ */
+function buildChipEditor(initial: string[], onChange: () => void, placeholder: string): ChipEditor {
+  const list = initial.slice();
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-chip-editor';
+
+  const chipsBox = document.createElement('div');
+  chipsBox.className = 'mid-chip-editor-chips';
+  wrap.appendChild(chipsBox);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'mid-chip-editor-input mid-settings-control';
+  input.placeholder = placeholder;
+  wrap.appendChild(input);
+
+  function commit(value: string): void {
+    const v = value.trim();
+    if (!v) return;
+    list.push(v);
+    input.value = '';
+    rerender();
+    onChange();
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      commit(input.value);
+    } else if (e.key === 'Backspace' && input.value === '' && list.length > 0) {
+      list.pop();
+      rerender();
+      onChange();
+    }
+  });
+  input.addEventListener('blur', () => { if (input.value.trim()) commit(input.value); });
+
+  function rerender(): void {
+    chipsBox.replaceChildren();
+    list.forEach((value, idx) => {
+      const chip = document.createElement('span');
+      chip.className = 'mid-chip';
+      const text = document.createElement('span');
+      text.textContent = value;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'mid-chip-remove';
+      remove.title = 'Remove';
+      remove.innerHTML = iconHTML('x', 'mid-icon--sm');
+      remove.addEventListener('click', () => {
+        list.splice(idx, 1);
+        rerender();
+        onChange();
+      });
+      chip.append(text, remove);
+      chipsBox.appendChild(chip);
+    });
+  }
+  rerender();
+
+  return { el: wrap, values: () => list.slice() };
 }
 
 function renderEdit(): void {
@@ -4413,7 +4859,9 @@ function setSidebarMode(mode: 'files' | 'notes'): void {
   sidebarNotesHeader.hidden = mode !== 'notes';
   treeRoot.hidden = mode !== 'files';
   notesListEl.hidden = mode !== 'notes';
-  notesTypesEl.hidden = mode !== 'notes';
+  // #302 — strip is gated by both the sidebar mode AND the per-user master
+  // toggle. Either being false hides the strip.
+  notesTypesEl.hidden = mode !== 'notes' || noteTypeStripHidden;
   if (mode === 'notes') {
     renderNoteTypesStrip();
     void loadNotes();
@@ -4460,10 +4908,19 @@ function renderNotes(): void {
  * #255 — render the horizontal type-filter strip at the top of the notes
  * sidebar. One button per registered type; clicking toggles the filter, and
  * clicking the active type clears the filter.
+ *
+ * #302 — the strip now honours three persisted prefs:
+ *   - `noteTypeStripHidden` — master toggle, gated by `setSidebarMode`.
+ *   - `noteTypeStripExclude` — type ids to omit even when the strip is on.
+ *   - `noteTypeOrder` — explicit ordering; types not listed append in the
+ *     registry's declaration order so newly added types stay discoverable.
  */
 function renderNoteTypesStrip(): void {
+  // Re-evaluate the master toggle in case it changed without a mode flip.
+  notesTypesEl.hidden = sidebarMode !== 'notes' || noteTypeStripHidden;
+  if (notesTypesEl.hidden) return;
   const buttons: HTMLElement[] = [];
-  for (const t of listNoteTypes()) {
+  for (const t of orderedStripTypes()) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'mid-notes-type-chip';
@@ -4486,6 +4943,32 @@ function renderNoteTypesStrip(): void {
     buttons.push(btn);
   }
   notesTypesEl.replaceChildren(...buttons);
+}
+
+/**
+ * Apply `noteTypeOrder` + `noteTypeStripExclude` to the registry to produce
+ * the ordered, filtered list the strip should display. Centralised so the
+ * settings drag-reorder UI and the strip render share one source of truth.
+ */
+function orderedStripTypes(): NoteType[] {
+  const all = listNoteTypes();
+  const byId = new Map(all.map(t => [t.id, t] as const));
+  const out: NoteType[] = [];
+  const seen = new Set<string>();
+  for (const id of noteTypeOrder) {
+    const t = byId.get(id);
+    if (!t || seen.has(id)) continue;
+    seen.add(id);
+    if (noteTypeStripExclude.includes(id)) continue;
+    out.push(t);
+  }
+  for (const t of all) {
+    if (seen.has(t.id)) continue;
+    seen.add(t.id);
+    if (noteTypeStripExclude.includes(t.id)) continue;
+    out.push(t);
+  }
+  return out;
 }
 
 function renderNoteRow(note: NoteEntry): HTMLElement {
@@ -4771,14 +5254,20 @@ async function openNote(note: NoteEntry): Promise<void> {
   const content = await window.mid.readFile(fullPath);
   const noteType = getNoteType(note.type);
   // #255 — typed custom views. Markdown is the default; named viewKinds
-  // dispatch to a dedicated renderer that owns the root element.
-  if (noteType.viewKind === 'secret') {
+  // dispatch to a dedicated renderer that owns the root element. New view
+  // kinds (#295 task-list, #296 meeting) plug in here.
+  const customRenderer: ((n: NoteEntry, p: string, c: string) => void) | null =
+    noteType.viewKind === 'secret' ? renderSecretEditor
+      : noteType.viewKind === 'task-list' ? renderTaskListEditor
+      : noteType.viewKind === 'meeting' ? renderMeetingEditor
+      : null;
+  if (customRenderer) {
     typedViewActive = true;
     currentText = content;
     currentPath = fullPath;
     filenameEl.textContent = note.title;
     highlightActiveTreeItem();
-    renderSecretEditor(note, fullPath, content);
+    customRenderer(note, fullPath, content);
     updateSaveIndicator(true);
     pushRecent(fullPath);
     renderNotes();
@@ -5421,16 +5910,394 @@ function renderEditorSection(main: HTMLElement): void {
 }
 
 /* ── Notes ─────────────────────────────────────────────── */
+/**
+ * #297 + #302 — Notes settings panel.
+ *
+ * Two groups live here:
+ *   1. **Note types** — list of every registered type (built-ins read-only,
+ *      user-defined editable + deletable). "Add type…" opens a modal that
+ *      writes a new row into the SQLite `note_types` table via the IPC bridge
+ *      added in main.ts.
+ *   2. **Filter strip** — master toggle, per-type "Show in strip" checkbox,
+ *      drag-to-reorder. Persisted via three AppState keys read by
+ *      `renderNoteTypesStrip()`.
+ */
 function renderNotesSection(main: HTMLElement): void {
   const wrap = document.createElement('div');
   wrap.className = 'mid-settings-form';
-  const grp = makeGroup('Notes', 'Workspace-scoped notes and tag behavior.');
-  const note = document.createElement('p');
-  note.className = 'mid-settings-empty';
-  note.textContent = 'Notes are managed inline from the activity bar. Defaults for auto-tag, default folder, and push behavior will surface here as they ship.';
-  grp.body.appendChild(note);
-  wrap.appendChild(grp.card);
+
+  // ─── Group 1: Note types ──────────────────────────────────────────────────
+  const typesGroup = makeGroup('Note types', 'Built-in types are locked; user types can be edited or deleted. New types appear in the create-note chooser, filter strip, and the per-row Change Type menu.');
+  const typesList = document.createElement('div');
+  typesList.className = 'mid-note-types-list';
+  typesGroup.body.appendChild(typesList);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'mid-btn mid-btn--primary';
+  addBtn.innerHTML = `${iconHTML('plus', 'mid-icon--sm')}<span>Add type…</span>`;
+  addBtn.addEventListener('click', async () => {
+    const created = await openNoteTypeEditor(null);
+    if (!created) return;
+    await refreshNoteTypesUI();
+  });
+  typesGroup.body.appendChild(addBtn);
+  wrap.appendChild(typesGroup.card);
+
+  // ─── Group 2: Filter strip ────────────────────────────────────────────────
+  const stripGroup = makeGroup('Filter strip', 'Controls the horizontal type chips above the notes sidebar.');
+  // Master toggle.
+  const masterToggle = document.createElement('input');
+  masterToggle.type = 'checkbox';
+  masterToggle.className = 'mid-settings-control mid-settings-checkbox';
+  masterToggle.checked = !noteTypeStripHidden;
+  masterToggle.addEventListener('change', () => {
+    noteTypeStripHidden = !masterToggle.checked;
+    void window.mid.patchAppState({ noteTypeStripHidden });
+    renderNoteTypesStrip();
+    perTypeBox.style.opacity = noteTypeStripHidden ? '0.5' : '1';
+    perTypeBox.style.pointerEvents = noteTypeStripHidden ? 'none' : 'auto';
+  });
+  stripGroup.body.appendChild(makeRow(
+    { label: 'Show type filter strip in notes sidebar', description: 'Master switch. Off hides the strip even when individual types are visible.', inline: true },
+    masterToggle,
+  ));
+
+  // Per-type visibility + drag-reorder list.
+  const perTypeBox = document.createElement('div');
+  perTypeBox.className = 'mid-strip-prefs';
+  perTypeBox.style.opacity = noteTypeStripHidden ? '0.5' : '1';
+  perTypeBox.style.pointerEvents = noteTypeStripHidden ? 'none' : 'auto';
+  stripGroup.body.appendChild(perTypeBox);
+  wrap.appendChild(stripGroup.card);
+
   main.appendChild(wrap);
+
+  // ─── Renderers + helpers ──────────────────────────────────────────────────
+  function renderTypesList(): void {
+    typesList.replaceChildren();
+    for (const t of listNoteTypes()) {
+      const row = document.createElement('div');
+      row.className = 'mid-note-type-row';
+      row.innerHTML = `
+        <span class="mid-note-type-row-icon" style="color:${t.color}">${iconHTML(t.icon as IconName, 'mid-icon--md')}</span>
+        <span class="mid-note-type-row-text">
+          <span class="mid-note-type-row-label">${escapeHTML(t.label)}</span>
+          <span class="mid-note-type-row-meta">id <code>${escapeHTML(t.id)}</code> · view <code>${escapeHTML(t.viewKind ?? 'markdown')}</code>${t.builtin ? ' · <em>built-in</em>' : ''}</span>
+        </span>
+      `;
+      const actions = document.createElement('span');
+      actions.className = 'mid-note-type-row-actions';
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+      edit.title = isBuiltinTypeId(t.id) ? 'Edit label / icon / color (view kind is locked for built-ins)' : 'Edit type';
+      edit.innerHTML = iconHTML('edit', 'mid-icon--sm');
+      edit.addEventListener('click', async () => {
+        const updated = await openNoteTypeEditor(t);
+        if (!updated) return;
+        await refreshNoteTypesUI();
+      });
+      actions.appendChild(edit);
+      if (!isBuiltinTypeId(t.id)) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+        del.title = 'Delete user type';
+        del.innerHTML = iconHTML('trash', 'mid-icon--sm');
+        del.addEventListener('click', async () => {
+          const ok = await midConfirm('Delete type?', `"${t.label}" — existing notes keep their type id but will fall back to the default note view.`);
+          if (!ok) return;
+          const result = await window.mid.noteTypesDelete(t.id);
+          if (!result.ok) {
+            flashStatus(result.error ?? 'Delete failed');
+            return;
+          }
+          setNoteTypesRegistry(result.types);
+          await refreshNoteTypesUI();
+        });
+        actions.appendChild(del);
+      }
+      row.appendChild(actions);
+      typesList.appendChild(row);
+    }
+  }
+
+  function renderStripPrefs(): void {
+    perTypeBox.replaceChildren();
+    const all = listNoteTypes();
+    // Build the ordered list using current `noteTypeOrder`, appending unseen.
+    const byId = new Map(all.map(t => [t.id, t] as const));
+    const ordered: NoteType[] = [];
+    const seen = new Set<string>();
+    for (const id of noteTypeOrder) {
+      const t = byId.get(id);
+      if (t && !seen.has(id)) { ordered.push(t); seen.add(id); }
+    }
+    for (const t of all) { if (!seen.has(t.id)) { ordered.push(t); seen.add(t.id); } }
+
+    let dragFromIdx: number | null = null;
+    ordered.forEach((t, idx) => {
+      const row = document.createElement('div');
+      row.className = 'mid-strip-pref-row';
+      row.draggable = true;
+      row.dataset.idx = String(idx);
+
+      const handle = document.createElement('span');
+      handle.className = 'mid-strip-pref-handle';
+      handle.title = 'Drag to reorder';
+      handle.textContent = '⋮⋮';
+
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'mid-strip-pref-icon';
+      iconSpan.style.color = t.color;
+      iconSpan.innerHTML = iconHTML(t.icon as IconName, 'mid-icon--sm');
+
+      const label = document.createElement('span');
+      label.className = 'mid-strip-pref-label';
+      label.textContent = t.label;
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'mid-settings-control mid-settings-checkbox';
+      checkbox.checked = !noteTypeStripExclude.includes(t.id);
+      checkbox.title = 'Show in strip';
+      checkbox.addEventListener('change', () => {
+        const set = new Set(noteTypeStripExclude);
+        if (checkbox.checked) set.delete(t.id); else set.add(t.id);
+        noteTypeStripExclude = Array.from(set);
+        void window.mid.patchAppState({ noteTypeStripExclude });
+        renderNoteTypesStrip();
+      });
+
+      row.append(handle, iconSpan, label, checkbox);
+
+      row.addEventListener('dragstart', e => {
+        dragFromIdx = idx;
+        row.classList.add('is-dragging');
+        try { e.dataTransfer?.setData('text/plain', String(idx)); } catch { /* ignore */ }
+      });
+      row.addEventListener('dragend', () => {
+        dragFromIdx = null;
+        row.classList.remove('is-dragging');
+        perTypeBox.querySelectorAll('.mid-strip-pref-row').forEach(r => r.classList.remove('is-drop-target'));
+      });
+      row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('is-drop-target'); });
+      row.addEventListener('dragleave', () => row.classList.remove('is-drop-target'));
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        row.classList.remove('is-drop-target');
+        if (dragFromIdx === null || dragFromIdx === idx) return;
+        const [moved] = ordered.splice(dragFromIdx, 1);
+        ordered.splice(idx, 0, moved);
+        noteTypeOrder = ordered.map(t => t.id);
+        void window.mid.patchAppState({ noteTypeOrder });
+        renderStripPrefs();
+        renderNoteTypesStrip();
+      });
+
+      perTypeBox.appendChild(row);
+    });
+  }
+
+  async function refreshNoteTypesUI(): Promise<void> {
+    // Refresh from main so we don't drift from the SQLite truth source.
+    try {
+      const fresh = await window.mid.noteTypesList();
+      if (Array.isArray(fresh)) setNoteTypesRegistry(fresh);
+    } catch { /* keep existing */ }
+    renderTypesList();
+    renderStripPrefs();
+    renderNoteTypesStrip();
+  }
+
+  void refreshNoteTypesUI();
+}
+
+/**
+ * #297 — Note type editor modal. Pass `null` to create a new type, or an
+ * existing `NoteType` to edit. Built-in entries lock the id + view-kind
+ * fields; everything else is editable.
+ */
+function openNoteTypeEditor(initial: NoteType | null): Promise<NoteType | null> {
+  return new Promise(resolve => {
+    const isEdit = !!initial;
+    const isBuiltin = !!initial && isBuiltinTypeId(initial.id);
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'mid-type-chooser-backdrop';
+    const modal = document.createElement('div');
+    modal.className = 'mid-type-chooser';
+    modal.style.maxWidth = '560px';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-label', isEdit ? 'Edit note type' : 'Add note type');
+
+    const header = document.createElement('div');
+    header.className = 'mid-type-chooser-header';
+    header.textContent = isEdit ? `Edit type — ${initial!.label}` : 'Add note type';
+    modal.appendChild(header);
+
+    // Form scaffold.
+    const form = document.createElement('div');
+    form.className = 'mid-note-type-form';
+    modal.appendChild(form);
+
+    const idInput = labelledInput('Id', 'slug-id (lowercase, hyphens)', initial?.id ?? '', isEdit);
+    form.appendChild(idInput.row);
+    const labelInput = labelledInput('Label', 'Human-readable name', initial?.label ?? '');
+    form.appendChild(labelInput.row);
+    const descInput = labelledInput('Description', 'Optional — shown in the type chooser.', initial?.description ?? '');
+    form.appendChild(descInput.row);
+
+    // Icon picker (reuses PIN_ICON_CHOICES + the built-in note-type icons).
+    let chosenIcon = initial?.icon ?? 'bookmark';
+    const iconRow = document.createElement('div');
+    iconRow.className = 'mid-note-type-form-row';
+    iconRow.innerHTML = '<span class="mid-note-type-form-label">Icon</span>';
+    const iconGrid = document.createElement('div');
+    iconGrid.className = 'mid-pin-icons';
+    const iconChoices: IconName[] = [
+      'bookmark', 'lock', 'check-square', 'calendar', 'book', 'code',
+      'tag', 'list-ul', 'github', 'image', 'link', 'folder',
+      'file', 'cog', 'search', 'markdown', 'typescript', 'python',
+    ];
+    for (const ic of iconChoices) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mid-pin-icon-btn' + (ic === chosenIcon ? ' is-active' : '');
+      btn.dataset.icon = ic;
+      btn.innerHTML = iconHTML(ic);
+      btn.addEventListener('click', () => {
+        chosenIcon = ic;
+        iconGrid.querySelectorAll('.mid-pin-icon-btn').forEach(b => b.classList.toggle('is-active', (b as HTMLElement).dataset.icon === ic));
+      });
+      iconGrid.appendChild(btn);
+    }
+    iconRow.appendChild(iconGrid);
+    form.appendChild(iconRow);
+
+    // Color picker.
+    let chosenColor = initial?.color ?? '#6e7681';
+    const colorRow = document.createElement('div');
+    colorRow.className = 'mid-note-type-form-row';
+    colorRow.innerHTML = '<span class="mid-note-type-form-label">Color</span>';
+    const colorGrid = document.createElement('div');
+    colorGrid.className = 'mid-pin-colors';
+    const colorChoices = [
+      '#6e7681', '#bf8700', '#1a7f37', '#0969da', '#8250df', '#cf222e',
+      '#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#db2777',
+    ];
+    for (const col of colorChoices) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mid-pin-color-btn' + (col === chosenColor ? ' is-active' : '');
+      btn.style.background = col;
+      btn.dataset.color = col;
+      btn.title = col;
+      btn.addEventListener('click', () => {
+        chosenColor = col;
+        colorGrid.querySelectorAll('.mid-pin-color-btn').forEach(b => b.classList.toggle('is-active', (b as HTMLElement).dataset.color === col));
+      });
+      colorGrid.appendChild(btn);
+    }
+    colorRow.appendChild(colorGrid);
+    form.appendChild(colorRow);
+
+    // View kind dropdown — locked for built-ins (their renderer dispatch is
+    // wired in code; changing it would silently break the editor).
+    const viewRow = document.createElement('div');
+    viewRow.className = 'mid-note-type-form-row';
+    viewRow.innerHTML = '<span class="mid-note-type-form-label">View kind</span>';
+    const viewSelect = document.createElement('select');
+    viewSelect.className = 'mid-settings-control';
+    for (const [v, l] of [
+      ['markdown', 'Markdown editor (default)'],
+      ['task-list', 'Task list (checklist)'],
+      ['secret', 'Secret (key/value)'],
+      ['meeting', 'Meeting (structured form)'],
+    ] as const) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = l;
+      viewSelect.appendChild(opt);
+    }
+    viewSelect.value = initial?.viewKind ?? 'markdown';
+    if (isBuiltin) viewSelect.disabled = true;
+    viewRow.appendChild(viewSelect);
+    form.appendChild(viewRow);
+
+    // Footer.
+    const footer = document.createElement('div');
+    footer.className = 'mid-type-chooser-footer';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'mid-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => close(null));
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'mid-btn mid-btn--primary';
+    saveBtn.textContent = isEdit ? 'Save' : 'Create';
+    saveBtn.addEventListener('click', async () => {
+      const id = idInput.input.value.trim();
+      const label = labelInput.input.value.trim();
+      if (!id) { flashStatus('Id is required'); return; }
+      if (!label) { flashStatus('Label is required'); return; }
+      const payload: NoteType = {
+        id,
+        label,
+        icon: chosenIcon,
+        color: chosenColor,
+        viewKind: viewSelect.value,
+        description: descInput.input.value.trim() || undefined,
+      };
+      const result = await window.mid.noteTypesUpsert(payload);
+      if (!result.ok) {
+        flashStatus(result.error ?? 'Failed to save type');
+        return;
+      }
+      setNoteTypesRegistry(result.types);
+      const saved = result.types.find(t => t.id === id) ?? payload;
+      close(saved);
+    });
+    footer.append(cancelBtn, saveBtn);
+    modal.appendChild(footer);
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+    };
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(null); });
+    document.addEventListener('keydown', onKey);
+
+    // Focus the first editable field.
+    setTimeout(() => (isEdit ? labelInput.input : idInput.input).focus(), 50);
+
+    function close(value: NoteType | null): void {
+      document.removeEventListener('keydown', onKey);
+      backdrop.remove();
+      resolve(value);
+    }
+  });
+}
+
+interface LabelledInput { row: HTMLElement; input: HTMLInputElement; }
+function labelledInput(label: string, placeholder: string, initial: string, readOnly = false): LabelledInput {
+  const row = document.createElement('div');
+  row.className = 'mid-note-type-form-row';
+  const labelEl = document.createElement('span');
+  labelEl.className = 'mid-note-type-form-label';
+  labelEl.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'mid-settings-control';
+  input.placeholder = placeholder;
+  input.value = initial;
+  if (readOnly) { input.readOnly = true; input.style.opacity = '0.6'; }
+  row.append(labelEl, input);
+  return { row, input };
 }
 
 /* ── GitHub ────────────────────────────────────────────── */
@@ -5546,6 +6413,17 @@ void window.mid.readAppState().then(async state => {
   if (typeof state.outlineHidden === 'boolean') {
     outlineHidden = state.outlineHidden;
   }
+  // #302 — strip preferences. Default: visible, no excludes, no custom order.
+  if (typeof state.noteTypeStripHidden === 'boolean') noteTypeStripHidden = state.noteTypeStripHidden;
+  if (Array.isArray(state.noteTypeStripExclude)) noteTypeStripExclude = state.noteTypeStripExclude.slice();
+  if (Array.isArray(state.noteTypeOrder)) noteTypeOrder = state.noteTypeOrder.slice();
+  // #297 — hydrate the registry from SQLite before any note view tries to
+  // dispatch on viewKind. Failures fall back to the built-ins shipped in the
+  // bundle; the renderer never blocks on this round-trip.
+  try {
+    const types = await window.mid.noteTypesList();
+    if (Array.isArray(types) && types.length > 0) setNoteTypesRegistry(types);
+  } catch (err) { console.debug('[mid] noteTypesList failed:', err); }
   applyOutlineVisibility();
   // Auto-register the lastFolder as a workspace if it's not in the list yet.
   if (state.lastFolder && !workspaces.find(w => w.path === state.lastFolder)) {
