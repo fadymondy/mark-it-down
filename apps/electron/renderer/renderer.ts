@@ -3351,13 +3351,52 @@ document.addEventListener('keydown', e => {
 });
 
 // ===== Spotlight =====
+type SpotlightItemKind = 'file' | 'heading' | 'line';
+interface SpotlightItem {
+  kind: SpotlightItemKind;
+  /** Group label rendered as a section heading. */
+  group: string;
+  /** Display name (matched chars get highlighted). */
+  name: string;
+  /** Secondary text rendered on the right (path / line number / etc). */
+  meta: string;
+  /** The match span [start, end) inside `name`. -1/-1 = no highlight. */
+  matchStart: number;
+  matchEnd: number;
+  /** Action triggered on Enter / click. */
+  activate: () => void;
+}
+
+function spotlightFuzzyMatchSpan(haystack: string, needle: string): { start: number; end: number } {
+  if (!needle) return { start: -1, end: -1 };
+  const i = haystack.toLowerCase().indexOf(needle.toLowerCase());
+  if (i < 0) return { start: -1, end: -1 };
+  return { start: i, end: i + needle.length };
+}
+
+function spotlightHighlightedName(name: string, start: number, end: number): string {
+  if (start < 0 || end <= start) return escapeHTML(name);
+  const before = escapeHTML(name.slice(0, start));
+  const hit = escapeHTML(name.slice(start, end));
+  const after = escapeHTML(name.slice(end));
+  return `${before}<span class="mid-spotlight-match">${hit}</span>${after}`;
+}
+
 function openSpotlight(): void {
   const dlg = document.getElementById('mid-spotlight') as HTMLDialogElement;
   const input = document.getElementById('mid-spotlight-input') as HTMLInputElement;
   const results = document.getElementById('mid-spotlight-results') as HTMLDivElement;
+  const footer = document.getElementById('mid-spotlight-footer') as HTMLDivElement | null;
   const tabs = dlg.querySelectorAll<HTMLButtonElement>('.mid-spotlight-tab');
+  // Reset tabs + footer + placeholder (history viewer / repo picker mutate these).
+  tabs.forEach(t => { t.style.display = ''; });
+  if (footer) footer.style.display = '';
+  input.placeholder = 'Type to search…';
+
   let scope: 'workspace' | 'file' = 'workspace';
   let workspaceFiles: { path: string; name: string }[] = [];
+  let activeIndex = 0;
+  let flat: SpotlightItem[] = [];
   let renderTimer: number | null = null;
 
   const collectWorkspaceFiles = async (): Promise<void> => {
@@ -3373,83 +3412,204 @@ function openSpotlight(): void {
     walk(tree);
   };
 
-  const renderResults = (): void => {
-    const q = input.value.trim().toLowerCase();
-    results.replaceChildren();
+  const buildItems = (): SpotlightItem[] => {
+    const q = input.value.trim();
+    const ql = q.toLowerCase();
+    const items: SpotlightItem[] = [];
+
     if (scope === 'workspace') {
-      const matches = q
-        ? workspaceFiles.filter(f => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
-        : workspaceFiles;
-      for (const m of matches.slice(0, 50)) {
-        const row = document.createElement('button');
-        row.className = 'mid-spotlight-row';
-        row.innerHTML = `${iconHTML('file', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">${escapeHTML(m.name)}</span><span class="mid-spotlight-row-path">${escapeHTML(m.path.replace(currentFolder ?? '', '').replace(/^\//, ''))}</span>`;
-        row.addEventListener('click', () => {
-          close();
-          void openRecent(m.path);
-        });
-        results.appendChild(row);
-      }
-      if (matches.length === 0) results.innerHTML = '<div class="mid-spotlight-empty">No files match.</div>';
-    } else {
-      // current file: heading + content matches
-      if (!currentText) { results.innerHTML = '<div class="mid-spotlight-empty">No active document.</div>'; return; }
-      if (!q) { results.innerHTML = '<div class="mid-spotlight-empty">Type to search the active document.</div>'; return; }
-      const lines = currentText.split('\n');
-      const hits: { line: number; text: string; isHeading: boolean }[] = [];
-      for (let i = 0; i < lines.length; i++) {
-        const text = lines[i];
-        if (text.toLowerCase().includes(q)) {
-          hits.push({ line: i + 1, text: text.trim(), isHeading: /^#+\s/.test(text) });
-          if (hits.length >= 100) break;
+      // Recent items only when query is empty.
+      if (!q) {
+        const recents = recentFiles
+          .filter(p => !currentFolder || p.startsWith(currentFolder))
+          .slice(0, 5);
+        for (const p of recents) {
+          const name = p.split('/').pop() ?? p;
+          const rel = currentFolder ? p.replace(currentFolder, '').replace(/^\//, '') : p;
+          items.push({
+            kind: 'file',
+            group: 'Recent',
+            name,
+            meta: rel,
+            matchStart: -1,
+            matchEnd: -1,
+            activate: () => { close(); void openRecent(p); },
+          });
         }
       }
-      for (const h of hits) {
-        const row = document.createElement('button');
-        row.className = 'mid-spotlight-row';
-        row.innerHTML = `${iconHTML(h.isHeading ? 'list-ul' : 'file', 'mid-icon--sm mid-icon--muted')}<span class="mid-spotlight-row-name">${escapeHTML(h.text.slice(0, 80))}</span><span class="mid-spotlight-row-path">L${h.line}</span>`;
-        row.addEventListener('click', () => {
-          close();
-          // No live scroll-to-line; flash status indicates target.
-          flashStatus(`Match at line ${h.line}`);
+
+      const matches = q
+        ? workspaceFiles.filter(f => f.name.toLowerCase().includes(ql) || f.path.toLowerCase().includes(ql))
+        : workspaceFiles;
+      for (const m of matches.slice(0, 50)) {
+        const span = spotlightFuzzyMatchSpan(m.name, q);
+        const rel = currentFolder ? m.path.replace(currentFolder, '').replace(/^\//, '') : m.path;
+        items.push({
+          kind: 'file',
+          group: 'Files',
+          name: m.name,
+          meta: rel,
+          matchStart: span.start,
+          matchEnd: span.end,
+          activate: () => { close(); void openRecent(m.path); },
         });
-        results.appendChild(row);
       }
-      if (hits.length === 0) results.innerHTML = '<div class="mid-spotlight-empty">No matches in this file.</div>';
+    } else {
+      if (!currentText) return items;
+      if (!q) return items;
+      const lines = currentText.split('\n');
+      const headings: SpotlightItem[] = [];
+      const lineHits: SpotlightItem[] = [];
+      for (let i = 0; i < lines.length; i++) {
+        const text = lines[i];
+        if (!text.toLowerCase().includes(ql)) continue;
+        const trimmed = text.trim();
+        const display = trimmed.slice(0, 100);
+        const span = spotlightFuzzyMatchSpan(display, q);
+        const isHeading = /^#+\s/.test(text);
+        const lineNum = i + 1;
+        const item: SpotlightItem = {
+          kind: isHeading ? 'heading' : 'line',
+          group: isHeading ? 'Headings' : 'Lines',
+          name: display,
+          meta: `L${lineNum}`,
+          matchStart: span.start,
+          matchEnd: span.end,
+          activate: () => { close(); flashStatus(`Match at line ${lineNum}`); },
+        };
+        if (isHeading) headings.push(item);
+        else lineHits.push(item);
+        if (headings.length + lineHits.length >= 100) break;
+      }
+      items.push(...headings, ...lineHits);
     }
+    return items;
+  };
+
+  const renderResults = (): void => {
+    flat = buildItems();
+    if (activeIndex >= flat.length) activeIndex = Math.max(0, flat.length - 1);
+    results.replaceChildren();
+
+    if (flat.length === 0) {
+      const q = input.value.trim();
+      const empty = document.createElement('div');
+      empty.className = 'mid-spotlight-empty';
+      if (scope === 'workspace') {
+        empty.textContent = q ? 'No files match.' : 'Type to search workspace files.';
+      } else if (!currentText) {
+        empty.textContent = 'No active document.';
+      } else if (!q) {
+        empty.textContent = 'Type to search the active document.';
+      } else {
+        empty.textContent = 'No matches in this file.';
+      }
+      results.appendChild(empty);
+      return;
+    }
+
+    let lastGroup = '';
+    let section: HTMLDivElement | null = null;
+    flat.forEach((item, idx) => {
+      if (item.group !== lastGroup) {
+        section = document.createElement('div');
+        section.className = 'mid-spotlight-section';
+        const label = document.createElement('div');
+        label.className = 'mid-spotlight-section-label';
+        label.textContent = item.group;
+        section.appendChild(label);
+        results.appendChild(section);
+        lastGroup = item.group;
+      }
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'mid-spotlight-row' + (idx === activeIndex ? ' is-active' : '');
+      const iconKey = item.kind === 'heading' ? 'list-ul' : item.kind === 'line' ? 'search' : 'file';
+      row.innerHTML =
+        `${iconHTML(iconKey, 'mid-icon--sm mid-icon--muted')}` +
+        `<span class="mid-spotlight-row-name">${spotlightHighlightedName(item.name, item.matchStart, item.matchEnd)}</span>` +
+        `<span class="mid-spotlight-row-path">${escapeHTML(item.meta)}</span>`;
+      row.addEventListener('click', () => item.activate());
+      row.addEventListener('mouseenter', () => {
+        activeIndex = idx;
+        results.querySelectorAll('.mid-spotlight-row.is-active').forEach(el => el.classList.remove('is-active'));
+        row.classList.add('is-active');
+      });
+      section!.appendChild(row);
+    });
+  };
+
+  const scrollActiveIntoView = (): void => {
+    const el = results.querySelector<HTMLElement>('.mid-spotlight-row.is-active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  };
+
+  const setActive = (next: number): void => {
+    if (flat.length === 0) return;
+    const max = flat.length;
+    activeIndex = ((next % max) + max) % max; // wrap-around
+    results.querySelectorAll('.mid-spotlight-row').forEach((el, i) => {
+      el.classList.toggle('is-active', i === activeIndex);
+    });
+    scrollActiveIntoView();
   };
 
   const onInput = (): void => {
     if (renderTimer !== null) window.clearTimeout(renderTimer);
-    renderTimer = window.setTimeout(renderResults, 80);
+    renderTimer = window.setTimeout(() => {
+      activeIndex = 0;
+      renderResults();
+    }, 80);
   };
   const setScope = (s: 'workspace' | 'file'): void => {
     scope = s;
     tabs.forEach(t => t.classList.toggle('is-active', t.dataset.spotlightScope === s));
+    activeIndex = 0;
     renderResults();
   };
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (!dlg.open) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(activeIndex + 1); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setActive(activeIndex - 1); return; }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      setScope(scope === 'workspace' ? 'file' : 'workspace');
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = flat[activeIndex];
+      if (item) item.activate();
+      return;
+    }
   };
   const onBackdrop = (e: MouseEvent): void => {
     if (e.target === dlg) close();
   };
+  const onTab = (e: Event): void => setScope((e.currentTarget as HTMLButtonElement).dataset.spotlightScope as 'workspace' | 'file');
+  let closed = false;
   const close = (): void => {
+    if (closed) return;
+    closed = true;
+    if (renderTimer !== null) { window.clearTimeout(renderTimer); renderTimer = null; }
     input.removeEventListener('input', onInput);
     document.removeEventListener('keydown', onKey);
     dlg.removeEventListener('click', onBackdrop);
     tabs.forEach(t => t.removeEventListener('click', onTab));
     if (dlg.open) dlg.close();
   };
-  const onTab = (e: Event): void => setScope((e.currentTarget as HTMLButtonElement).dataset.spotlightScope as 'workspace' | 'file');
 
   input.value = '';
   input.addEventListener('input', onInput);
   document.addEventListener('keydown', onKey);
   dlg.addEventListener('click', onBackdrop);
   tabs.forEach(t => t.addEventListener('click', onTab));
+  // Workspace tab visually default-active even after a previous reuse mutated state.
+  tabs.forEach(t => t.classList.toggle('is-active', t.dataset.spotlightScope === 'workspace'));
   dlg.showModal();
-  void collectWorkspaceFiles().then(renderResults);
+  renderResults();
+  void collectWorkspaceFiles().then(() => { if (!closed) renderResults(); });
   input.focus();
 }
 notesNewBtn.addEventListener('click', () => void promptCreateNote());
