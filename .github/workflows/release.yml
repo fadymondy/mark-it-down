@@ -66,6 +66,15 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           VSIX=$(ls *.vsix | head -n 1)
+          # The electron matrix jobs run in parallel — one of them creates
+          # the GitHub Release on first `electron-builder --publish always`.
+          # vsix often gets there first, so make this idempotent: if the
+          # release doesn't exist yet, create it as a draft placeholder.
+          # The release-notes job rewrites the body afterwards, and
+          # electron-builder / release-notes flip off the draft state.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "$TAG" --notes "Build in progress..."
+          fi
           gh release upload "$TAG" "$VSIX" --clobber
       - name: Publish to VSCode Marketplace
         if: ${{ env.VSCE_PAT != '' }}
@@ -76,8 +85,31 @@ jobs:
   release-notes:
     name: Generate release notes from CHANGELOG
     runs-on: ubuntu-latest
-    needs: [electron, vscode]
+    # Only gate on `electron` — that's the job whose first runner creates
+    # the GitHub Release. The `vscode` job is decoupled so a vsix-side
+    # failure (or a re-run) doesn't block notes from landing, and so
+    # release-notes can be re-run independently to fix a wrong body.
+    needs: [electron]
     steps:
+      - name: Wait for the GitHub Release to exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # `electron` `needs` guarantees at least one matrix runner finished,
+          # but electron-builder publishes assets before flipping the draft
+          # off. Poll for up to ~60s in case the release record is still
+          # propagating.
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Release $TAG is visible."
+              exit 0
+            fi
+            echo "Waiting for release $TAG... ($i/30)"
+            sleep 2
+          done
+          echo "Release $TAG never showed up." >&2
+          exit 1
       - uses: actions/checkout@v4
       - name: Extract section for this version
         id: extract
