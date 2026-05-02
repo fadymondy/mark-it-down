@@ -200,6 +200,29 @@ body.has-sidebar .mid-shell {
   font-size: var(--mid-font-size-sm);
 }
 
+/* Workspace-switch / folder-open indexing loader (#291) — delay-shown, disappears
+   automatically when the tree fetch resolves. */
+.mid-tree-indexing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mid-space-3);
+  padding: var(--mid-space-6) var(--mid-space-4);
+  color: var(--mid-fg-muted);
+  font-size: var(--mid-font-size-sm);
+}
+.mid-tree-indexing-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--mid-border);
+  border-top-color: var(--mid-fg);
+  border-radius: 50%;
+  animation: mid-spin 0.8s linear infinite;
+}
+.mid-tree-indexing-label { color: var(--mid-fg-muted); }
+@keyframes mid-spin { to { transform: rotate(360deg); } }
+
 /* Sidebar mode toggle removed — activity bar drives sidebar content (#187) */
 
 /* Notes list */
