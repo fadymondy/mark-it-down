@@ -20,6 +20,7 @@ import {
   recordExport,
   listExportHistory,
 } from './db';
+import { DEFAULT_TYPE_ID, getNoteType } from './notes/note-types';
 
 const execFileP = promisify(execFile);
 
@@ -200,6 +201,9 @@ interface NoteEntry {
   updated: string;
   warehouse?: string;
   pushedAt?: string;
+  /** Note type id from the registry (#255). Legacy entries are migrated to
+   * `DEFAULT_TYPE_ID` on first read. */
+  type?: string;
 }
 
 interface Warehouse {
@@ -217,7 +221,22 @@ async function readNotes(workspace: string): Promise<NoteEntry[]> {
   try {
     const raw = await fs.readFile(path.join(workspace, NOTES_DIR, NOTES_FILE), 'utf8');
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as NoteEntry[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    // #255 — migrate legacy entries that pre-date the `type` field. We mutate
+    // the in-memory array but defer the disk write to the next mutation; the
+    // default is harmless to read so a flush isn't urgent and avoids an extra
+    // write on every list call.
+    let migrated = false;
+    for (const n of parsed as NoteEntry[]) {
+      if (!n.type) { n.type = DEFAULT_TYPE_ID; migrated = true; }
+    }
+    if (migrated) {
+      // Best-effort persist so the migration becomes durable on first read.
+      // If this fails (e.g. read-only mount), the in-memory default still
+      // serves the renderer correctly until the next successful write.
+      try { await writeNotes(workspace, parsed as NoteEntry[]); } catch { /* ignore */ }
+    }
+    return parsed as NoteEntry[];
   } catch {
     return [];
   }
@@ -235,7 +254,7 @@ function slugify(text: string): string {
 
 ipcMain.handle('mid:notes-list', async (_e, workspace: string) => readNotes(workspace));
 
-ipcMain.handle('mid:notes-create', async (_e, workspace: string, title: string) => {
+ipcMain.handle('mid:notes-create', async (_e, workspace: string, title: string, type?: string) => {
   const notes = await readNotes(workspace);
   const baseSlug = slugify(title || 'untitled');
   const taken = new Set(notes.map(n => n.id));
@@ -246,8 +265,16 @@ ipcMain.handle('mid:notes-create', async (_e, workspace: string, title: string) 
   const relPath = `notes/${id}.md`;
   const fullPath = path.join(workspace, relPath);
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
-  await fs.writeFile(fullPath, `# ${title || 'Untitled'}\n\n`, 'utf8');
-  const entry: NoteEntry = { id, title: title || 'Untitled', path: relPath, tags: [], created: now, updated: now };
+  // Resolve the type (falls back to DEFAULT_TYPE_ID for unknown ids) and seed
+  // the file with type-appropriate scaffolding. Secret notes get an empty
+  // `secrets:` frontmatter block so the renderer's secret editor has a stable
+  // place to read/write to from the very first save.
+  const resolved = getNoteType(type);
+  const seed = resolved.viewKind === 'secret'
+    ? `---\nsecrets: {}\n---\n\n# ${title || 'Untitled'}\n\n`
+    : `# ${title || 'Untitled'}\n\n`;
+  await fs.writeFile(fullPath, seed, 'utf8');
+  const entry: NoteEntry = { id, title: title || 'Untitled', path: relPath, tags: [], created: now, updated: now, type: resolved.id };
   notes.push(entry);
   await writeNotes(workspace, notes);
   return { entry, fullPath };
@@ -299,6 +326,19 @@ ipcMain.handle('mid:notes-tag', async (_e, workspace: string, id: string, tags: 
   const note = notes.find(n => n.id === id);
   if (!note) return null;
   note.tags = tags;
+  note.updated = new Date().toISOString();
+  await writeNotes(workspace, notes);
+  return note;
+});
+
+// #255 — change a note's type. Unknown ids fall back to the default rather
+// than rejecting the call, so a user hand-editing the file or a stale UI can
+// never end up with the row stuck on a type that no longer exists.
+ipcMain.handle('mid:notes-set-type', async (_e, workspace: string, id: string, type: string) => {
+  const notes = await readNotes(workspace);
+  const note = notes.find(n => n.id === id);
+  if (!note) return null;
+  note.type = getNoteType(type).id;
   note.updated = new Date().toISOString();
   await writeNotes(workspace, notes);
   return note;

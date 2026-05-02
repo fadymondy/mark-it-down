@@ -9,6 +9,7 @@ import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, Tabl
 import { iconHTML, IconName } from '../../../packages/ui-tokens/src/icons';
 import { iconForFile } from '../../../packages/ui-tokens/src/file-icons';
 import { THEMES, ThemeDefinition } from '../../../packages/core/src/themes/themes';
+import { listNoteTypes, getNoteType, DEFAULT_TYPE_ID, type NoteType } from '../notes/note-types';
 
 interface TreeEntry {
   name: string;
@@ -91,6 +92,8 @@ interface NoteEntry {
   updated: string;
   warehouse?: string;
   pushedAt?: string;
+  /** Note type id from the registry (#255). Falls back to `'note'`. */
+  type?: string;
 }
 
 interface Warehouse {
@@ -111,10 +114,11 @@ interface Mid {
   readRendererStyles(): Promise<string>;
   patchAppState(patch: Partial<AppState>): Promise<void>;
   notesList(workspace: string): Promise<NoteEntry[]>;
-  notesCreate(workspace: string, title: string): Promise<{ entry: NoteEntry; fullPath: string }>;
+  notesCreate(workspace: string, title: string, type?: string): Promise<{ entry: NoteEntry; fullPath: string }>;
   notesRename(workspace: string, id: string, title: string): Promise<NoteEntry | null>;
   notesDelete(workspace: string, id: string): Promise<boolean>;
   notesTag(workspace: string, id: string, tags: string[]): Promise<NoteEntry | null>;
+  notesSetType(workspace: string, id: string, type: string): Promise<NoteEntry | null>;
   warehousesList(workspace: string): Promise<Warehouse[]>;
   warehousesAdd(workspace: string, warehouse: Warehouse): Promise<{ ok: boolean; warehouses: Warehouse[]; error?: string }>;
   notesAttachWarehouse(workspace: string, id: string, warehouseId: string | null): Promise<NoteEntry | null>;
@@ -169,6 +173,7 @@ const sidebarNotesHeader = document.getElementById('sidebar-notes-header') as HT
 const notesListEl = document.getElementById('notes-list') as HTMLDivElement;
 const notesFilter = document.getElementById('notes-filter') as HTMLInputElement;
 const notesNewBtn = document.getElementById('notes-new') as HTMLButtonElement;
+const notesTypesEl = document.getElementById('notes-types') as HTMLDivElement;
 const statusRepoBtn = document.getElementById('status-repo') as HTMLButtonElement;
 const statusRepoText = document.getElementById('status-repo-text') as HTMLSpanElement;
 const statusRepoIcon = document.getElementById('status-repo-icon') as HTMLSpanElement;
@@ -191,6 +196,11 @@ let osIsDark = false;
 let sidebarMode: 'files' | 'notes' = 'files';
 let notes: NoteEntry[] = [];
 let notesFilterText = '';
+/** Currently active type filter (null = show all). #255 — type filter strip. */
+let notesTypeFilter: string | null = null;
+/** True when the active editor is rendering a typed custom view (e.g. secret).
+ * Used by `setMode` to bypass the markdown editor swap. */
+let typedViewActive = false;
 let recentFiles: string[] = [];
 let warehouses: Warehouse[] = [];
 let pinnedFolders: PinnedFolder[] = [];
@@ -1726,6 +1736,149 @@ function openLightbox(src: string, alt: string): void {
   document.body.appendChild(overlay);
 }
 
+/**
+ * #255 — secret note custom view.
+ *
+ * Renders a key/value editor where:
+ *   - the value column is `type=password` by default + a "reveal" toggle,
+ *   - each row has a copy button (clipboard.writeText) and a delete button,
+ *   - "Add row" appends a new row,
+ *   - secrets persist to YAML frontmatter (`secrets: { key: value }`) so the
+ *     underlying `.md` file stays diff-friendly and human-readable. The body
+ *     of the markdown is preserved verbatim — the secret editor only owns the
+ *     frontmatter `secrets` key.
+ *
+ * Persistence is debounced: every mutation triggers a re-write of the file
+ * via the same `mid:write-file` IPC the rest of the app uses, so notes
+ * remain in sync with disk and the existing GitHub push flow Just Works.
+ */
+function renderSecretEditor(_note: NoteEntry, fullPath: string, content: string): void {
+  root.classList.remove('viewing', 'editing', 'splitting');
+  root.classList.add('typed-view');
+
+  // Parse current secrets out of the frontmatter; tolerate missing/malformed.
+  const fm = extractFrontmatter(content);
+  const meta = (fm.meta ?? {}) as Record<string, unknown>;
+  const secrets: Record<string, string> = {};
+  if (meta.secrets && typeof meta.secrets === 'object' && !Array.isArray(meta.secrets)) {
+    for (const [k, v] of Object.entries(meta.secrets as Record<string, unknown>)) {
+      secrets[k] = String(v ?? '');
+    }
+  }
+  const body = fm.body;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-secret-editor';
+
+  const header = document.createElement('div');
+  header.className = 'mid-secret-header';
+  header.innerHTML = `
+    <span class="mid-secret-header-icon">${iconHTML('lock', 'mid-icon--sm')}</span>
+    <span class="mid-secret-header-title">Secret</span>
+    <span class="mid-secret-header-hint">Stored as YAML frontmatter in this note's .md file</span>
+  `;
+  wrap.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'mid-secret-list';
+  wrap.appendChild(list);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'mid-btn mid-secret-add';
+  addBtn.innerHTML = `${iconHTML('plus', 'mid-icon--sm')}<span>Add row</span>`;
+  addBtn.addEventListener('click', () => {
+    appendRow('', '', true);
+    persist();
+  });
+  wrap.appendChild(addBtn);
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  function persist(): void {
+    const collected: Record<string, string> = {};
+    for (const row of Array.from(list.children) as HTMLElement[]) {
+      const k = (row.querySelector('.mid-secret-key') as HTMLInputElement | null)?.value.trim() ?? '';
+      const v = (row.querySelector('.mid-secret-value') as HTMLInputElement | null)?.value ?? '';
+      if (!k) continue; // skip empty keys to avoid YAML clutter
+      collected[k] = v;
+    }
+    const nextMeta: Record<string, unknown> = { ...meta, secrets: collected };
+    const yamlText = yaml.dump(nextMeta).trimEnd();
+    const nextContent = `---\n${yamlText}\n---\n\n${body.replace(/^\n+/, '')}`;
+    currentText = nextContent;
+    void window.mid.writeFile(fullPath, nextContent).then(() => updateSaveIndicator(true));
+  }
+
+  function appendRow(initialKey: string, initialValue: string, focusKey: boolean): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'mid-secret-row';
+
+    const keyInput = document.createElement('input');
+    keyInput.type = 'text';
+    keyInput.className = 'mid-secret-key mid-settings-control';
+    keyInput.placeholder = 'name (e.g. AWS_ACCESS_KEY)';
+    keyInput.value = initialKey;
+    keyInput.spellcheck = false;
+    keyInput.autocomplete = 'off';
+
+    const valueInput = document.createElement('input');
+    valueInput.type = 'password';
+    valueInput.className = 'mid-secret-value mid-settings-control';
+    valueInput.placeholder = 'value';
+    valueInput.value = initialValue;
+    valueInput.spellcheck = false;
+    valueInput.autocomplete = 'off';
+
+    const revealBtn = document.createElement('button');
+    revealBtn.type = 'button';
+    revealBtn.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+    revealBtn.title = 'Show value';
+    revealBtn.innerHTML = iconHTML('show', 'mid-icon--sm');
+    revealBtn.addEventListener('click', () => {
+      const isPwd = valueInput.type === 'password';
+      valueInput.type = isPwd ? 'text' : 'password';
+      revealBtn.title = isPwd ? 'Hide value' : 'Show value';
+    });
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+    copyBtn.title = 'Copy value';
+    copyBtn.innerHTML = iconHTML('copy', 'mid-icon--sm');
+    copyBtn.addEventListener('click', () => {
+      void navigator.clipboard.writeText(valueInput.value).then(() => flashStatus('Copied'));
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'mid-btn mid-btn--icon mid-btn--ghost';
+    delBtn.title = 'Delete row';
+    delBtn.innerHTML = iconHTML('trash', 'mid-icon--sm');
+    delBtn.addEventListener('click', () => {
+      row.remove();
+      persist();
+    });
+
+    keyInput.addEventListener('input', persist);
+    valueInput.addEventListener('input', persist);
+    keyInput.addEventListener('blur', persist);
+    valueInput.addEventListener('blur', persist);
+
+    row.append(keyInput, valueInput, revealBtn, copyBtn, delBtn);
+    list.appendChild(row);
+    if (focusKey) keyInput.focus();
+    return row;
+  }
+
+  // Seed with existing entries; if none, leave the list empty (the user clicks
+  // "Add row" to start) — avoids dropping a phantom empty row into a freshly
+  // typed note.
+  for (const [k, v] of Object.entries(secrets)) appendRow(k, v, false);
+
+  root.replaceChildren(wrap);
+  rebuildOutline(null);
+}
+
 function renderEdit(): void {
   root.classList.remove('viewing', 'splitting');
   root.classList.add('editing');
@@ -1828,6 +1981,14 @@ function setMode(mode: Mode): void {
   btnView.classList.toggle('is-active', mode === 'view');
   btnSplit.classList.toggle('is-active', mode === 'split');
   btnEdit.classList.toggle('is-active', mode === 'edit');
+  // #255 — typed views own the root element; the markdown view/edit/split
+  // toggles don't apply. We still update the segmented-control affordance so
+  // the UI doesn't look stuck, but we leave the typed editor in place.
+  if (typedViewActive) {
+    if (mode === 'view') hideCursor();
+    rebuildOutline(null);
+    return;
+  }
   if (mode === 'view') renderView();
   else if (mode === 'edit') renderEdit();
   else renderSplit();
@@ -1848,6 +2009,10 @@ function isMermaidFile(filePath: string | null): boolean {
 }
 
 function loadFileContent(filePath: string, content: string): void {
+  // #255 — opening any non-typed file flips out of a typed view; without this
+  // the markdown editor would never come back after the user clicked away
+  // from a secret note via the file tree.
+  typedViewActive = false;
   currentText = content;
   currentPath = filePath;
   filenameEl.textContent = filePath.split('/').pop() ?? 'Untitled';
@@ -3717,7 +3882,11 @@ function setSidebarMode(mode: 'files' | 'notes'): void {
   sidebarNotesHeader.hidden = mode !== 'notes';
   treeRoot.hidden = mode !== 'files';
   notesListEl.hidden = mode !== 'notes';
-  if (mode === 'notes') void loadNotes();
+  notesTypesEl.hidden = mode !== 'notes';
+  if (mode === 'notes') {
+    renderNoteTypesStrip();
+    void loadNotes();
+  }
 }
 
 async function loadNotes(): Promise<void> {
@@ -3732,15 +3901,60 @@ async function loadNotes(): Promise<void> {
 
 function renderNotes(): void {
   if (!currentFolder) return;
-  const filtered = notesFilterText
-    ? notes.filter(n => n.title.toLowerCase().includes(notesFilterText) || n.tags.some(t => t.toLowerCase().includes(notesFilterText)))
-    : notes;
+  let filtered = notes;
+  // #255 — type filter is the cheapest cut; apply first.
+  if (notesTypeFilter) {
+    filtered = filtered.filter(n => (n.type ?? DEFAULT_TYPE_ID) === notesTypeFilter);
+  }
+  if (notesFilterText) {
+    filtered = filtered.filter(n =>
+      n.title.toLowerCase().includes(notesFilterText) ||
+      n.tags.some(t => t.toLowerCase().includes(notesFilterText)),
+    );
+  }
   if (filtered.length === 0) {
-    notesListEl.innerHTML = `<div class="mid-tree-empty">${notes.length === 0 ? 'No notes yet. Create one with + or Cmd/Ctrl+N.' : 'No matches.'}</div>`;
+    const emptyMsg = notes.length === 0
+      ? 'No notes yet. Create one with + or Cmd/Ctrl+N.'
+      : notesTypeFilter
+        ? `No ${getNoteType(notesTypeFilter).label.toLowerCase()} notes.`
+        : 'No matches.';
+    notesListEl.innerHTML = `<div class="mid-tree-empty">${escapeHTML(emptyMsg)}</div>`;
     return;
   }
   const sorted = [...filtered].sort((a, b) => b.updated.localeCompare(a.updated));
   notesListEl.replaceChildren(...sorted.map(renderNoteRow));
+}
+
+/**
+ * #255 — render the horizontal type-filter strip at the top of the notes
+ * sidebar. One button per registered type; clicking toggles the filter, and
+ * clicking the active type clears the filter.
+ */
+function renderNoteTypesStrip(): void {
+  const buttons: HTMLElement[] = [];
+  for (const t of listNoteTypes()) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mid-notes-type-chip';
+    btn.title = t.label;
+    btn.setAttribute('aria-label', `Filter: ${t.label}`);
+    btn.setAttribute('role', 'tab');
+    btn.dataset.typeId = t.id;
+    if (notesTypeFilter === t.id) {
+      btn.classList.add('is-active');
+      btn.setAttribute('aria-selected', 'true');
+      btn.style.color = t.color;
+      btn.style.borderColor = t.color;
+    }
+    btn.innerHTML = iconHTML(t.icon as IconName, 'mid-icon--sm');
+    btn.addEventListener('click', () => {
+      notesTypeFilter = notesTypeFilter === t.id ? null : t.id;
+      renderNoteTypesStrip();
+      renderNotes();
+    });
+    buttons.push(btn);
+  }
+  notesTypesEl.replaceChildren(...buttons);
 }
 
 function renderNoteRow(note: NoteEntry): HTMLElement {
@@ -3748,6 +3962,25 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
   row.className = 'mid-note-row';
   row.dataset.id = note.id;
   if (currentPath && currentPath.endsWith('/' + note.path)) row.classList.add('is-active');
+
+  // #255 — leading type chip (icon + tinted background) replaces the inline
+  // string-tag chips. The chip is also clickable shortcut to filter by type.
+  const noteType = getNoteType(note.type);
+  const typeChip = document.createElement('button');
+  typeChip.type = 'button';
+  typeChip.className = 'mid-note-type-chip';
+  typeChip.title = `Type: ${noteType.label} — click to filter`;
+  typeChip.style.color = noteType.color;
+  typeChip.style.background = `${noteType.color}20`; // 20 = ~12% alpha hex
+  typeChip.style.borderColor = `${noteType.color}40`;
+  typeChip.innerHTML = iconHTML(noteType.icon as IconName, 'mid-icon--sm');
+  typeChip.addEventListener('click', e => {
+    e.stopPropagation();
+    notesTypeFilter = notesTypeFilter === noteType.id ? null : noteType.id;
+    renderNoteTypesStrip();
+    renderNotes();
+  });
+
   const title = document.createElement('div');
   title.className = 'mid-note-title';
   title.textContent = note.title;
@@ -3763,48 +3996,14 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
     chip.textContent = `↗ ${wh?.name ?? note.warehouse}`;
     meta.appendChild(chip);
   }
-  const tagsContainer = document.createElement('div');
-  tagsContainer.className = 'mid-note-tags';
-  const renderTags = (): void => {
-    tagsContainer.replaceChildren();
-    for (const t of note.tags) {
-      const chip = document.createElement('span');
-      chip.className = 'mid-note-tag mid-note-tag-editable';
-      chip.textContent = `#${t}`;
-      const x = document.createElement('button');
-      x.className = 'mid-note-tag-x';
-      x.title = `Remove tag ${t}`;
-      x.textContent = '×';
-      x.addEventListener('click', async e => {
-        e.stopPropagation();
-        if (!currentFolder) return;
-        const next = note.tags.filter(tag => tag !== t);
-        const updated = await window.mid.notesTag(currentFolder, note.id, next);
-        if (updated) Object.assign(note, updated);
-        renderTags();
-      });
-      chip.appendChild(x);
-      tagsContainer.appendChild(chip);
-    }
-    const addBtn = document.createElement('button');
-    addBtn.className = 'mid-note-tag-add';
-    addBtn.title = 'Add tag';
-    addBtn.textContent = '+';
-    addBtn.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (!currentFolder) return;
-      const tag = await midPrompt('Add tag', 'Tag name (no spaces)', '');
-      if (!tag) return;
-      const cleaned = tag.trim().replace(/^#/, '').replace(/\s+/g, '-');
-      if (!cleaned || note.tags.includes(cleaned)) return;
-      const updated = await window.mid.notesTag(currentFolder, note.id, [...note.tags, cleaned]);
-      if (updated) Object.assign(note, updated);
-      renderTags();
-    });
-    tagsContainer.appendChild(addBtn);
-  };
-  renderTags();
-  meta.appendChild(tagsContainer);
+  // Tags now live as a compact text suffix in the meta line — the noisy
+  // editable chip stack is gone; tags can still be edited via context menu.
+  if (note.tags.length > 0) {
+    const tagsLine = document.createElement('span');
+    tagsLine.className = 'mid-note-tag-line';
+    tagsLine.textContent = note.tags.map(t => `#${t}`).join(' ');
+    meta.appendChild(tagsLine);
+  }
   const del = document.createElement('button');
   del.className = 'mid-note-delete';
   del.title = 'Delete note';
@@ -3813,7 +4012,7 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
     e.stopPropagation();
     void deleteNote(note);
   });
-  row.append(title, meta, del);
+  row.append(typeChip, title, meta, del);
   row.addEventListener('click', () => void openNote(note));
   row.addEventListener('contextmenu', e => {
     e.preventDefault();
@@ -3824,6 +4023,8 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
     openContextMenu([
       { icon: 'show', label: 'Open', action: () => void openNote(note) },
       { icon: 'edit', label: 'Rename…', action: () => void renameNote(note) },
+      { icon: noteType.icon as IconName, label: `Change type… (${noteType.label})`, action: () => openTypeChooserMenu(note, e.clientX, e.clientY) },
+      { icon: 'tag', label: 'Edit tags…', action: () => void editNoteTags(note) },
       { separator: true, label: '' },
       { icon: 'github', label: 'Push to GitHub now', action: () => void pushNote(note) },
       { icon: 'link', label: warehouseLabel, action: () => void promptAttachWarehouse(note) },
@@ -3839,6 +4040,59 @@ function renderNoteRow(note: NoteEntry): HTMLElement {
     ], e.clientX, e.clientY);
   });
   return row;
+}
+
+/**
+ * #255 — secondary context menu listing every registered type. We render it
+ * with `openContextMenu` so styling/keyboard-dismiss are reused. Each entry's
+ * label includes the type label and the menu colorises the active type.
+ */
+function openTypeChooserMenu(note: NoteEntry, x: number, y: number): void {
+  const items = listNoteTypes().map(t => ({
+    icon: t.icon as IconName,
+    label: t.label + (note.type === t.id ? '  ✓' : ''),
+    action: () => void changeNoteType(note, t),
+  }));
+  openContextMenu(items, x, y);
+}
+
+async function changeNoteType(note: NoteEntry, type: NoteType): Promise<void> {
+  if (!currentFolder) return;
+  if ((note.type ?? DEFAULT_TYPE_ID) === type.id) return;
+  // Switching INTO secret needs an empty `secrets:` block in the file so the
+  // secret editor has somewhere to read/write. We only seed if the user
+  // doesn't already have one in their existing file.
+  if (type.viewKind === 'secret') {
+    try {
+      const fullPath = `${currentFolder}/${note.path}`;
+      const content = await window.mid.readFile(fullPath);
+      if (!/^---[\s\S]*?secrets\s*:/m.test(content)) {
+        const seeded = `---\nsecrets: {}\n---\n\n${content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')}`;
+        await window.mid.writeFile(fullPath, seeded);
+      }
+    } catch { /* file gone — let setType fail loudly via a refresh */ }
+  }
+  const updated = await window.mid.notesSetType(currentFolder, note.id, type.id);
+  if (!updated) return;
+  Object.assign(note, updated);
+  renderNotes();
+  // If the user is currently viewing this note, re-open so the right view
+  // (markdown vs typed) takes effect immediately.
+  if (currentPath && currentPath.endsWith('/' + note.path)) {
+    await openNote(note);
+  }
+  flashStatus(`Type → ${type.label}`);
+}
+
+async function editNoteTags(note: NoteEntry): Promise<void> {
+  if (!currentFolder) return;
+  const current = note.tags.join(', ');
+  const next = await midPrompt('Edit tags', 'Comma-separated tags (e.g. mvp, planning)', current);
+  if (next === null) return;
+  const cleaned = next.split(',').map(t => t.trim().replace(/^#/, '').replace(/\s+/g, '-')).filter(Boolean);
+  const updated = await window.mid.notesTag(currentFolder, note.id, cleaned);
+  if (updated) Object.assign(note, updated);
+  renderNotes();
 }
 
 async function pushNote(note: NoteEntry): Promise<void> {
@@ -3984,6 +4238,22 @@ async function openNote(note: NoteEntry): Promise<void> {
   if (!currentFolder) return;
   const fullPath = `${currentFolder}/${note.path}`;
   const content = await window.mid.readFile(fullPath);
+  const noteType = getNoteType(note.type);
+  // #255 — typed custom views. Markdown is the default; named viewKinds
+  // dispatch to a dedicated renderer that owns the root element.
+  if (noteType.viewKind === 'secret') {
+    typedViewActive = true;
+    currentText = content;
+    currentPath = fullPath;
+    filenameEl.textContent = note.title;
+    highlightActiveTreeItem();
+    renderSecretEditor(note, fullPath, content);
+    updateSaveIndicator(true);
+    pushRecent(fullPath);
+    renderNotes();
+    return;
+  }
+  typedViewActive = false;
   loadFileContent(fullPath, content);
   renderNotes();
 }
@@ -3993,13 +4263,87 @@ async function promptCreateNote(): Promise<void> {
     flashStatus('Open a folder first');
     return;
   }
-  const title = await midPrompt('New note', 'Title', '');
+  // #255 — first ask for the type via the chooser modal. Cancelling the
+  // modal defaults to the plain `note` type so users who don't care about
+  // typing don't get an extra prompt; cancelling the title prompt aborts.
+  const chosen = await openNoteTypeChooserModal();
+  if (chosen === undefined) return; // user dismissed via Esc — abort entirely
+  const type = chosen ?? getNoteType(DEFAULT_TYPE_ID);
+  const title = await midPrompt(`New ${type.label.toLowerCase()}`, 'Title', '');
   if (!title) return;
-  const { entry, fullPath } = await window.mid.notesCreate(currentFolder, title);
+  const { entry, fullPath } = await window.mid.notesCreate(currentFolder, title, type.id);
   notes.push(entry);
   renderNotes();
   const content = await window.mid.readFile(fullPath);
   loadFileContent(fullPath, content);
+}
+
+/**
+ * #255 — modal type chooser. Returns:
+ *   - the chosen NoteType if the user picked one,
+ *   - `null` if the user clicked "Just a note" (default),
+ *   - `undefined` if the user dismissed the modal entirely (Esc / backdrop).
+ *
+ * We build the modal imperatively rather than wiring a `<dialog>` in HTML
+ * because the type list is data-driven and we want it to stay in sync with
+ * `listNoteTypes()` without a second source of truth.
+ */
+function openNoteTypeChooserModal(): Promise<NoteType | null | undefined> {
+  return new Promise(resolve => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'mid-type-chooser-backdrop';
+    const modal = document.createElement('div');
+    modal.className = 'mid-type-chooser';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-label', 'Choose note type');
+
+    const header = document.createElement('div');
+    header.className = 'mid-type-chooser-header';
+    header.textContent = 'New note — pick a type';
+    modal.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'mid-type-chooser-grid';
+    for (const t of listNoteTypes()) {
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'mid-type-chooser-tile';
+      tile.style.setProperty('--type-color', t.color);
+      tile.innerHTML = `
+        <span class="mid-type-chooser-icon">${iconHTML(t.icon as IconName, 'mid-icon--lg')}</span>
+        <span class="mid-type-chooser-label">${escapeHTML(t.label)}</span>
+        <span class="mid-type-chooser-desc">${escapeHTML(t.description ?? '')}</span>
+      `;
+      tile.addEventListener('click', () => { close(t); });
+      grid.appendChild(tile);
+    }
+    modal.appendChild(grid);
+
+    const footer = document.createElement('div');
+    footer.className = 'mid-type-chooser-footer';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'mid-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => close(undefined));
+    footer.appendChild(cancelBtn);
+    modal.appendChild(footer);
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') { e.preventDefault(); close(undefined); }
+    };
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(undefined); });
+    document.addEventListener('keydown', onKey);
+
+    function close(value: NoteType | null | undefined): void {
+      document.removeEventListener('keydown', onKey);
+      backdrop.remove();
+      resolve(value);
+    }
+  });
 }
 
 async function deleteNote(note: NoteEntry): Promise<void> {

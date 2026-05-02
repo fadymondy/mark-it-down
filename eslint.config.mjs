@@ -87,7 +87,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['src/**/*.ts', 'apps/electron/main.ts', 'apps/electron/preload.ts'],
+    files: ['src/**/*.ts', 'apps/electron/main.ts', 'apps/electron/preload.ts', 'apps/electron/notes/**/*.ts'],
     languageOptions: {
       parser: tsparser,
       parserOptions: { ecmaVersion: 2022, sourceType: 'module' },

@@ -39,6 +39,8 @@ export interface NoteEntry {
   updated: string;
   warehouse?: string;
   pushedAt?: string;
+  /** Note type id from the registry (#255). Defaults to `'note'`. */
+  type?: string;
 }
 
 export interface Warehouse {
@@ -69,14 +71,16 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:list-export-history', limit),
   notesList: (workspace: string): Promise<NoteEntry[]> =>
     ipcRenderer.invoke('mid:notes-list', workspace),
-  notesCreate: (workspace: string, title: string): Promise<{ entry: NoteEntry; fullPath: string }> =>
-    ipcRenderer.invoke('mid:notes-create', workspace, title),
+  notesCreate: (workspace: string, title: string, type?: string): Promise<{ entry: NoteEntry; fullPath: string }> =>
+    ipcRenderer.invoke('mid:notes-create', workspace, title, type),
   notesRename: (workspace: string, id: string, title: string): Promise<NoteEntry | null> =>
     ipcRenderer.invoke('mid:notes-rename', workspace, id, title),
   notesDelete: (workspace: string, id: string): Promise<boolean> =>
     ipcRenderer.invoke('mid:notes-delete', workspace, id),
   notesTag: (workspace: string, id: string, tags: string[]): Promise<NoteEntry | null> =>
     ipcRenderer.invoke('mid:notes-tag', workspace, id, tags),
+  notesSetType: (workspace: string, id: string, type: string): Promise<NoteEntry | null> =>
+    ipcRenderer.invoke('mid:notes-set-type', workspace, id, type),
   warehousesList: (workspace: string): Promise<Warehouse[]> =>
     ipcRenderer.invoke('mid:warehouses-list', workspace),
   warehousesAdd: (workspace: string, warehouse: Warehouse): Promise<{ ok: boolean; warehouses: Warehouse[]; error?: string }> =>
