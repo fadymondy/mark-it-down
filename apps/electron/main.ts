@@ -38,12 +38,30 @@ type MCPStatus = 'stopped' | 'running' | 'error';
 let mcpStatus: MCPStatus = 'stopped';
 let mcpLastError: string | null = null;
 
+/**
+ * Resolve a path relative to the repo root for both dev and packaged builds.
+ *
+ * Dev: returns `<cwd>/<segments>` — `process.cwd()` is the repo root.
+ *
+ * Packaged: `__dirname` is `<asar>/out/electron`, so `../../<segments>` lands at the
+ * asar's repo-root mirror. If the asset lives under `asarUnpack` (e.g. the MCP
+ * server we fork), the file is at `app.asar.unpacked/<segments>` instead — we
+ * try that path first and fall back to the asar path. This single helper
+ * replaces every `process.cwd()` lookup that broke in v0.2.0 (#270).
+ */
+function bundleAsset(...segments: string[]): string {
+  if (isDev) return path.join(process.cwd(), ...segments);
+  const asarPath = path.join(__dirname, '..', '..', ...segments);
+  const unpacked = asarPath.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
+  try { require('fs').accessSync(unpacked); return unpacked; } catch { return asarPath; }
+}
+
 function resolveAppIcon(): string | undefined {
   // In dev: use a 512px PNG so the dock/taskbar shows brand art.
   // In packaged builds, electron-builder injects the platform icon.
   if (!isDev) return undefined;
   const candidates = [
-    path.join(process.cwd(), 'build/icons/512.png'),
+    bundleAsset('build/icons/512.png'),
     path.join(__dirname, '../../build/icons/512.png'),
   ];
   for (const p of candidates) {
@@ -163,7 +181,7 @@ ipcMain.handle('mid:list-folder-md', async (_e, folderPath: string) => {
 ipcMain.handle('mid:read-app-state', async () => readAppState());
 
 ipcMain.handle('mid:read-renderer-styles', async (): Promise<string> => {
-  const dir = path.join(process.cwd(), 'out/electron/renderer');
+  const dir = bundleAsset('out/electron/renderer');
   const files = ['tokens.css', 'icons.css', 'primitives.css', 'katex.css', 'renderer.css'];
   const parts: string[] = [];
   for (const f of files) {
@@ -675,6 +693,9 @@ function broadcastUpdateState(): void {
   if (mainWindow) {
     mainWindow.webContents.send('mid:update-state', updateState);
   }
+  // Reflect the change in the tray menu so "Check for Updates…" → "Downloading…"
+  // → "Restart and install vX.Y.Z" all without the user re-opening the menu.
+  rebuildTrayMenu();
 }
 
 interface AppState {
@@ -693,16 +714,9 @@ interface AppState {
 }
 
 function resolveMCPServerScript(): string {
-  // In dev: out/mcp/server.js sits in the repo. Packaged: ships under app resources.
-  const candidates = [
-    path.join(process.cwd(), 'out/mcp/server.js'),
-    path.join(__dirname, '../../mcp/server.js'),
-    path.join(__dirname, '../mcp/server.js'),
-  ];
-  for (const p of candidates) {
-    try { require('fs').accessSync(p); return p; } catch { /* try next */ }
-  }
-  return '';
+  // bundleAsset() handles dev (cwd) and packaged (asar.unpacked) both.
+  const p = bundleAsset('out/mcp/server.js');
+  try { require('fs').accessSync(p); return p; } catch { return ''; }
 }
 
 function resolveMCPNotesDir(): string {
@@ -773,11 +787,11 @@ function stopMCP(): void {
 }
 
 function buildTray(): void {
-  const iconPath = path.join(process.cwd(), 'media/brand/iconTemplate.png');
+  const iconPath = bundleAsset('media/brand/iconTemplate.png');
   let icon = nativeImage.createFromPath(iconPath);
   if (icon.isEmpty()) {
     // Fallback: use the colored 16-px PNG.
-    icon = nativeImage.createFromPath(path.join(process.cwd(), 'build/icons/16.png'));
+    icon = nativeImage.createFromPath(bundleAsset('build/icons/16.png'));
   }
   if (process.platform === 'darwin') icon.setTemplateImage(true);
   tray = new Tray(icon);
@@ -802,6 +816,44 @@ function rebuildTrayMenu(): void {
     { type: 'separator' },
     { label: 'Show window', click: () => mainWindow?.show() },
     { label: 'Hide window', click: () => mainWindow?.hide() },
+    { type: 'separator' },
+    {
+      label: updateState.downloaded
+        ? `Restart and install v${updateState.version}`
+        : updateState.available
+          ? `Downloading v${updateState.version}…`
+          : 'Check for Updates…',
+      enabled: !updateState.available || updateState.downloaded,
+      click: () => {
+        if (updateState.downloaded) {
+          autoUpdater.quitAndInstall(true, true);
+          return;
+        }
+        if (isDev) {
+          void dialog.showMessageBox({ type: 'info', title: 'Mark It Down', message: 'Auto-update is disabled in dev mode.' });
+          return;
+        }
+        autoUpdater.checkForUpdates().then(result => {
+          if (!result?.updateInfo) {
+            void dialog.showMessageBox({ type: 'info', title: 'Mark It Down', message: `You're on the latest version (v${app.getVersion()}).` });
+          }
+        }).catch(err => {
+          const msg = err?.message ?? String(err);
+          // `--dir` test builds and dev launches don't ship app-update.yml.
+          // Distinguish those from real network / GitHub failures.
+          if (msg.includes('app-update.yml')) {
+            void dialog.showMessageBox({
+              type: 'info',
+              title: 'Mark It Down',
+              message: 'Auto-update is only available in published releases.',
+              detail: 'You\'re running a local build. Download the signed release from GitHub to get over-the-air updates.',
+            });
+          } else {
+            void dialog.showMessageBox({ type: 'error', title: 'Mark It Down', message: 'Update check failed', detail: msg });
+          }
+        });
+      },
+    },
     { type: 'separator' },
     { label: 'Quit Mark It Down', click: () => app.quit() },
   ]);
