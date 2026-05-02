@@ -117,9 +117,51 @@ function applySchema(d: Database.Database): void {
       file_path TEXT NOT NULL,
       exported_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS open_tabs (
+      strip_id INTEGER NOT NULL,
+      idx INTEGER NOT NULL,
+      path TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (strip_id, idx)
+    );
     CREATE INDEX IF NOT EXISTS idx_recent_files_opened ON recent_files(opened_at DESC);
     CREATE INDEX IF NOT EXISTS idx_export_history_exported ON export_history(exported_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_open_tabs_strip ON open_tabs(strip_id, idx);
   `);
+}
+
+/* ── open tabs (#287) ───────────────────────────────────── */
+
+export interface OpenTabRow {
+  strip_id: number;
+  idx: number;
+  path: string;
+  active: number;
+}
+
+/**
+ * Returns persisted tabs ordered by (strip_id, idx) so the renderer can rebuild
+ * the strip layout deterministically across restarts.
+ */
+export function listOpenTabs(): OpenTabRow[] {
+  return getDB()
+    .prepare('SELECT strip_id, idx, path, active FROM open_tabs ORDER BY strip_id ASC, idx ASC')
+    .all() as OpenTabRow[];
+}
+
+/**
+ * Atomically replace the entire persisted tab set. The renderer is the source
+ * of truth for layout — we wipe and rewrite rather than diff because the table
+ * is small (typically <30 rows) and the transaction keeps the swap consistent.
+ */
+export function replaceOpenTabs(rows: OpenTabRow[]): void {
+  const d = getDB();
+  const tx = d.transaction((all: OpenTabRow[]) => {
+    d.prepare('DELETE FROM open_tabs').run();
+    const stmt = d.prepare('INSERT INTO open_tabs(strip_id, idx, path, active) VALUES(?, ?, ?, ?)');
+    for (const r of all) stmt.run(r.strip_id, r.idx, r.path, r.active ? 1 : 0);
+  });
+  tx(rows);
 }
 
 /* ── settings (JSON-blob valued) ────────────────────────── */

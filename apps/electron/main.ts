@@ -19,6 +19,9 @@ import {
   replaceWorkspaces,
   recordExport,
   listExportHistory,
+  listOpenTabs,
+  replaceOpenTabs,
+  type OpenTabRow,
 } from './db';
 import { DEFAULT_TYPE_ID, getNoteType } from './notes/note-types';
 
@@ -630,6 +633,22 @@ ipcMain.handle('mid:record-export', async (_e, row: { id: string; sourcePath?: s
 ipcMain.handle('mid:list-export-history', async (_e, limit?: number) => {
   try { return listExportHistory(typeof limit === 'number' ? limit : 50); }
   catch { return []; }
+});
+
+/**
+ * Open-tabs persistence (#287). The renderer owns the in-memory model and
+ * snapshots the whole set on every meaningful mutation; we wipe-and-replace
+ * because the row count is small and the transaction keeps it atomic.
+ */
+ipcMain.handle('mid:tabs-list', async () => {
+  try { return listOpenTabs(); }
+  catch { return []; }
+});
+
+ipcMain.handle('mid:tabs-replace', async (_e, rows: OpenTabRow[]) => {
+  if (!Array.isArray(rows)) return false;
+  try { replaceOpenTabs(rows); return true; }
+  catch (err) { console.warn('[mid] tabs-replace failed:', (err as Error).message); return false; }
 });
 
 ipcMain.handle('mid:save-as', async (_e, defaultName: string, content: string | ArrayBuffer, filters: Electron.FileFilter[]) => {

@@ -142,6 +142,9 @@ interface Mid {
   onMenuOpenFolder(cb: () => void): () => void;
   onMenuSave(cb: () => void): () => void;
   onMenuExport(cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx' | 'docx-gdocs') => void): () => void;
+  // Tab persistence (#287)
+  tabsList(): Promise<{ strip_id: number; idx: number; path: string; active: number }[]>;
+  tabsReplace(rows: { strip_id: number; idx: number; path: string; active: number }[]): Promise<boolean>;
 }
 declare const window: Window & { mid: Mid };
 
@@ -184,6 +187,7 @@ const statusOutline = document.getElementById('status-outline') as HTMLButtonEle
 const outlineRail = document.getElementById('outline-rail') as HTMLElement;
 const outlineList = document.getElementById('outline-list') as HTMLElement;
 const outlineCloseBtn = document.getElementById('outline-close') as HTMLButtonElement;
+const tabstripEl = document.getElementById('tabstrip') as HTMLDivElement;
 
 let currentText = '';
 let currentPath: string | null = null;
@@ -211,6 +215,398 @@ const outlineLinkByHeadingId = new Map<string, HTMLElement>();
 const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
 const treeCache = new Map<string, TreeEntry[]>();
+
+// ─── Tab manager (#287) ────────────────────────────────────────────────────────
+// VSCode-style multi-file editor strip. Each tab carries its own text/path/dirty/
+// scroll state; the active tab's text + path are mirrored into the legacy
+// `currentText`/`currentPath` globals so the rest of the renderer (markdown
+// rendering, save, export, spotlight, etc.) keeps working without a sweep.
+//
+// Strip 0 is the only strip in the MVP. The model carries `stripId` so a future
+// split-screen patch can introduce strip 1 without changing the wire format
+// (the SQLite `open_tabs` table is already (strip_id, idx) keyed).
+//
+// Persistence: every state mutation calls `scheduleTabsPersist`, which debounces
+// a snapshot write into the `open_tabs` table via the IPC bridge.
+interface FileTab {
+  stripId: number;
+  path: string;
+  text: string;
+  dirty: boolean;
+  /** Last known scrollTop of the editor textarea (or preview, in view mode).
+   * Restored on tab focus so reading position survives swaps. */
+  scrollTop: number;
+}
+
+const tabs: FileTab[] = [];
+let activeTabIndex = -1;
+/** LIFO of recently-closed tab paths for Cmd+Shift+T. Capped at 20 entries. */
+const recentlyClosedPaths: string[] = [];
+let tabsPersistTimer: number | null = null;
+/** True while the renderer is rehydrating tabs at startup — suppresses persist
+ * thrash and lets us assemble the strip from disk without a flicker. */
+let tabsHydrating = false;
+
+function findTabIndex(filePath: string): number {
+  return tabs.findIndex(t => t.path === filePath);
+}
+
+function activeTab(): FileTab | null {
+  return activeTabIndex >= 0 && activeTabIndex < tabs.length ? tabs[activeTabIndex] : null;
+}
+
+/** Sync the editor area's mirror state from the active tab into the legacy
+ * `currentText` / `currentPath` globals + filename label. */
+function syncMirrorFromActiveTab(): void {
+  const t = activeTab();
+  if (t) {
+    currentText = t.text;
+    currentPath = t.path;
+    filenameEl.textContent = t.path.split('/').pop() ?? 'Untitled';
+  } else {
+    currentText = '';
+    currentPath = null;
+    filenameEl.textContent = 'Untitled';
+  }
+}
+
+/** Push the current legacy `currentText` back onto the active tab. Call this
+ * before swapping tabs so unsaved edits survive the swap. */
+function syncActiveTabFromMirror(): void {
+  const t = activeTab();
+  if (!t) return;
+  if (t.text !== currentText) {
+    t.text = currentText;
+    if (!t.dirty) {
+      t.dirty = true;
+      renderTabstrip();
+    }
+  }
+}
+
+/** Open a new tab or focus an existing one for `filePath`.
+ * Returns the active tab. */
+function openTab(filePath: string, content: string): FileTab {
+  // Save scroll + edits on the outgoing tab before we swap.
+  syncActiveTabFromMirror();
+  captureScrollPosition();
+
+  const existing = findTabIndex(filePath);
+  if (existing !== -1) {
+    activeTabIndex = existing;
+    const t = tabs[existing];
+    // Only refresh content from disk on a focus if the user hasn't dirtied it.
+    if (!t.dirty) t.text = content;
+    return t;
+  }
+  const tab: FileTab = { stripId: 0, path: filePath, text: content, dirty: false, scrollTop: 0 };
+  tabs.push(tab);
+  activeTabIndex = tabs.length - 1;
+  return tab;
+}
+
+/** Close the tab at `idx`. Adjusts `activeTabIndex` and pushes the path onto
+ * the recently-closed stack so Cmd+Shift+T can resurrect it. */
+function closeTabAt(idx: number): void {
+  if (idx < 0 || idx >= tabs.length) return;
+  const closed = tabs[idx];
+  recentlyClosedPaths.push(closed.path);
+  if (recentlyClosedPaths.length > 20) recentlyClosedPaths.shift();
+  tabs.splice(idx, 1);
+  if (tabs.length === 0) {
+    activeTabIndex = -1;
+    syncMirrorFromActiveTab();
+    if (currentMode === 'view') renderView();
+    else if (currentMode === 'edit') renderEdit();
+    else renderSplit();
+    renderTabstrip();
+    schedulePersistTabs();
+    return;
+  }
+  // Keep the same visual position when the active tab closes; clamp at end.
+  if (idx < activeTabIndex) {
+    activeTabIndex--;
+  } else if (idx === activeTabIndex) {
+    if (activeTabIndex >= tabs.length) activeTabIndex = tabs.length - 1;
+  }
+  syncMirrorFromActiveTab();
+  // Re-render the editor area against the new active tab.
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  highlightActiveTreeItem();
+  updateWordCount();
+  updateSaveIndicator(true);
+  restoreScrollPosition();
+  renderTabstrip();
+  schedulePersistTabs();
+}
+
+/** Cycle to next/previous tab. `delta` is +1 or -1. Wraps around. */
+function cycleTab(delta: number): void {
+  if (tabs.length === 0) return;
+  syncActiveTabFromMirror();
+  captureScrollPosition();
+  const next = ((activeTabIndex + delta) % tabs.length + tabs.length) % tabs.length;
+  focusTabAt(next);
+}
+
+function focusTabAt(idx: number): void {
+  if (idx < 0 || idx >= tabs.length) return;
+  if (idx === activeTabIndex) return;
+  syncActiveTabFromMirror();
+  captureScrollPosition();
+  activeTabIndex = idx;
+  syncMirrorFromActiveTab();
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  highlightActiveTreeItem();
+  updateWordCount();
+  updateSaveIndicator(!activeTab()?.dirty);
+  restoreScrollPosition();
+  renderTabstrip();
+  schedulePersistTabs();
+}
+
+/** Reopen the most-recently-closed tab. */
+async function reopenLastClosedTab(): Promise<void> {
+  while (recentlyClosedPaths.length > 0) {
+    const p = recentlyClosedPaths.pop()!;
+    if (findTabIndex(p) !== -1) continue; // already open — try next
+    try {
+      const content = await window.mid.readFile(p);
+      loadFileContent(p, content);
+      return;
+    } catch {
+      // file gone — fall through to try the next entry
+      continue;
+    }
+  }
+  flashStatus('Nothing to reopen');
+}
+
+/** Capture the editor or preview scroll position into the active tab. */
+function captureScrollPosition(): void {
+  const t = activeTab();
+  if (!t) return;
+  const scroller =
+    root.querySelector<HTMLElement>('textarea') ??
+    root.querySelector<HTMLElement>('.mid-preview') ??
+    root;
+  if (scroller) t.scrollTop = scroller.scrollTop || 0;
+}
+
+/** Restore the active tab's scroll position into whichever scroller is live. */
+function restoreScrollPosition(): void {
+  const t = activeTab();
+  if (!t) return;
+  // Defer one frame so the freshly-rendered DOM has its layout. Without this
+  // the assignment lands before the scroller has measurable height.
+  requestAnimationFrame(() => {
+    const scroller =
+      root.querySelector<HTMLElement>('textarea') ??
+      root.querySelector<HTMLElement>('.mid-preview') ??
+      root;
+    if (scroller) scroller.scrollTop = t.scrollTop;
+  });
+}
+
+/** Move the tab at `from` to position `to` (insert-before semantics). */
+function moveTab(from: number, to: number): void {
+  if (from === to || from < 0 || from >= tabs.length) return;
+  const [moved] = tabs.splice(from, 1);
+  // After removing `from`, the target index shifts left by one if `to` was
+  // after `from`; clamp into bounds.
+  const insertAt = Math.max(0, Math.min(tabs.length, to > from ? to - 1 : to));
+  tabs.splice(insertAt, 0, moved);
+  // Track the active tab through the move so focus survives a drag.
+  if (from === activeTabIndex) {
+    activeTabIndex = insertAt;
+  } else if (from < activeTabIndex && insertAt >= activeTabIndex) {
+    activeTabIndex--;
+  } else if (from > activeTabIndex && insertAt <= activeTabIndex) {
+    activeTabIndex++;
+  }
+  renderTabstrip();
+  schedulePersistTabs();
+}
+
+function renderTabstrip(): void {
+  if (!tabstripEl) return;
+  if (tabs.length === 0) {
+    tabstripEl.hidden = true;
+    tabstripEl.replaceChildren();
+    return;
+  }
+  tabstripEl.hidden = false;
+  const frag = document.createDocumentFragment();
+  tabs.forEach((tab, idx) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mid-tab' + (idx === activeTabIndex ? ' is-active' : '');
+    btn.dataset.tabIndex = String(idx);
+    btn.dataset.tabPath = tab.path;
+    btn.draggable = true;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', String(idx === activeTabIndex));
+    btn.title = tab.path;
+
+    const fileMatch = iconForFile(tab.path.split('/').pop() ?? '', 'file');
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'mid-tab__icon';
+    iconWrap.innerHTML = iconHTML(fileMatch.icon, 'mid-icon--sm');
+    if (fileMatch.color) {
+      const svg = iconWrap.firstElementChild as HTMLElement | null;
+      if (svg) svg.style.color = fileMatch.color;
+    }
+
+    const label = document.createElement('span');
+    label.className = 'mid-tab__label' + (tab.dirty ? ' is-dirty' : '');
+    label.textContent = tab.path.split('/').pop() ?? tab.path;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'mid-tab__close';
+    closeBtn.title = 'Close (Cmd/Ctrl+W)';
+    closeBtn.setAttribute('aria-label', `Close ${tab.path.split('/').pop() ?? tab.path}`);
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      closeTabAt(idx);
+    });
+
+    btn.addEventListener('click', () => focusTabAt(idx));
+    // Middle-click closes the tab — VSCode parity.
+    btn.addEventListener('mousedown', e => {
+      if (e.button === 1) {
+        e.preventDefault();
+        closeTabAt(idx);
+      }
+    });
+    btn.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      openContextMenu([
+        { icon: 'x', label: 'Close', action: () => closeTabAt(idx) },
+        { icon: 'x', label: 'Close others', action: () => closeOtherTabs(idx) },
+        { icon: 'x', label: 'Close all', action: () => closeAllTabs() },
+        { separator: true, label: '' },
+        { icon: 'folder-open', label: 'Reveal in Finder', action: () => void window.mid.openExternal(`file://${tab.path.replace(/\/[^/]+$/, '')}`) },
+      ], e.clientX, e.clientY);
+    });
+
+    // Drag-to-reorder within the strip. We use HTML5 DnD; the dragover handler
+    // computes whether the cursor sits in the left or right half of the target
+    // tab to draw the appropriate insertion-line indicator.
+    btn.addEventListener('dragstart', ev => {
+      ev.dataTransfer?.setData('application/x-mid-tab', String(idx));
+      ev.dataTransfer!.effectAllowed = 'move';
+      btn.classList.add('is-dragging');
+    });
+    btn.addEventListener('dragend', () => {
+      btn.classList.remove('is-dragging');
+      tabstripEl.querySelectorAll('.mid-tab').forEach(el => {
+        el.classList.remove('is-drop-before', 'is-drop-after');
+      });
+    });
+    btn.addEventListener('dragover', ev => {
+      if (!ev.dataTransfer?.types.includes('application/x-mid-tab')) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      const rect = btn.getBoundingClientRect();
+      const before = ev.clientX < rect.left + rect.width / 2;
+      tabstripEl.querySelectorAll('.mid-tab').forEach(el => {
+        el.classList.remove('is-drop-before', 'is-drop-after');
+      });
+      btn.classList.add(before ? 'is-drop-before' : 'is-drop-after');
+    });
+    btn.addEventListener('dragleave', () => {
+      btn.classList.remove('is-drop-before', 'is-drop-after');
+    });
+    btn.addEventListener('drop', ev => {
+      const raw = ev.dataTransfer?.getData('application/x-mid-tab');
+      if (raw == null || raw === '') return;
+      ev.preventDefault();
+      const from = parseInt(raw, 10);
+      if (Number.isNaN(from)) return;
+      const rect = btn.getBoundingClientRect();
+      const before = ev.clientX < rect.left + rect.width / 2;
+      const to = before ? idx : idx + 1;
+      moveTab(from, to);
+    });
+
+    btn.append(iconWrap, label, closeBtn);
+    frag.appendChild(btn);
+  });
+  tabstripEl.replaceChildren(frag);
+  // Scroll the active tab into view (e.g. after Cmd+Alt+Right cycles past the
+  // visible window).
+  const activeEl = tabstripEl.querySelector<HTMLElement>('.mid-tab.is-active');
+  activeEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+}
+
+function closeOtherTabs(keepIdx: number): void {
+  if (keepIdx < 0 || keepIdx >= tabs.length) return;
+  const keepPath = tabs[keepIdx].path;
+  for (let i = tabs.length - 1; i >= 0; i--) {
+    if (tabs[i].path !== keepPath) closeTabAt(i);
+  }
+}
+
+function closeAllTabs(): void {
+  for (let i = tabs.length - 1; i >= 0; i--) closeTabAt(i);
+}
+
+function schedulePersistTabs(): void {
+  if (tabsHydrating) return;
+  if (tabsPersistTimer !== null) window.clearTimeout(tabsPersistTimer);
+  tabsPersistTimer = window.setTimeout(() => {
+    tabsPersistTimer = null;
+    const rows = tabs.map((t, i) => ({
+      strip_id: t.stripId,
+      idx: i,
+      path: t.path,
+      active: i === activeTabIndex ? 1 : 0,
+    }));
+    void window.mid.tabsReplace(rows).catch(() => undefined);
+  }, 200);
+}
+
+/** Restore tabs from SQLite at startup. Best-effort: a missing file is dropped
+ * silently so a restart doesn't crash the renderer. */
+async function hydrateTabs(): Promise<void> {
+  let rows: { strip_id: number; idx: number; path: string; active: number }[];
+  try { rows = await window.mid.tabsList(); }
+  catch { return; }
+  if (!rows || rows.length === 0) return;
+  tabsHydrating = true;
+  let pendingActive = -1;
+  for (const r of rows) {
+    try {
+      const content = await window.mid.readFile(r.path);
+      const tab: FileTab = { stripId: r.strip_id, path: r.path, text: content, dirty: false, scrollTop: 0 };
+      tabs.push(tab);
+      if (r.active) pendingActive = tabs.length - 1;
+    } catch {
+      // file gone — skip it; the next persist will drop it from the table.
+      continue;
+    }
+  }
+  tabsHydrating = false;
+  if (tabs.length === 0) return;
+  activeTabIndex = pendingActive >= 0 ? pendingActive : 0;
+  syncMirrorFromActiveTab();
+  highlightActiveTreeItem();
+  updateWordCount();
+  updateSaveIndicator(true);
+  renderTabstrip();
+  // Re-render the editor area against the active tab.
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  // Persist a clean snapshot (drops missing files from the table).
+  schedulePersistTabs();
+}
 
 function applyTheme(isDark: boolean): void {
   osIsDark = isDark;
@@ -1941,6 +2337,13 @@ function buildEditor(): HTMLTextAreaElement {
     currentText = ta.value;
     updateWordCount();
     updateSaveIndicator(false);
+    // #287 — mark the active tab dirty + flash the strip so the unsaved dot
+    // appears immediately as the user types.
+    const t = activeTab();
+    if (t && (t.text !== ta.value || !t.dirty)) {
+      t.text = ta.value;
+      if (!t.dirty) { t.dirty = true; renderTabstrip(); }
+    }
     maybeShowMermaidPopout(ta);
   });
   const onCursor = (): void => {
@@ -2019,13 +2422,20 @@ function loadFileContent(filePath: string, content: string): void {
   // the markdown editor would never come back after the user clicked away
   // from a secret note via the file tree.
   typedViewActive = false;
-  currentText = content;
-  currentPath = filePath;
-  filenameEl.textContent = filePath.split('/').pop() ?? 'Untitled';
+  // #287 — route the open through the tab manager. `openTab` either focuses an
+  // existing tab (preserving its dirty edits) or appends a new one and makes
+  // it active. We then mirror the active-tab state into the legacy globals so
+  // the rest of the renderer keeps reading/writing through `currentText` and
+  // `currentPath` unchanged.
+  openTab(filePath, content);
+  syncMirrorFromActiveTab();
   highlightActiveTreeItem();
   setMode(currentMode);
   updateWordCount();
-  updateSaveIndicator(true);
+  updateSaveIndicator(!activeTab()?.dirty);
+  restoreScrollPosition();
+  renderTabstrip();
+  schedulePersistTabs();
   pushRecent(filePath);
 }
 
@@ -2878,6 +3288,10 @@ async function saveFile(): Promise<void> {
     await window.mid.writeFile(currentPath, currentText);
     flashStatus(`Saved ${currentPath.split('/').pop()}`);
     updateSaveIndicator(true);
+    // #287 — clear the active tab's dirty bit + refresh the strip so the dot
+    // disappears immediately on save.
+    const t = activeTab();
+    if (t) { t.text = currentText; t.dirty = false; renderTabstrip(); }
     return;
   }
   const saved = await window.mid.saveFileDialog('untitled.md', currentText);
@@ -3946,6 +4360,47 @@ document.addEventListener('keydown', e => {
       e.preventDefault();
       setSidebarMode('notes');
       void promptCreateNote();
+    }
+  }
+});
+
+// Tab manager keyboard shortcuts (#287). We intentionally listen at document
+// level so the bindings fire from inside the textarea editor too. Cmd+Shift+T
+// pulls the most-recently-closed tab back; Cmd+W closes the active tab; the
+// Cmd+Alt+Arrow pair cycles, matching VSCode's "Next/Previous Editor in Group".
+document.addEventListener('keydown', e => {
+  const isMod = e.metaKey || e.ctrlKey;
+  if (!isMod) return;
+  // Cmd/Ctrl+W — close active tab. (Electron's accelerator system also closes
+  // the window with the same chord; the tab close runs first via this DOM
+  // listener and we preventDefault to swallow the menu accelerator.)
+  if (e.key.toLowerCase() === 'w' && !e.shiftKey && !e.altKey) {
+    if (tabs.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeTabAt(activeTabIndex);
+    }
+    return;
+  }
+  // Cmd/Ctrl+Shift+T — reopen the most-recently-closed tab.
+  if (e.key.toLowerCase() === 't' && e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    void reopenLastClosedTab();
+    return;
+  }
+  // Cmd/Ctrl+Alt+ArrowRight / ArrowLeft — cycle tabs.
+  if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    if (tabs.length > 1) {
+      e.preventDefault();
+      cycleTab(e.key === 'ArrowRight' ? 1 : -1);
+    }
+    return;
+  }
+  // Cmd/Ctrl+Tab style — also support Cmd+PageDown / PageUp for trackpad users.
+  if (e.key === 'PageDown' || e.key === 'PageUp') {
+    if (tabs.length > 1) {
+      e.preventDefault();
+      cycleTab(e.key === 'PageDown' ? 1 : -1);
     }
   }
 });
@@ -5111,6 +5566,9 @@ void window.mid.readAppState().then(async state => {
     }
   }
   setMode(currentMode);
+  // #287 — restore the open-tabs strip from SQLite. Done after the folder
+  // applies so the tree's active-row highlight has a chance to attach.
+  await hydrateTabs();
   // #303 — if the launched workspace has no warehouse, force-open the
   // onboarding modal regardless of the dismissed list. The dismissed list
   // only suppresses *during* a session (re-triggers from the welcome CTA,
