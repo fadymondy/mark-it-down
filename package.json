@@ -121,7 +121,26 @@
         "repo": "mark-it-down",
         "releaseType": "release"
       }
-    ]
+    ],
+    "mas": {
+      "category": "public.app-category.productivity",
+      "icon": "media/brand/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mas.plist",
+      "entitlementsInherit": "build/entitlements.mas.inherit.plist",
+      "provisioningProfile": "build/embedded.provisionprofile",
+      "type": "distribution",
+      "target": [
+        {
+          "target": "mas",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    }
   },
   "activationEvents": [],
   "contributes": {
