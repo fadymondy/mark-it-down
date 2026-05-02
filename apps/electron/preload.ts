@@ -27,6 +27,7 @@ export interface AppState {
   pinnedFolders?: { path: string; name: string; icon: string; color: string }[];
   workspaces?: { id: string; name: string; path: string }[];
   activeWorkspace?: string;
+  warehouseOnboardingDismissed?: string[];
 }
 
 export interface NoteEntry {
@@ -78,6 +79,8 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:notes-tag', workspace, id, tags),
   warehousesList: (workspace: string): Promise<Warehouse[]> =>
     ipcRenderer.invoke('mid:warehouses-list', workspace),
+  warehousesAdd: (workspace: string, warehouse: Warehouse): Promise<{ ok: boolean; warehouses: Warehouse[]; error?: string }> =>
+    ipcRenderer.invoke('mid:warehouses-add', workspace, warehouse),
   notesAttachWarehouse: (workspace: string, id: string, warehouseId: string | null): Promise<NoteEntry | null> =>
     ipcRenderer.invoke('mid:notes-attach-warehouse', workspace, id, warehouseId),
   notesMarkPushed: (workspace: string, id: string): Promise<NoteEntry | null> =>

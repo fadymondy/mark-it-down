@@ -168,6 +168,26 @@
     <button id="mid-mermaid-editor-save" class="mid-btn mid-btn--primary">Save</button>
   </footer>
 </dialog>
+<dialog id="mid-warehouse-onboarding" class="mid-onboarding" aria-labelledby="mid-onboarding-title">
+  <div class="mid-onboarding-frame">
+    <header class="mid-onboarding-header">
+      <h2 class="mid-onboarding-title" id="mid-onboarding-title">Set up your notes warehouse</h2>
+      <button id="mid-onboarding-close" class="mid-btn mid-btn--icon mid-btn--ghost" title="Skip" data-icon="x"></button>
+    </header>
+    <ol class="mid-onboarding-steps" id="mid-onboarding-steps">
+      <li class="is-active" data-step="gh">1 &middot; GitHub CLI</li>
+      <li data-step="auth">2 &middot; Sign in</li>
+      <li data-step="repo">3 &middot; Pick a repo</li>
+    </ol>
+    <div class="mid-onboarding-body" id="mid-onboarding-body"></div>
+    <footer class="mid-onboarding-footer">
+      <button id="mid-onboarding-skip" class="mid-btn">Skip</button>
+      <span style="flex:1"></span>
+      <button id="mid-onboarding-back" class="mid-btn" hidden>Back</button>
+      <button id="mid-onboarding-next" class="mid-btn mid-btn--primary" hidden>Next</button>
+    </footer>
+  </div>
+</dialog>
 <dialog id="mid-dialog" class="mid-dialog">
   <form method="dialog" class="mid-dialog-form">
     <h3 class="mid-dialog-title" id="mid-dialog-title"></h3>

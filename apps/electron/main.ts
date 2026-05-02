@@ -313,6 +313,33 @@ ipcMain.handle('mid:warehouses-list', async (_e, workspace: string): Promise<War
   }
 });
 
+/**
+ * Append (or upsert by id) a warehouse to `<workspace>/.mid/warehouse.json`.
+ * Creates the file + directory if missing. The first warehouse persisted via
+ * this handler doubles as the active warehouse for the workspace until the
+ * user attaches notes to a different one — the onboarding flow (#236) relies
+ * on that to drop the user straight into a working state.
+ */
+ipcMain.handle('mid:warehouses-add', async (_e, workspace: string, warehouse: Warehouse): Promise<{ ok: boolean; warehouses: Warehouse[]; error?: string }> => {
+  try {
+    const dir = path.join(workspace, NOTES_DIR);
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, 'warehouse.json');
+    let existing: Warehouse[] = [];
+    try {
+      const raw = await fs.readFile(file, 'utf8');
+      const parsed = JSON.parse(raw) as { warehouses?: Warehouse[] };
+      if (Array.isArray(parsed.warehouses)) existing = parsed.warehouses;
+    } catch { /* missing/malformed → start fresh */ }
+    const next = existing.filter(w => w.id !== warehouse.id);
+    next.push(warehouse);
+    await fs.writeFile(file, JSON.stringify({ warehouses: next }, null, 2), 'utf8');
+    return { ok: true, warehouses: next };
+  } catch (err) {
+    return { ok: false, warehouses: [], error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('mid:notes-attach-warehouse', async (_e, workspace: string, id: string, warehouseId: string | null) => {
   const notes = await readNotes(workspace);
   const note = notes.find(n => n.id === id);
@@ -711,6 +738,13 @@ interface AppState {
   workspaces?: { id: string; name: string; path: string }[];
   activeWorkspace?: string;
   ghToken?: string;
+  /**
+   * Workspace ids whose user has dismissed the warehouse onboarding modal
+   * at least once. Tracked so the modal doesn't reappear on every launch
+   * for users who deliberately skip — they can re-enter from the status-bar
+   * repo button context menu. See #236.
+   */
+  warehouseOnboardingDismissed?: string[];
 }
 
 function resolveMCPServerScript(): string {
