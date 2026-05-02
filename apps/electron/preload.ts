@@ -136,4 +136,34 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.on('mid:menu-export', handler);
     return () => ipcRenderer.removeListener('mid:menu-export', handler);
   },
+  // ── Importer plugin system (#246) ──────────────────────────────────────────
+  importersList: (): Promise<{ id: string; name: string; icon: string; supportedFormats?: string[]; description?: string }[]> =>
+    ipcRenderer.invoke('mid:importers-list'),
+  importersRun: (importerId: string, input: string, workspaceFolder: string): Promise<{ ok: boolean; runId?: string; error?: string }> =>
+    ipcRenderer.invoke('mid:importers-run', importerId, input, workspaceFolder),
+  onImportersProgress: (cb: (e: { runId: string; current: number; note: { title: string; path: string } }) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { runId: string; current: number; note: { title: string; path: string } }) => cb(payload);
+    ipcRenderer.on('mid:importers-progress', handler);
+    return () => ipcRenderer.removeListener('mid:importers-progress', handler);
+  },
+  onImportersDone: (cb: (e: { runId: string; count: number }) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { runId: string; count: number }) => cb(payload);
+    ipcRenderer.on('mid:importers-done', handler);
+    return () => ipcRenderer.removeListener('mid:importers-done', handler);
+  },
+  onImportersError: (cb: (e: { runId: string; error: string }) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { runId: string; error: string }) => cb(payload);
+    ipcRenderer.on('mid:importers-error', handler);
+    return () => ipcRenderer.removeListener('mid:importers-error', handler);
+  },
+  onImportersLog: (cb: (e: { runId: string; msg: string }) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { runId: string; msg: string }) => cb(payload);
+    ipcRenderer.on('mid:importers-log', handler);
+    return () => ipcRenderer.removeListener('mid:importers-log', handler);
+  },
+  onMenuImport: (cb: () => void): (() => void) => {
+    const handler = (): void => cb();
+    ipcRenderer.on('mid:menu-import', handler);
+    return () => ipcRenderer.removeListener('mid:menu-import', handler);
+  },
 });

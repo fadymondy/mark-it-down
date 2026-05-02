@@ -129,6 +129,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(buildMenu());
   buildTray();
   startMCP();
+  void initImporters();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
@@ -1060,6 +1061,10 @@ function buildMenu(): Menu {
         },
         { type: 'separator' },
         {
+          label: 'Import from…',
+          click: () => mainWindow?.webContents.send('mid:menu-import'),
+        },
+        {
           label: 'Export',
           submenu: [
             { label: 'Markdown source…', click: () => mainWindow?.webContents.send('mid:menu-export', 'md') },
@@ -1134,4 +1139,104 @@ function buildMenu(): Menu {
     },
   ];
   return Menu.buildFromTemplate(template);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Importer plugin system (#246)
+//
+// The contract, loader, and per-importer modules live under
+// apps/electron/importers/. This block hosts only the IPC surface and one-shot
+// init — adding a new importer requires zero changes here.
+// ─────────────────────────────────────────────────────────────────────────────
+import { loadImporters, listImporterMetadata, getImporter } from './importers/loader';
+import type { ImportContext, ImportedNote } from './importers/types';
+
+/**
+ * Resolve the importer root for both dev (TS source) and packaged builds
+ * (compiled JS under out/electron/importers, copied into the asar via the
+ * build files glob). Dev uses the live source dir so iterating on an importer
+ * doesn't require recompilation of the loader itself.
+ */
+function importerRootDir(): string {
+  if (isDev) return path.join(process.cwd(), 'apps/electron/importers');
+  // In packaged builds main.js is at <asar>/out/electron/main.js;
+  // sibling importers/ ships compiled.
+  return path.join(__dirname, 'importers');
+}
+
+async function initImporters(): Promise<void> {
+  try {
+    await loadImporters({
+      importerRootDir: importerRootDir(),
+      log: (msg) => console.log(msg),
+    });
+  } catch (err) {
+    console.error('[importers] init failed:', err);
+  }
+}
+
+ipcMain.handle('mid:importers-list', async () => listImporterMetadata());
+
+ipcMain.handle(
+  'mid:importers-run',
+  async (e, importerId: string, input: string, workspaceFolder: string): Promise<{ ok: boolean; runId?: string; error?: string }> => {
+    const importer = getImporter(importerId);
+    if (!importer) return { ok: false, error: `Unknown importer "${importerId}"` };
+    if (!workspaceFolder) return { ok: false, error: 'No workspace folder selected' };
+
+    const runId = `${importerId}-${Date.now()}`;
+    const targetDir = path.join(workspaceFolder, 'Imported', importer.id);
+    const sender = e.sender;
+
+    const ctx: ImportContext = {
+      workspaceFolder,
+      log: (msg: string) => sender.send('mid:importers-log', { runId, msg }),
+    };
+
+    // Fire-and-forget: stream notes back to the renderer as they arrive. The
+    // renderer surfaces progress via mid:importers-progress and a final done
+    // event. Any thrown error is reported on the same channel.
+    void (async () => {
+      try {
+        await fs.mkdir(targetDir, { recursive: true });
+        let count = 0;
+        for await (const note of importer.import(input, ctx)) {
+          count += 1;
+          const filename = sanitiseFilename(note.title) + '.md';
+          const filePath = path.join(targetDir, filename);
+          await fs.mkdir(targetDir, { recursive: true });
+          await fs.writeFile(filePath, formatNoteAsMarkdown(note), 'utf8');
+          if (note.attachments && note.attachments.length) {
+            const attachDir = path.join(targetDir, 'attachments', sanitiseFilename(note.title));
+            await fs.mkdir(attachDir, { recursive: true });
+            for (const att of note.attachments) {
+              await fs.writeFile(path.join(attachDir, att.name), att.data);
+            }
+          }
+          sender.send('mid:importers-progress', { runId, current: count, note: { title: note.title, path: filePath } });
+        }
+        sender.send('mid:importers-done', { runId, count });
+      } catch (err) {
+        sender.send('mid:importers-error', { runId, error: (err as Error).message });
+      }
+    })();
+
+    return { ok: true, runId };
+  },
+);
+
+function sanitiseFilename(input: string): string {
+  return (input || 'untitled').replace(/[/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120) || 'untitled';
+}
+
+function formatNoteAsMarkdown(note: ImportedNote): string {
+  const fm: string[] = ['---'];
+  if (note.createdAt) fm.push(`created: ${note.createdAt}`);
+  if (note.updatedAt) fm.push(`updated: ${note.updatedAt}`);
+  if (note.tags && note.tags.length) fm.push(`tags: [${note.tags.map(t => JSON.stringify(t)).join(', ')}]`);
+  if (note.meta) {
+    for (const [k, v] of Object.entries(note.meta)) fm.push(`${k}: ${JSON.stringify(v)}`);
+  }
+  fm.push('---', '');
+  return fm.join('\n') + note.body + (note.body.endsWith('\n') ? '' : '\n');
 }

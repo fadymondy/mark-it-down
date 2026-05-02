@@ -2230,3 +2230,66 @@ body.settings-open .mid-statusbar { visibility: hidden; }
   .mid-settings-nav__item { white-space: nowrap; flex-shrink: 0; }
   .mid-settings-main { padding: var(--mid-space-4); }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Importer plugin chooser (#246)
+   Lives at the bottom of the file so concurrent edits to other surfaces don't
+   collide with this surface.
+   ───────────────────────────────────────────────────────────────────────────── */
+.mid-importers-dialog {
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-lg, 12px);
+  background: var(--mid-bg);
+  color: var(--mid-fg);
+  padding: 0;
+  width: min(520px, 90vw);
+  max-height: 80vh;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+}
+.mid-importers-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.mid-importers-form { display: flex; flex-direction: column; gap: 0; }
+.mid-importers-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--mid-border);
+}
+.mid-importers-header h2 { margin: 0; font-size: var(--mid-font-size-lg, 16px); font-weight: 600; }
+.mid-importers-list { display: flex; flex-direction: column; padding: 8px; max-height: 56vh; overflow-y: auto; }
+.mid-importers-empty {
+  padding: 24px 16px;
+  color: var(--mid-fg-muted);
+  font-size: var(--mid-font-size-sm);
+  text-align: center;
+}
+.mid-importers-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--mid-radius, 8px);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.mid-importers-row:hover,
+.mid-importers-row:focus-visible {
+  background: var(--mid-surface-hover, var(--mid-surface, rgba(127,127,127,0.08)));
+  border-color: var(--mid-border);
+  outline: none;
+}
+.mid-importers-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mid-importers-row-name { font-weight: 600; }
+.mid-importers-row-desc { color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mid-importers-progress { padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.mid-importers-progress-text { font-weight: 600; }
+.mid-importers-progress-log {
+  list-style: none; margin: 0; padding: 8px;
+  background: var(--mid-code-bg, rgba(127,127,127,0.06));
+  border-radius: var(--mid-radius, 8px);
+  font-family: var(--mid-font-mono, ui-monospace, Menlo, monospace);
+  font-size: var(--mid-font-size-sm, 12px);
+  max-height: 220px; overflow-y: auto;
+}
+.mid-importers-progress-log li { padding: 2px 4px; }
+.mid-importers-progress-log-line { color: var(--mid-fg-muted); }
