@@ -2,7 +2,7 @@
   "name": "mark-it-down",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "l10n": "./l10n",
   "publisher": "fadymondy",
   "engines": {
