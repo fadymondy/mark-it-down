@@ -873,7 +873,7 @@ function downloadMermaidSVG(host: HTMLDivElement, _source: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'diagram.svg';
+  a.download = uniqueExportName('diagram', 'svg');
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -888,7 +888,7 @@ async function downloadMermaidPNG(host: HTMLDivElement): Promise<void> {
   });
   const a = document.createElement('a');
   a.href = dataUrl;
-  a.download = 'diagram.png';
+  a.download = uniqueExportName('diagram', 'png');
   a.click();
 }
 
@@ -1079,6 +1079,7 @@ function downloadCode(text: string, lang?: string): void {
 
 async function exportCodeBlockAsPNG(target: HTMLElement): Promise<void> {
   const gradient = CODE_EXPORT_GRADIENTS[settings.codeExportGradient];
+  const filename = uniqueExportName('code', 'png');
   if (!gradient) {
     const dataUrl = await toPng(target, {
       pixelRatio: 2,
@@ -1086,7 +1087,7 @@ async function exportCodeBlockAsPNG(target: HTMLElement): Promise<void> {
     });
     const a = document.createElement('a');
     a.href = dataUrl;
-    a.download = 'code.png';
+    a.download = filename;
     a.click();
     return;
   }
@@ -1113,7 +1114,7 @@ async function exportCodeBlockAsPNG(target: HTMLElement): Promise<void> {
     });
     const a = document.createElement('a');
     a.href = dataUrl;
-    a.download = 'code.png';
+    a.download = filename;
     a.click();
   } finally {
     backdrop.remove();
@@ -1481,7 +1482,7 @@ async function shareTableToSheets(headers: HTMLTableCellElement[], rows: HTMLTab
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   const arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-  const saved = await window.mid.saveAs('table.xlsx', arr, [{ name: 'Excel', extensions: ['xlsx'] }]);
+  const saved = await window.mid.saveAs(uniqueExportName('table', 'xlsx'), arr, [{ name: 'Excel', extensions: ['xlsx'] }]);
   if (saved) {
     await navigator.clipboard.writeText(saved).catch(() => undefined);
     await window.mid.openExternal('https://drive.google.com/drive/u/0/upload');
@@ -1497,14 +1498,14 @@ function downloadTable(headers: HTMLTableCellElement[], rows: HTMLTableRowElemen
     const escape = (v: string): string => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
     const lines = [head.map(escape).join(','), ...rows.map(r => rowToValues(r).map(escape).join(','))];
     blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-    filename = 'table.csv';
+    filename = uniqueExportName('table', 'csv');
   } else if (format === 'json') {
     const objs = rows.map(r => {
       const vals = rowToValues(r);
       return Object.fromEntries(head.map((h, i) => [h, vals[i] ?? '']));
     });
     blob = new Blob([JSON.stringify(objs, null, 2)], { type: 'application/json' });
-    filename = 'table.json';
+    filename = uniqueExportName('table', 'json');
   } else {
     // xlsx — single sheet, header row + data, frozen first row
     const aoa = [head, ...rows.map(r => rowToValues(r))];
@@ -1515,7 +1516,7 @@ function downloadTable(headers: HTMLTableCellElement[], rows: HTMLTableRowElemen
     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
     const arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
     blob = new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    filename = 'table.xlsx';
+    filename = uniqueExportName('table', 'xlsx');
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2102,9 +2103,18 @@ async function saveFile(): Promise<void> {
   }
 }
 
+function shortExportId(): string {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+}
+
+function uniqueExportName(base: string, ext: string): string {
+  const safe = base.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9-_.]/g, '_') || 'export';
+  return `${safe}--${shortExportId()}.${ext}`;
+}
+
 function defaultExportName(ext: string): string {
   const base = currentPath ? currentPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? 'document' : 'document';
-  return `${base}.${ext}`;
+  return uniqueExportName(base, ext);
 }
 
 async function exportAs(format: ExportFormat): Promise<void> {
@@ -3106,7 +3116,7 @@ async function exportFile(filePath: string, format: ExportFormat): Promise<void>
     const text = format === 'md' ? content : markdownToPlainText(content);
     const ext = format;
     const filterName = format === 'md' ? 'Markdown' : 'Plain text';
-    await window.mid.saveAs(`${baseName}.${ext}`, text, [{ name: filterName, extensions: [ext] }]);
+    await window.mid.saveAs(uniqueExportName(baseName, ext), text, [{ name: filterName, extensions: [ext] }]);
     flashStatus(`Exported ${format.toUpperCase()}`);
     return;
   }
@@ -3141,7 +3151,7 @@ async function exportNote(note: NoteEntry, format: ExportFormat): Promise<void> 
     const text = format === 'md' ? content : markdownToPlainText(content);
     const ext = format;
     const filterName = format === 'md' ? 'Markdown' : 'Plain text';
-    await window.mid.saveAs(`${baseName}.${ext}`, text, [{ name: filterName, extensions: [ext] }]);
+    await window.mid.saveAs(uniqueExportName(baseName, ext), text, [{ name: filterName, extensions: [ext] }]);
     flashStatus(`Exported ${format.toUpperCase()}`);
     return;
   }
