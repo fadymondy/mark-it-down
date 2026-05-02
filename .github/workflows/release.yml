@@ -96,12 +96,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          # `electron` `needs` guarantees at least one matrix runner finished,
-          # but electron-builder publishes assets before flipping the draft
-          # off. Poll for up to ~60s in case the release record is still
-          # propagating.
+          # `gh release view` returns nonzero for draft releases in some auth
+          # contexts, so query the raw API which lists drafts unconditionally
+          # for a token with the metadata scope. Poll for up to ~60s in case
+          # the release record is still propagating after electron-builder's
+          # final upload.
           for i in $(seq 1 30); do
-            if gh release view "$TAG" >/dev/null 2>&1; then
+            if gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" \
+                --jq ".[] | select(.tag_name == \"${TAG}\") | .id" \
+                | grep -q .; then
               echo "Release $TAG is visible."
               exit 0
             fi
@@ -140,7 +143,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           gh release edit "$TAG" --notes "${{ steps.extract.outputs.notes }}"
-      - name: Mark as pre-release if tag has a hyphen
+      - name: Mark as pre-release if tag has a hyphen, then promote out of draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -155,3 +158,9 @@ jobs:
             gh release edit "$TAG" --prerelease=false
             echo "Marked $TAG as stable"
           fi
+          # The vsix idempotency block (#269) creates the release as a draft,
+          # and electron-builder uploads to it without flipping the draft off.
+          # Promote here so the release is publicly visible without manual
+          # `gh release edit --draft=false` after every tag (#306).
+          gh release edit "$TAG" --draft=false
+          echo "Promoted $TAG out of draft"
