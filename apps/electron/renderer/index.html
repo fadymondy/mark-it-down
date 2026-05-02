@@ -52,50 +52,26 @@
     <button id="settings-btn" class="mid-btn mid-btn--icon mid-btn--ghost" title="Settings (Cmd/Ctrl+,)" data-icon="cog"></button>
   </div>
 </header>
-<aside class="mid-settings" id="settings-panel" hidden aria-label="Settings">
-  <header class="mid-settings-header">
-    <h2 class="mid-settings-title">Settings</h2>
-    <button id="settings-close" class="mid-btn mid-btn--icon mid-btn--ghost" title="Close" data-icon="x"></button>
+<section class="mid-settings-page" id="settings-page" hidden aria-label="Settings">
+  <header class="mid-settings-page-topbar">
+    <button id="settings-back" class="mid-btn mid-btn--icon mid-btn--ghost mid-settings-back" title="Back (Esc)" data-icon="x"></button>
+    <div class="mid-settings-page-crumbs" id="settings-crumbs">
+      <span class="mid-settings-page-crumb mid-settings-page-crumb--root">Settings</span>
+      <span class="mid-settings-page-crumb-sep" aria-hidden="true">/</span>
+      <span class="mid-settings-page-crumb-active" id="settings-crumb-active">General</span>
+    </div>
   </header>
-  <div class="mid-settings-body">
-    <section class="mid-settings-section">
-      <label class="mid-settings-label" for="setting-theme">Theme</label>
-      <select id="setting-theme" class="mid-settings-control"></select>
-    </section>
-    <section class="mid-settings-section">
-      <label class="mid-settings-label" for="setting-font">Font family</label>
-      <select id="setting-font" class="mid-settings-control">
-        <option value="system">System</option>
-        <option value="sans">Sans-serif (Inter-style)</option>
-        <option value="serif">Serif (Georgia)</option>
-        <option value="mono">Monospace</option>
-      </select>
-    </section>
-    <section class="mid-settings-section">
-      <label class="mid-settings-label" for="setting-font-size">Body font size <span id="setting-font-size-value" class="mid-settings-hint">15px</span></label>
-      <input id="setting-font-size" class="mid-settings-control" type="range" min="12" max="22" step="1" />
-    </section>
-    <section class="mid-settings-section">
-      <label class="mid-settings-label" for="setting-preview-width">Preview max-width <span id="setting-preview-width-value" class="mid-settings-hint">920px</span></label>
-      <input id="setting-preview-width" class="mid-settings-control" type="range" min="600" max="1400" step="20" />
-    </section>
-    <section class="mid-settings-section">
-      <label class="mid-settings-label" for="setting-code-bg">Code export background</label>
-      <select id="setting-code-bg" class="mid-settings-control">
-        <option value="none">None</option>
-        <option value="sunset">Sunset</option>
-        <option value="ocean">Ocean</option>
-        <option value="lavender">Lavender</option>
-        <option value="forest">Forest</option>
-        <option value="slate">Slate</option>
-        <option value="midnight">Midnight</option>
-      </select>
-    </section>
-    <section class="mid-settings-section">
-      <button id="settings-reset" class="mid-btn">Reset to defaults</button>
-    </section>
+  <div class="mid-settings-page-body">
+    <aside class="mid-settings-nav" id="settings-nav" aria-label="Settings categories">
+      <div class="mid-settings-nav__header">
+        <h2 class="mid-settings-nav__title">Settings</h2>
+        <p class="mid-settings-nav__subtitle">Customize your workspace</p>
+      </div>
+      <nav class="mid-settings-nav__list" id="settings-nav-list" role="tablist" aria-orientation="vertical"></nav>
+    </aside>
+    <main class="mid-settings-main" id="settings-main" tabindex="-1"></main>
   </div>
-</aside>
+</section>
 <div class="mid-shell">
   <nav class="mid-activity-bar" id="activity-bar" aria-label="Activity bar">
     <button id="activity-files" class="mid-activity-btn is-active" title="Files (toggle)" data-icon="folder"></button>
@@ -112,6 +88,12 @@
       </div>
       <input id="mid-spotlight-input" class="mid-spotlight-input" type="text" placeholder="Type to search…" autocomplete="off" />
       <div id="mid-spotlight-results" class="mid-spotlight-results"></div>
+      <div id="mid-spotlight-footer" class="mid-spotlight-footer">
+        <span class="mid-spotlight-hint"><kbd class="mid-spotlight-kbd">↑↓</kbd> navigate</span>
+        <span class="mid-spotlight-hint"><kbd class="mid-spotlight-kbd">Enter</kbd> open</span>
+        <span class="mid-spotlight-hint"><kbd class="mid-spotlight-kbd">Tab</kbd> switch scope</span>
+        <span class="mid-spotlight-hint"><kbd class="mid-spotlight-kbd">Esc</kbd> close</span>
+      </div>
     </div>
   </dialog>
   <aside class="mid-sidebar" id="sidebar" hidden>

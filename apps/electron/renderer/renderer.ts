@@ -3901,68 +3901,79 @@ window.addEventListener('keydown', e => {
   }
 });
 
-function populateThemeOptions(sel: HTMLSelectElement): void {
-  // Modes group
-  const modes = document.createElement('optgroup');
-  modes.label = 'Modes';
-  for (const [v, l] of [['auto', 'Auto (follow OS)'], ['light', 'Light'], ['dark', 'Dark'], ['sepia', 'Sepia']]) {
-    const opt = document.createElement('option');
-    opt.value = v;
-    opt.textContent = l;
-    modes.appendChild(opt);
+/* ── Settings page (full-screen) ──────────────────────────────
+ *
+ * Replaces the right-sidebar drawer with a dedicated full-screen view —
+ * left rail with categories, right pane with section cards built from
+ * the row pattern (label + description + control).
+ *
+ * Visual patterns ported from the reference packages (rebuilt against
+ * our existing --mid-* tokens — no external CSS vars):
+ *   /Users/fadymondy/Sites/orchestra-agents/apps/components/settings
+ *   /Users/fadymondy/Sites/orchestra-agents/apps/components/theme
+ *
+ * Persisted setting keys are unchanged: theme, fontFamily, fontSize,
+ * previewMaxWidth, codeExportGradient. #232 / #234 are pure UI relocations.
+ */
+type SettingsCategoryId =
+  | 'general'
+  | 'appearance'
+  | 'editor'
+  | 'notes'
+  | 'github'
+  | 'export'
+  | 'advanced';
+
+interface SettingsCategoryDef {
+  id: SettingsCategoryId;
+  label: string;
+  icon: IconName;
+}
+
+const SETTINGS_CATEGORIES: SettingsCategoryDef[] = [
+  { id: 'general',    label: 'General',    icon: 'cog' },
+  { id: 'appearance', label: 'Appearance', icon: 'image' },
+  { id: 'editor',     label: 'Editor',     icon: 'edit' },
+  { id: 'notes',      label: 'Notes',      icon: 'bookmark' },
+  { id: 'github',     label: 'GitHub',     icon: 'github' },
+  { id: 'export',     label: 'Export',     icon: 'download' },
+  { id: 'advanced',   label: 'Advanced',   icon: 'list-ul' },
+];
+
+const THEME_KIND_ORDER: Array<'light' | 'dark'> = ['light', 'dark'];
+
+function resolveModeFromTheme(t: ThemeChoice): 'light' | 'dark' | 'system' {
+  if (t === 'light') return 'light';
+  if (t === 'dark') return 'dark';
+  if (t === 'auto') return 'system';
+  if (typeof t === 'string' && t.startsWith('theme:')) {
+    const id = t.slice('theme:'.length);
+    const def = THEMES.find(x => x.id === id);
+    if (def) return def.kind === 'dark' ? 'dark' : 'light';
   }
-  sel.append(modes);
-  // Light + dark themes from the core themes module
-  for (const kind of ['light', 'dark'] as const) {
-    const group = document.createElement('optgroup');
-    group.label = `${kind === 'light' ? 'Light' : 'Dark'} themes`;
-    for (const t of THEMES.filter(t => t.kind === kind)) {
-      const opt = document.createElement('option');
-      opt.value = `theme:${t.id}`;
-      opt.textContent = t.label;
-      group.appendChild(opt);
-    }
-    sel.append(group);
-  }
+  return 'system';
+}
+
+function modeChoiceToTheme(mode: 'light' | 'dark' | 'system'): ThemeChoice {
+  return mode === 'system' ? 'auto' : mode;
 }
 
 function wireSettingsPanel(): void {
-  const panel = document.getElementById('settings-panel') as HTMLElement;
+  const page = document.getElementById('settings-page') as HTMLElement;
   const openBtn = document.getElementById('settings-btn') as HTMLButtonElement;
-  const closeBtn = document.getElementById('settings-close') as HTMLButtonElement;
-  const themeSel = document.getElementById('setting-theme') as HTMLSelectElement;
+  const backBtn = document.getElementById('settings-back') as HTMLButtonElement;
+  const navList = document.getElementById('settings-nav-list') as HTMLElement;
+  const main = document.getElementById('settings-main') as HTMLElement;
+  const crumbActive = document.getElementById('settings-crumb-active') as HTMLSpanElement;
+
   if (THEMES.length === 0) {
     // eslint-disable-next-line no-console
-    console.warn('[mid] THEMES import returned empty — theme picker will only show modes');
+    console.warn('[mid] THEMES import returned empty — theme grid will be empty');
   }
-  const fontSel = document.getElementById('setting-font') as HTMLSelectElement;
-  const sizeRange = document.getElementById('setting-font-size') as HTMLInputElement;
-  const sizeVal = document.getElementById('setting-font-size-value') as HTMLSpanElement;
-  const widthRange = document.getElementById('setting-preview-width') as HTMLInputElement;
-  const widthVal = document.getElementById('setting-preview-width-value') as HTMLSpanElement;
-  const codeBgSel = document.getElementById('setting-code-bg') as HTMLSelectElement;
-  const resetBtn = document.getElementById('settings-reset') as HTMLButtonElement;
 
-  const syncFromSettings = (): void => {
-    // Always rebuild — the prior guard could fail silently if a stale
-    // option set existed; an unconditional rebuild is robust + cheap.
-    themeSel.replaceChildren();
-    try {
-      populateThemeOptions(themeSel);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[mid] populateThemeOptions failed', err);
-    }
-    themeSel.value = settings.theme;
-    fontSel.value = settings.fontFamily;
-    sizeRange.value = String(settings.fontSize);
-    sizeVal.textContent = `${settings.fontSize}px`;
-    widthRange.value = String(settings.previewMaxWidth);
-    widthVal.textContent = `${settings.previewMaxWidth}px`;
-    codeBgSel.value = settings.codeExportGradient;
-  };
-  // First-time populate so the picker is correct even before the panel opens.
-  syncFromSettings();
+  let activeCategory: SettingsCategoryId = 'general';
+  /** Captured when the page opens so Back can restore the previously-open document. */
+  let priorScrollTop = 0;
 
   const persist = (patch: Partial<typeof settings>): void => {
     Object.assign(settings, patch);
@@ -3970,47 +3981,431 @@ function wireSettingsPanel(): void {
     void window.mid.patchAppState(patch);
   };
 
+  const renderNav = (): void => {
+    navList.replaceChildren();
+    for (const cat of SETTINGS_CATEGORIES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mid-settings-nav__item' + (cat.id === activeCategory ? ' is-active' : '');
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', String(cat.id === activeCategory));
+      btn.dataset.cat = cat.id;
+      btn.innerHTML = `<span class="mid-settings-nav__icon">${iconHTML(cat.icon)}</span><span>${cat.label}</span>`;
+      btn.addEventListener('click', () => selectCategory(cat.id));
+      btn.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const idx = SETTINGS_CATEGORIES.findIndex(c => c.id === activeCategory);
+          const next = e.key === 'ArrowDown'
+            ? (idx + 1) % SETTINGS_CATEGORIES.length
+            : (idx - 1 + SETTINGS_CATEGORIES.length) % SETTINGS_CATEGORIES.length;
+          selectCategory(SETTINGS_CATEGORIES[next].id);
+          (navList.querySelector(`[data-cat="${SETTINGS_CATEGORIES[next].id}"]`) as HTMLButtonElement | null)?.focus();
+        }
+      });
+      navList.appendChild(btn);
+    }
+  };
+
+  const selectCategory = (id: SettingsCategoryId): void => {
+    activeCategory = id;
+    const cat = SETTINGS_CATEGORIES.find(c => c.id === id);
+    crumbActive.textContent = cat?.label ?? '';
+    navList.querySelectorAll<HTMLButtonElement>('.mid-settings-nav__item').forEach(b => {
+      const on = b.dataset.cat === id;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', String(on));
+    });
+    renderMain();
+    main.scrollTop = 0;
+  };
+
+  const renderMain = (): void => {
+    main.replaceChildren();
+    switch (activeCategory) {
+      case 'general':    renderGeneralSection(main, persist, () => { renderMain(); }); break;
+      case 'appearance': renderAppearanceSection(main, persist); break;
+      case 'editor':     renderEditorSection(main); break;
+      case 'notes':      renderNotesSection(main); break;
+      case 'github':     renderGitHubSection(main); break;
+      case 'export':     renderExportSection(main, persist); break;
+      case 'advanced':   renderAdvancedSection(main); break;
+    }
+    hydrateIconButtons(main);
+  };
+
   const open = (): void => {
-    syncFromSettings();
-    panel.hidden = false;
+    if (!page.hidden) return;
+    priorScrollTop = root.scrollTop;
+    page.hidden = false;
     document.body.classList.add('settings-open');
+    renderNav();
+    renderMain();
+    requestAnimationFrame(() => main.focus());
   };
   const close = (): void => {
-    panel.hidden = true;
+    if (page.hidden) return;
+    page.hidden = true;
     document.body.classList.remove('settings-open');
+    requestAnimationFrame(() => { root.scrollTop = priorScrollTop; });
   };
 
-  openBtn.addEventListener('click', () => (panel.hidden ? open() : close()));
-  closeBtn.addEventListener('click', close);
-
-  themeSel.addEventListener('change', () => persist({ theme: themeSel.value as ThemeChoice }));
-  fontSel.addEventListener('change', () => persist({ fontFamily: fontSel.value as FontFamilyChoice }));
-  sizeRange.addEventListener('input', () => {
-    const n = Number(sizeRange.value);
-    sizeVal.textContent = `${n}px`;
-    persist({ fontSize: n });
-  });
-  widthRange.addEventListener('input', () => {
-    const n = Number(widthRange.value);
-    widthVal.textContent = `${n}px`;
-    persist({ previewMaxWidth: n });
-  });
-  codeBgSel.addEventListener('change', () => persist({ codeExportGradient: codeBgSel.value as CodeExportGradient }));
-  resetBtn.addEventListener('click', () => {
-    Object.assign(settings, DEFAULT_SETTINGS);
-    applySettings();
-    syncFromSettings();
-    void window.mid.patchAppState({ ...DEFAULT_SETTINGS });
-  });
+  openBtn.addEventListener('click', () => (page.hidden ? open() : close()));
+  backBtn.addEventListener('click', close);
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === ',') {
       e.preventDefault();
-      panel.hidden ? open() : close();
-    } else if (e.key === 'Escape' && !panel.hidden) {
+      page.hidden ? open() : close();
+    } else if (e.key === 'Escape' && !page.hidden) {
+      const ae = document.activeElement;
+      if (ae instanceof HTMLElement && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA')) {
+        ae.blur();
+      }
       close();
     }
   });
+}
+
+/* ── Section building blocks ────────────────────────────────── */
+
+function makeGroup(title: string, description?: string): { card: HTMLElement; body: HTMLElement } {
+  const card = document.createElement('section');
+  card.className = 'mid-settings-group';
+  const header = document.createElement('header');
+  header.className = 'mid-settings-group__header';
+  const titleEl = document.createElement('h3');
+  titleEl.className = 'mid-settings-group__title';
+  titleEl.textContent = title;
+  header.appendChild(titleEl);
+  if (description) {
+    const desc = document.createElement('p');
+    desc.className = 'mid-settings-group__description';
+    desc.textContent = description;
+    header.appendChild(desc);
+  }
+  const body = document.createElement('div');
+  body.className = 'mid-settings-group__body';
+  card.append(header, body);
+  return { card, body };
+}
+
+interface RowOpts {
+  label: string;
+  description?: string;
+  /** When true, control sits on the same row as the label (toggle-style); default false (stacked). */
+  inline?: boolean;
+}
+
+function makeRow(opts: RowOpts, control: HTMLElement): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'mid-setting-row' + (opts.inline ? ' mid-setting-row--inline' : '');
+  const text = document.createElement('div');
+  text.className = 'mid-setting-row__text';
+  const label = document.createElement('div');
+  label.className = 'mid-setting-row__label';
+  label.textContent = opts.label;
+  text.appendChild(label);
+  if (opts.description) {
+    const desc = document.createElement('p');
+    desc.className = 'mid-setting-row__description';
+    desc.textContent = opts.description;
+    text.appendChild(desc);
+  }
+  const controlWrap = document.createElement('div');
+  controlWrap.className = 'mid-setting-row__control';
+  controlWrap.appendChild(control);
+  row.append(text, controlWrap);
+  return row;
+}
+
+/* ── General ──────────────────────────────────────────────── */
+function renderGeneralSection(
+  main: HTMLElement,
+  _persist: (p: Partial<typeof settings>) => void,
+  rerender: () => void,
+): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-settings-form';
+  const intro = makeGroup('General', 'Common workspace preferences. Reset to defaults if anything feels off.');
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'mid-btn';
+  resetBtn.textContent = 'Reset to defaults';
+  resetBtn.addEventListener('click', () => {
+    Object.assign(settings, DEFAULT_SETTINGS);
+    applySettings();
+    void window.mid.patchAppState({ ...DEFAULT_SETTINGS });
+    rerender();
+  });
+  intro.body.appendChild(makeRow(
+    { label: 'Reset all settings', description: 'Restore defaults for theme, fonts, preview width, and code-export gradient.', inline: true },
+    resetBtn,
+  ));
+  wrap.appendChild(intro.card);
+  main.appendChild(wrap);
+}
+
+/* ── Appearance: theme picker + typography ─────────────────── */
+function renderAppearanceSection(main: HTMLElement, persist: (p: Partial<typeof settings>) => void): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-settings-form';
+
+  // Group 1 — Mode toggle (light / dark / system)
+  const modeGroup = makeGroup('Mode', 'Switch between light, dark, or follow the operating system.');
+  const modePills = document.createElement('div');
+  modePills.className = 'mid-mode-pills';
+  const currentMode = resolveModeFromTheme(settings.theme);
+  for (const m of ['light', 'dark', 'system'] as const) {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'mid-mode-pill' + (currentMode === m ? ' is-active' : '');
+    pill.dataset.mode = m;
+    pill.innerHTML = `<span class="mid-mode-pill__icon">${iconHTML(m === 'light' ? 'show' : m === 'dark' ? 'image' : 'cog')}</span><span>${m === 'system' ? 'System' : m === 'light' ? 'Light' : 'Dark'}</span>`;
+    pill.addEventListener('click', () => {
+      persist({ theme: modeChoiceToTheme(m) });
+      modePills.querySelectorAll<HTMLButtonElement>('.mid-mode-pill').forEach(p => p.classList.toggle('is-active', p.dataset.mode === m));
+      // Switching mode releases any named-theme selection.
+      wrap.querySelectorAll<HTMLButtonElement>('.mid-theme-card').forEach(c => {
+        c.classList.remove('is-active');
+        c.setAttribute('aria-pressed', 'false');
+        const tt = THEMES.find(x => x.id === c.dataset.themeId);
+        if (tt) c.style.borderColor = tt.palette.border;
+      });
+    });
+    modePills.appendChild(pill);
+  }
+  modeGroup.body.appendChild(modePills);
+  wrap.appendChild(modeGroup.card);
+
+  // Group 2 — Color theme grid (all named themes)
+  const themeGroup = makeGroup('Color theme', `Pick from ${THEMES.length} curated themes. Selecting one applies it instantly.`);
+  for (const kind of THEME_KIND_ORDER) {
+    const themesInKind = THEMES.filter(t => t.kind === kind);
+    if (themesInKind.length === 0) continue;
+    const groupLabel = document.createElement('h4');
+    groupLabel.className = 'mid-theme-grid__group-label';
+    groupLabel.textContent = `${kind === 'light' ? 'Light' : 'Dark'} themes`;
+    themeGroup.body.appendChild(groupLabel);
+    const grid = document.createElement('div');
+    grid.className = 'mid-theme-grid';
+    for (const theme of themesInKind) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'mid-theme-card';
+      const isActive = settings.theme === `theme:${theme.id}`;
+      if (isActive) card.classList.add('is-active');
+      card.dataset.themeId = theme.id;
+      card.setAttribute('aria-pressed', String(isActive));
+      card.title = theme.label;
+      card.style.background = theme.palette.bg;
+      card.style.color = theme.palette.fg;
+      card.style.borderColor = isActive ? 'var(--mid-accent)' : theme.palette.border;
+      const preview = document.createElement('div');
+      preview.className = 'mid-theme-card__preview';
+      preview.innerHTML = `
+        <span class="mid-theme-card__bar" style="background:${theme.palette.fgMuted}; width:48%"></span>
+        <span class="mid-theme-card__bar" style="background:${theme.palette.accent}; width:24%"></span>
+        <span class="mid-theme-card__bar" style="background:${theme.palette.codeBg}; width:64%"></span>
+        <span class="mid-theme-card__bar" style="background:${theme.palette.fgMuted}; width:32%"></span>
+      `;
+      const meta = document.createElement('div');
+      meta.className = 'mid-theme-card__meta';
+      const name = document.createElement('span');
+      name.className = 'mid-theme-card__name';
+      name.textContent = theme.label;
+      meta.appendChild(name);
+      const tag = document.createElement('span');
+      tag.className = 'mid-theme-card__tag';
+      tag.style.background = theme.palette.accent;
+      tag.style.color = theme.palette.bg;
+      tag.textContent = theme.kind === 'light' ? 'Light' : 'Dark';
+      meta.appendChild(tag);
+      card.append(preview, meta);
+      card.addEventListener('click', () => {
+        persist({ theme: `theme:${theme.id}` });
+        themeGroup.body.querySelectorAll<HTMLButtonElement>('.mid-theme-card').forEach(c => {
+          const on = c.dataset.themeId === theme.id;
+          c.classList.toggle('is-active', on);
+          c.setAttribute('aria-pressed', String(on));
+          const t2 = THEMES.find(tt => tt.id === c.dataset.themeId);
+          if (t2) c.style.borderColor = on ? 'var(--mid-accent)' : t2.palette.border;
+        });
+        const newMode = resolveModeFromTheme(`theme:${theme.id}` as ThemeChoice);
+        modePills.querySelectorAll<HTMLButtonElement>('.mid-mode-pill').forEach(p => p.classList.toggle('is-active', p.dataset.mode === newMode));
+      });
+      grid.appendChild(card);
+    }
+    themeGroup.body.appendChild(grid);
+  }
+  wrap.appendChild(themeGroup.card);
+
+  // Group 3 — Typography
+  const typoGroup = makeGroup('Typography', 'Reading font and size for the preview pane.');
+  const fontSel = document.createElement('select');
+  fontSel.className = 'mid-settings-control';
+  for (const [v, l] of [
+    ['system', 'System'],
+    ['sans', 'Sans-serif (Inter-style)'],
+    ['serif', 'Serif (Georgia)'],
+    ['mono', 'Monospace'],
+  ] as const) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = l;
+    fontSel.appendChild(opt);
+  }
+  fontSel.value = settings.fontFamily;
+  fontSel.addEventListener('change', () => persist({ fontFamily: fontSel.value as FontFamilyChoice }));
+  typoGroup.body.appendChild(makeRow(
+    { label: 'Font family', description: 'Used for body text in the preview.' },
+    fontSel,
+  ));
+  const sizeBox = document.createElement('div');
+  sizeBox.className = 'mid-range-row';
+  const sizeRange = document.createElement('input');
+  sizeRange.type = 'range';
+  sizeRange.min = '12';
+  sizeRange.max = '22';
+  sizeRange.step = '1';
+  sizeRange.value = String(settings.fontSize);
+  sizeRange.className = 'mid-settings-control';
+  const sizeOut = document.createElement('span');
+  sizeOut.className = 'mid-range-row__value';
+  sizeOut.textContent = `${settings.fontSize}px`;
+  sizeRange.addEventListener('input', () => {
+    const n = Number(sizeRange.value);
+    sizeOut.textContent = `${n}px`;
+    persist({ fontSize: n });
+  });
+  sizeBox.append(sizeRange, sizeOut);
+  typoGroup.body.appendChild(makeRow(
+    { label: 'Body font size', description: 'Larger sizes are easier on the eyes for long-form reading.' },
+    sizeBox,
+  ));
+  const widthBox = document.createElement('div');
+  widthBox.className = 'mid-range-row';
+  const widthRange = document.createElement('input');
+  widthRange.type = 'range';
+  widthRange.min = '600';
+  widthRange.max = '1400';
+  widthRange.step = '20';
+  widthRange.value = String(settings.previewMaxWidth);
+  widthRange.className = 'mid-settings-control';
+  const widthOut = document.createElement('span');
+  widthOut.className = 'mid-range-row__value';
+  widthOut.textContent = `${settings.previewMaxWidth}px`;
+  widthRange.addEventListener('input', () => {
+    const n = Number(widthRange.value);
+    widthOut.textContent = `${n}px`;
+    persist({ previewMaxWidth: n });
+  });
+  widthBox.append(widthRange, widthOut);
+  typoGroup.body.appendChild(makeRow(
+    { label: 'Preview max-width', description: 'Cap the column width of the rendered markdown.' },
+    widthBox,
+  ));
+  wrap.appendChild(typoGroup.card);
+
+  main.appendChild(wrap);
+}
+
+/* ── Editor ─────────────────────────────────────────────── */
+function renderEditorSection(main: HTMLElement): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-settings-form';
+  const grp = makeGroup('Editor', 'Editing behavior in the split and edit panes.');
+  const note = document.createElement('p');
+  note.className = 'mid-settings-empty';
+  note.textContent = 'Editor preferences will land here as they ship. The current build uses sensible defaults: autosave on file open, soft wrap, and system tab width.';
+  grp.body.appendChild(note);
+  wrap.appendChild(grp.card);
+  main.appendChild(wrap);
+}
+
+/* ── Notes ─────────────────────────────────────────────── */
+function renderNotesSection(main: HTMLElement): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-settings-form';
+  const grp = makeGroup('Notes', 'Workspace-scoped notes and tag behavior.');
+  const note = document.createElement('p');
+  note.className = 'mid-settings-empty';
+  note.textContent = 'Notes are managed inline from the activity bar. Defaults for auto-tag, default folder, and push behavior will surface here as they ship.';
+  grp.body.appendChild(note);
+  wrap.appendChild(grp.card);
+  main.appendChild(wrap);
+}
+
+/* ── GitHub ────────────────────────────────────────────── */
+function renderGitHubSection(main: HTMLElement): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-settings-form';
+  const grp = makeGroup('GitHub', 'Connection status for the gh CLI integration.');
+  const status = document.createElement('p');
+  status.className = 'mid-settings-empty';
+  status.textContent = 'Checking gh authentication…';
+  grp.body.appendChild(status);
+  wrap.appendChild(grp.card);
+  main.appendChild(wrap);
+  void window.mid.ghAuthStatus().then((r) => {
+    status.textContent = r.authenticated
+      ? 'Signed in via gh CLI. Repo connection and sync are managed from the status bar.'
+      : 'Not signed in. Use the status bar repo button to start a device-flow login.';
+  }).catch(() => {
+    status.textContent = 'gh CLI not detected. Install GitHub CLI to enable repo sync.';
+  });
+}
+
+/* ── Export ────────────────────────────────────────────── */
+function renderExportSection(main: HTMLElement, persist: (p: Partial<typeof settings>) => void): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-settings-form';
+  const grp = makeGroup('Export', 'Defaults for the PNG / PDF export pipeline.');
+  const codeBgSel = document.createElement('select');
+  codeBgSel.className = 'mid-settings-control';
+  for (const [v, l] of [
+    ['none', 'None'],
+    ['sunset', 'Sunset'],
+    ['ocean', 'Ocean'],
+    ['lavender', 'Lavender'],
+    ['forest', 'Forest'],
+    ['slate', 'Slate'],
+    ['midnight', 'Midnight'],
+  ] as const) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = l;
+    codeBgSel.appendChild(opt);
+  }
+  codeBgSel.value = settings.codeExportGradient;
+  codeBgSel.addEventListener('change', () => persist({ codeExportGradient: codeBgSel.value as CodeExportGradient }));
+  grp.body.appendChild(makeRow(
+    { label: 'Code export background', description: 'Backdrop gradient used when exporting a code block as PNG.' },
+    codeBgSel,
+  ));
+  wrap.appendChild(grp.card);
+  main.appendChild(wrap);
+}
+
+/* ── Advanced ─────────────────────────────────────────── */
+function renderAdvancedSection(main: HTMLElement): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-settings-form';
+  const grp = makeGroup('Advanced', 'Diagnostics for power users.');
+  const info = document.createElement('div');
+  info.className = 'mid-kv-block';
+  info.textContent = 'Loading app info…';
+  grp.body.appendChild(info);
+  wrap.appendChild(grp.card);
+  main.appendChild(wrap);
+  void window.mid.getAppInfo().then(i => {
+    info.innerHTML = `
+      <div class="mid-kv-row"><span>Version</span><code>${escapeHTML(i.version)}</code></div>
+      <div class="mid-kv-row"><span>Platform</span><code>${escapeHTML(i.platform)}</code></div>
+      <div class="mid-kv-row"><span>User data</span><code>${escapeHTML(i.userData)}</code></div>
+      <div class="mid-kv-row"><span>Documents</span><code>${escapeHTML(i.documents)}</code></div>
+    `;
+  }).catch(() => { info.textContent = 'Unable to read app info.'; });
 }
 
 function hydrateIconButtons(scope: ParentNode): void {
