@@ -1409,19 +1409,20 @@ select.mid-settings-control {
   background: transparent;
   border-radius: 0;
 }
-.mid-preview table {
+.mid-preview table:not(.mid-dt-table) {
   border-collapse: collapse;
   width: 100%;
   margin: 1em 0;
   font-size: 0.95em;
 }
-.mid-preview th, .mid-preview td {
+.mid-preview table:not(.mid-dt-table) th,
+.mid-preview table:not(.mid-dt-table) td {
   padding: var(--mid-space-2) var(--mid-space-4);
   text-align: left;
   border-bottom: 1px solid var(--mid-border);
   vertical-align: middle;
 }
-.mid-preview th {
+.mid-preview table:not(.mid-dt-table) th {
   background: transparent;
   font-weight: var(--mid-weight-medium);
   color: var(--mid-fg-muted);
@@ -1429,10 +1430,10 @@ select.mid-settings-control {
   letter-spacing: 0.02em;
   border-bottom: 1px solid var(--mid-border);
 }
-.mid-preview tbody tr {
+.mid-preview table:not(.mid-dt-table) tbody tr {
   transition: background-color var(--mid-motion-fast) var(--mid-ease-out);
 }
-.mid-preview tbody tr:hover {
+.mid-preview table:not(.mid-dt-table) tbody tr:hover {
   background: var(--mid-surface);
 }
 .mid-preview tr:last-child td { border-bottom: 0; }
