@@ -4,6 +4,36 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-05-03
+
+### Added — Settings page + 25-theme picker (#232, #233, #234)
+
+- Full-screen settings page replaces the sidebar drawer. Left rail with categories: General · Appearance · Editor · Notes · GitHub · Export · Advanced. Cmd/Ctrl+, opens it; Esc / Back returns to the previously-open document with scroll preserved.
+- 25-theme picker grid in Appearance, with light/dark/system mode pills. Smooth switch.
+- Settings UI patterns ported from `orchestra-agents/apps/components/{settings,theme}`: section cards with label / description / control rows, consistent typography against our `--mid-*` tokens.
+
+### Added — Importer plugin system + 4 first-party importers (#246, #247, #248, #249, #250)
+
+- Plugin contract + loader at `apps/electron/importers/`. Each importer drops a folder with `index.ts` and is auto-discovered. New `mid:importers-list` IPC + chooser modal in the renderer. Sample importer + `docs/importers.md` cover the contract.
+- **Apple Notes** (#247) — AppleScript bridge on macOS, folder hierarchy preserved, attachments to `assets/`, frontmatter `source: apple-notes`, dry-run preview.
+- **Google Keep** (#248) — Takeout JSON → markdown, labels → tags, pinned + color frontmatter, checklists as `- [ ]`, attachments copied, trashed notes skipped by default.
+- **Notion** (#249) — exported `.md` normalized (callouts → blockquotes, toggles → `<details>`), database `.csv` → `<dbname>/index.md` with linking table, image refs rewritten relative.
+- **Generic / Bear / Obsidian** (#250) — plain `.md`/`.markdown`/`.txt` folder import, wikilinks `[[Page]]` rewritten when target exists.
+
+### Added — Spotlight parity (#235, #282)
+
+- Spotlight (Cmd+K) ported to the orchestra-agents reference design: grouped results, recents, fuzzy match preview, keyboard hint footer (#235).
+- Visual polish (#282): leading search icon inside the input row, scope tabs as inline pills, two-line result rows with name + dim description.
+
+### Added — First-run GitHub warehouse onboarding (#236)
+
+- On first launch with a folder open and no warehouse, a modal walks through `gh` CLI detection, auth (Terminal command + device-flow fallback from #230), and either picking an existing repo or creating `<workspace>-notes`.
+- "Set up warehouse…" entry added to the status-bar repo button context menu so it can be re-triggered any time.
+
+### Added — Drag-drop file → activity-bar pinned folder v2 (#189)
+
+- Drag any file from the tree onto a pinned-folder activity-bar icon to add it to the pin's `files` list. Visual feedback distinguishes file-drop targets from reorder targets. Right-click an assigned file → *Remove from pin*. Persists via SQLite.
+
 ## [0.2.1] — 2026-05-03
 
 ### Fixed — packaged build broken on macOS (#270, #271)
