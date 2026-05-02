@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld('mid', {
   readRendererStyles: (): Promise<string> => ipcRenderer.invoke('mid:read-renderer-styles'),
   patchAppState: (patch: Partial<AppState>): Promise<void> =>
     ipcRenderer.invoke('mid:patch-app-state', patch),
+  recordExport: (row: { id: string; sourcePath?: string; format: string; filePath: string }): Promise<void> =>
+    ipcRenderer.invoke('mid:record-export', row),
+  listExportHistory: (limit?: number): Promise<{ id: string; source_path: string; format: string; file_path: string; exported_at: number }[]> =>
+    ipcRenderer.invoke('mid:list-export-history', limit),
   notesList: (workspace: string): Promise<NoteEntry[]> =>
     ipcRenderer.invoke('mid:notes-list', workspace),
   notesCreate: (workspace: string, title: string): Promise<{ entry: NoteEntry; fullPath: string }> =>

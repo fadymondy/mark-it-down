@@ -5,6 +5,21 @@ import * as path from 'path';
 import { fork, ChildProcess, execFile } from 'child_process';
 import * as os from 'os';
 import { promisify } from 'util';
+import {
+  openDB,
+  closeDB,
+  migrateLegacyState,
+  getAllSettings,
+  setSetting,
+  listRecentFiles,
+  pushRecentFile,
+  listPinnedFolders,
+  replacePinnedFolders,
+  listWorkspaces,
+  replaceWorkspaces,
+  recordExport,
+  listExportHistory,
+} from './db';
 
 const execFileP = promisify(execFile);
 
@@ -83,6 +98,15 @@ app.whenReady().then(async () => {
       try { app.dock.setIcon(dockIcon); } catch { /* ignore dev convenience */ }
     }
   }
+  // Open SQLite first; everything else may want to read settings.
+  try {
+    openDB(app.getPath('userData'));
+    const result = await migrateLegacyState(app.getPath('userData'));
+    if (result.error) console.warn('[mid] state.json migration warning:', result.error);
+    else if (result.migrated) console.log('[mid] migrated legacy state.json into SQLite');
+  } catch (err) {
+    console.error('[mid] failed to open SQLite:', err);
+  }
   await createWindow();
   Menu.setApplicationMenu(buildMenu());
   buildTray();
@@ -93,7 +117,7 @@ app.whenReady().then(async () => {
   setupAutoUpdate();
 });
 
-app.on('before-quit', () => stopMCP());
+app.on('before-quit', () => { stopMCP(); closeDB(); });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -487,6 +511,25 @@ ipcMain.handle('mid:patch-app-state', async (_e, patch: Partial<AppState>) => {
   await writeAppState(patch);
 });
 
+ipcMain.handle('mid:record-export', async (_e, row: { id: string; sourcePath?: string; format: string; filePath: string }) => {
+  try {
+    recordExport({
+      id: row.id,
+      source_path: row.sourcePath ?? '',
+      format: row.format,
+      file_path: row.filePath,
+      exported_at: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[mid] record-export failed:', (err as Error).message);
+  }
+});
+
+ipcMain.handle('mid:list-export-history', async (_e, limit?: number) => {
+  try { return listExportHistory(typeof limit === 'number' ? limit : 50); }
+  catch { return []; }
+});
+
 ipcMain.handle('mid:save-as', async (_e, defaultName: string, content: string | ArrayBuffer, filters: Electron.FileFilter[]) => {
   const result = await dialog.showSaveDialog({ defaultPath: defaultName, filters });
   if (result.canceled || !result.filePath) return null;
@@ -835,22 +878,59 @@ async function listMarkdownTree(folderPath: string): Promise<TreeEntry[]> {
   return out;
 }
 
+/**
+ * Project the SQLite-backed settings + recent_files + pinned_folders +
+ * workspaces tables back into the AppState shape the renderer expects.
+ * `readAppState` and `writeAppState` are the only seam — everything else
+ * keeps using AppState so the renderer doesn't need to change.
+ */
 async function readAppState(): Promise<AppState> {
-  const file = path.join(app.getPath('userData'), 'state.json');
   try {
-    const raw = await fs.readFile(file, 'utf8');
-    return JSON.parse(raw) as AppState;
-  } catch {
+    const settings = getAllSettings() as Partial<AppState>;
+    const recentFiles = listRecentFiles(50);
+    const pinnedFolders = listPinnedFolders().map(p => ({
+      path: p.path, name: p.name, icon: p.icon, color: p.color,
+      ...(p.files ? { files: p.files } : {}),
+    }));
+    const workspaces = listWorkspaces();
+    return {
+      ...settings,
+      ...(recentFiles.length ? { recentFiles } : {}),
+      ...(pinnedFolders.length ? { pinnedFolders } : {}),
+      ...(workspaces.length ? { workspaces } : {}),
+    } as AppState;
+  } catch (err) {
+    console.error('[mid] readAppState (sqlite) failed:', err);
     return {};
   }
 }
 
 async function writeAppState(patch: Partial<AppState>): Promise<void> {
-  const file = path.join(app.getPath('userData'), 'state.json');
-  const current = await readAppState();
-  const next = { ...current, ...patch };
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify(next, null, 2), 'utf8');
+  // Settings keys land in the settings table; arrays land in their own tables.
+  const { recentFiles, pinnedFolders, workspaces, ...rest } = patch;
+  for (const [k, v] of Object.entries(rest)) {
+    if (v === undefined) continue;
+    setSetting(k, v);
+  }
+  if (Array.isArray(recentFiles)) {
+    // `pushRecentFile` upserts + trims. Push in reverse so the head of the
+    // array ends up most-recent in the table.
+    [...recentFiles].reverse().forEach(p => pushRecentFile(p));
+  }
+  if (Array.isArray(pinnedFolders)) {
+    replacePinnedFolders(pinnedFolders.map((p, idx) => ({
+      id: `pin-${idx}`,
+      path: p.path,
+      name: p.name,
+      icon: p.icon,
+      color: p.color,
+      files: p.files,
+      sort: idx,
+    })));
+  }
+  if (Array.isArray(workspaces)) {
+    replaceWorkspaces(workspaces);
+  }
 }
 
 function buildMenu(): Menu {
