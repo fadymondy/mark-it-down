@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mac App Store entitlements for the main (parent) Electron process.
+
+  Notes vs build/entitlements.mac.plist (the Developer ID / DMG variant):
+    - sandbox is REQUIRED on the App Store; the DMG variant doesn't run sandboxed.
+    - allow-jit, allow-unsigned-executable-memory, and disable-library-validation
+      are NOT permitted on MAS submissions and are intentionally absent here.
+    - allow-unsafe-dyld-environment-variables is also stripped — App Store
+      Review will reject the binary if any of those are present.
+    - Network client is allowed for: GitHub release polling, gh CLI device-flow,
+      MCP traffic.
+    - File picker access is granted via user-selected.read-write — the sandbox
+      will let the user widen scope at their discretion via the standard open
+      panel.
+
+  Helper / child processes consume build/entitlements.mas.inherit.plist instead
+  so their sandbox state is inherited from this process.
+-->
+<plist version="1.0">
+<dict>
+  <!-- App Sandbox is mandatory for Mac App Store distribution. -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+
+  <!-- Outbound network for GitHub release polling, gh CLI device-flow,
+       optional MCP server traffic. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+
+  <!-- Read/write the files and folders the user explicitly chose via the
+       standard open / save panels. Sandbox-aware variant of how the DMG
+       build accesses arbitrary files. -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+
+  <!-- Bookmarks for files / folders persisted across launches (e.g. the
+       last-opened workspace). Required for the notes warehouse to remember
+       its directory after a relaunch. -->
+  <key>com.apple.security.files.bookmarks.app-scope</key>
+  <true/>
+</dict>
+</plist>

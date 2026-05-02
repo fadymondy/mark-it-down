@@ -1,0 +1,114 @@
+name: Release (Mac App Store)
+
+# Optional sibling release pipeline that builds + signs + (optionally)
+# uploads the Mac App Store .pkg. Kept entirely separate from
+# .github/workflows/release.yml so:
+#   - regular DMG releases stay lean (no wasted MAS minutes / cert lookups)
+#   - opting into MAS is a one-flag thing (MAS_ENABLED=1), reversible
+#   - reviewer-required submission failures don't taint the main release
+#     workflow's status
+#
+# Triggers:
+#   - push of a `v*.*.*` / `v*.*.*-*` tag, ONLY when repo variable
+#     `MAS_ENABLED=1` is set (Settings → Variables → Actions).
+#   - workflow_dispatch with input `mas_enabled=true` (manual one-off).
+#
+# Required secrets (only when this workflow runs):
+#   - MAS_CERTS               — base64-encoded .p12 with the
+#                               "3rd Party Mac Developer Application" +
+#                               "3rd Party Mac Developer Installer" certs.
+#   - MAS_CERTS_PASSWORD      — password for the .p12.
+#   - MAS_PROVISIONING_PROFILE — base64-encoded .provisionprofile from
+#                                Apple Developer (Mac App Store distribution).
+#   - APPLE_ID                — Apple ID for App Store Connect upload.
+#   - APPLE_APP_SPECIFIC_PASSWORD — app-specific password for the Apple ID.
+#   - APPLE_TEAM_ID           — 10-char team identifier.
+#
+# See docs/desktop-mac-app-store.md for the full setup runbook.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
+  workflow_dispatch:
+    inputs:
+      mas_enabled:
+        description: 'Build the MAS .pkg for this run'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-mas-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mas:
+    name: Mac App Store (.pkg)
+    runs-on: macos-latest
+    # Gate: opt-in only. The repo variable MAS_ENABLED=1 enables it for
+    # tag pushes; workflow_dispatch can also force it on for a one-off run.
+    if: ${{ vars.MAS_ENABLED == '1' || github.event.inputs.mas_enabled == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build extension + electron
+        run: npm run compile && npm run compile:electron
+      - name: Decode provisioning profile
+        env:
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        run: |
+          if [ -z "$MAS_PROVISIONING_PROFILE" ]; then
+            echo "MAS_PROVISIONING_PROFILE secret is not set; cannot build MAS target." >&2
+            exit 1
+          fi
+          echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > build/embedded.provisionprofile
+      - name: Build MAS .pkg
+        # `--mac mas` selects the `build.mas` block from package.json.
+        # CSC_LINK / CSC_KEY_PASSWORD point electron-builder at the .p12
+        # containing both the App Distribution and Installer certs.
+        run: npx electron-builder --mac mas --publish never
+        env:
+          CSC_LINK: ${{ secrets.MAS_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAS_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: List built artifacts
+        run: ls -la dist/electron/ || true
+      - name: Upload .pkg as workflow artifact
+        # We deliberately do NOT attach the .pkg to the GitHub Release —
+        # MAS .pkg files only validate against the App Store and are not
+        # useful to download directly. Keep them as a workflow artifact for
+        # manual `xcrun altool --upload-app` / Transporter submission.
+        uses: actions/upload-artifact@v4
+        with:
+          name: mark-it-down-mas-pkg
+          path: dist/electron/*.pkg
+          if-no-files-found: error
+          retention-days: 30
+      - name: Submit to App Store Connect
+        # Optional final step. Skipped unless the runner has a Transporter
+        # JWT or the legacy altool flow is wired in; left as a guarded
+        # placeholder so first-time MAS submitters can do it manually
+        # from their workstation following docs/desktop-mac-app-store.md.
+        if: ${{ vars.MAS_AUTO_SUBMIT == '1' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          PKG=$(ls dist/electron/*.pkg | head -n 1)
+          echo "Submitting $PKG via notarytool..."
+          xcrun altool --upload-app --type osx --file "$PKG" \
+            --username "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --apiIssuer "$APPLE_TEAM_ID"

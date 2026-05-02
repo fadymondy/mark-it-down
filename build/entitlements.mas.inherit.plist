@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mac App Store entitlements for Electron child / helper processes
+  (Renderer, GPU, Network, Plugin, Crashpad).
+
+  These inherit the parent's sandbox state via:
+    com.apple.security.app-sandbox = true
+    com.apple.security.inherit     = true
+
+  No additional capabilities are granted here — the helpers don't need them
+  because they communicate with the parent via Electron's IPC, and IPC is
+  not gated by an entitlement.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.inherit</key>
+  <true/>
+</dict>
+</plist>
