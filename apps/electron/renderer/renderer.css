@@ -232,9 +232,11 @@ body.has-sidebar .mid-shell {
   padding: var(--mid-space-1);
 }
 .mid-note-row {
+  /* #255 — leading type chip (col 1), title+meta (col 2), trailing delete (col 3). */
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   grid-template-rows: auto auto;
+  align-items: center;
   gap: 2px var(--mid-space-2);
   padding: var(--mid-space-2);
   border-radius: var(--mid-radius-sm);
@@ -251,15 +253,43 @@ body.has-sidebar .mid-shell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  grid-column: 1;
+  grid-column: 2;
   grid-row: 1;
 }
 .mid-note-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--mid-space-2);
   font-size: var(--mid-font-size-xs);
   color: var(--mid-fg-muted);
-  grid-column: 1;
+  grid-column: 2;
   grid-row: 2;
 }
+.mid-note-tag-line {
+  font-family: var(--mid-font-mono);
+  font-size: 10px;
+  color: var(--mid-fg-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mid-note-type-chip {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+  transition: transform var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-note-type-chip:hover { transform: scale(1.06); }
+.mid-note-row.is-active .mid-note-type-chip { border-color: var(--mid-accent-fg); }
 .mid-note-tags { display: inline-flex; gap: var(--mid-space-1); margin-left: var(--mid-space-2); }
 .mid-note-tag {
   font-family: var(--mid-font-mono);
@@ -313,7 +343,7 @@ body.has-sidebar .mid-shell {
 }
 .mid-note-tag-add:hover { color: var(--mid-fg); border-color: var(--mid-border-strong); }
 .mid-note-delete {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1 / span 2;
   background: transparent;
   border: 0;
@@ -326,6 +356,156 @@ body.has-sidebar .mid-shell {
 }
 .mid-note-row:hover .mid-note-delete { opacity: 1; }
 .mid-note-delete:hover { color: var(--mid-danger); background: var(--mid-surface); }
+
+/* #255 — type filter strip at top of notes sidebar. */
+.mid-notes-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mid-space-1);
+  padding: var(--mid-space-1) var(--mid-space-2);
+  border-bottom: 1px solid var(--mid-border);
+  background: var(--mid-bg);
+}
+.mid-notes-type-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  color: var(--mid-fg-muted);
+  border: 1px solid transparent;
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+  transition: background var(--mid-motion-fast) var(--mid-ease-out), color var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-notes-type-chip:hover { background: var(--mid-surface-hover); color: var(--mid-fg); }
+.mid-notes-type-chip.is-active { background: var(--mid-surface); }
+
+/* #255 — type chooser modal triggered from the "+" new-note button. */
+.mid-type-chooser-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.mid-type-chooser {
+  width: min(560px, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--mid-bg);
+  color: var(--mid-fg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-md);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  padding: var(--mid-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-3);
+}
+.mid-type-chooser-header {
+  font-size: var(--mid-font-size-lg);
+  font-weight: var(--mid-weight-semibold);
+}
+.mid-type-chooser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--mid-space-2);
+}
+.mid-type-chooser-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--mid-space-1);
+  padding: var(--mid-space-3);
+  background: var(--mid-surface);
+  color: var(--mid-fg);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: transform var(--mid-motion-fast) var(--mid-ease-out), border-color var(--mid-motion-fast) var(--mid-ease-out);
+}
+.mid-type-chooser-tile:hover {
+  transform: translateY(-1px);
+  border-color: var(--type-color, var(--mid-accent));
+}
+.mid-type-chooser-icon { color: var(--type-color, var(--mid-fg)); }
+.mid-type-chooser-label {
+  font-weight: var(--mid-weight-semibold);
+  font-size: var(--mid-font-size-sm);
+}
+.mid-type-chooser-desc {
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+}
+.mid-type-chooser-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--mid-space-2);
+}
+
+/* #255 — secret note custom view. */
+#root.typed-view {
+  overflow: auto;
+  padding: var(--mid-space-4);
+}
+.mid-secret-editor {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-3);
+}
+.mid-secret-header {
+  display: flex;
+  align-items: center;
+  gap: var(--mid-space-2);
+  padding: var(--mid-space-3);
+  background: var(--mid-surface);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+}
+.mid-secret-header-icon { color: var(--mid-accent); }
+.mid-secret-header-title {
+  font-weight: var(--mid-weight-semibold);
+  font-size: var(--mid-font-size-lg);
+}
+.mid-secret-header-hint {
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+  margin-left: auto;
+}
+.mid-secret-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mid-space-2);
+}
+.mid-secret-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(200px, 2fr) auto auto auto;
+  gap: var(--mid-space-2);
+  align-items: center;
+  padding: var(--mid-space-2);
+  background: var(--mid-surface);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+}
+.mid-secret-row .mid-secret-key,
+.mid-secret-row .mid-secret-value {
+  font-family: var(--mid-font-mono);
+  font-size: var(--mid-font-size-sm);
+}
+.mid-secret-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mid-space-1);
+}
 
 /* Bottom status bar — shadcn v2 (background = bg, smaller chrome) */
 .mid-statusbar {
