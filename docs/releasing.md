@@ -83,8 +83,8 @@ Three parallel jobs:
 | Job | Where | What |
 |---|---|---|
 | `electron` | matrix: macos-latest / windows-latest / ubuntu-latest | `npm ci` → `npm run compile && npm run compile:electron` → `npx electron-builder --publish always`. Each runner builds + uploads its installers + the `latest-*.yml` metadata file to the new GitHub release. |
-| `vscode` | ubuntu-latest | `npm ci` → `npm run compile` → `npx vsce package --no-dependencies` → `gh release upload` the `.vsix`. If `VSCE_PAT` secret is set: also `npx vsce publish --packagePath *.vsix` to the Marketplace. |
-| `release-notes` | ubuntu-latest, depends on the two above | Extracts the matching `## [X.Y.Z]` section from CHANGELOG.md → `gh release edit --notes "$NOTES"`. |
+| `vscode` | ubuntu-latest | `npm ci` → `npm run compile` → `npx vsce package --no-dependencies`. If the GitHub Release doesn't exist yet (the electron matrix may not have created it), the job ensures a draft placeholder via `gh release create`, then `gh release upload --clobber` the `.vsix`. If `VSCE_PAT` secret is set: also `npx vsce publish --packagePath *.vsix` to the Marketplace. |
+| `release-notes` | ubuntu-latest, depends on `electron` only | Polls for the GitHub Release record (with a short backoff in case it's still propagating), then extracts the matching `## [X.Y.Z]` section from CHANGELOG.md → `gh release edit --notes "$NOTES"`. Decoupled from `vscode` so a `.vsix` retry never blocks the release body update — and so release-notes can be re-run independently to fix a wrong body. |
 
 Watch in the Actions tab of the repo. All three should go green.
 
