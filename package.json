@@ -785,6 +785,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@sentry/node": "^10.50.0",
     "@types/pdfkit": "^0.17.6",
+    "better-sqlite3": "^12.9.0",
     "boxicons": "^2.1.4",
     "codemirror": "^6.0.2",
     "docx": "^9.6.1",
@@ -802,6 +803,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@resvg/resvg-js": "^2.6.2",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/dompurify": "^3.2.0",
     "@types/lunr": "^2.3.7",
     "@types/mocha": "^10.0.10",
