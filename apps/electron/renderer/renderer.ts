@@ -2853,9 +2853,13 @@ function openSpotlight(): void {
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
   };
+  const onBackdrop = (e: MouseEvent): void => {
+    if (e.target === dlg) close();
+  };
   const close = (): void => {
     input.removeEventListener('input', onInput);
     document.removeEventListener('keydown', onKey);
+    dlg.removeEventListener('click', onBackdrop);
     tabs.forEach(t => t.removeEventListener('click', onTab));
     if (dlg.open) dlg.close();
   };
@@ -2864,6 +2868,7 @@ function openSpotlight(): void {
   input.value = '';
   input.addEventListener('input', onInput);
   document.addEventListener('keydown', onKey);
+  dlg.addEventListener('click', onBackdrop);
   tabs.forEach(t => t.addEventListener('click', onTab));
   dlg.showModal();
   void collectWorkspaceFiles().then(renderResults);
