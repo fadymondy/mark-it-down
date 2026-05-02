@@ -4075,3 +4075,187 @@ void window.mid.readAppState().then(async state => {
   }
   setMode(currentMode);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Importer plugin chooser (#246)
+//
+// Self-contained block — kept at the bottom of renderer.ts to minimise merge
+// conflicts with the settings stack and spotlight agents. The chooser modal is
+// built lazily on first use; the only static surface is the activity-bar
+// "Import from…" button injected next to Settings.
+// ─────────────────────────────────────────────────────────────────────────────
+interface ImporterMetaRow {
+  id: string;
+  name: string;
+  icon: string;
+  supportedFormats?: string[];
+  description?: string;
+}
+
+interface ImportersBridge {
+  importersList(): Promise<ImporterMetaRow[]>;
+  importersRun(importerId: string, input: string, workspaceFolder: string): Promise<{ ok: boolean; runId?: string; error?: string }>;
+  onImportersProgress(cb: (e: { runId: string; current: number; note: { title: string; path: string } }) => void): () => void;
+  onImportersDone(cb: (e: { runId: string; count: number }) => void): () => void;
+  onImportersError(cb: (e: { runId: string; error: string }) => void): () => void;
+  onImportersLog(cb: (e: { runId: string; msg: string }) => void): () => void;
+}
+
+const importersBridge = (window.mid as unknown as ImportersBridge);
+
+function buildImportersButton(): void {
+  // Inject an "Import from…" button into the activity bar overflow position.
+  // We add it just before the spacer so it lives next to the pinned-folder
+  // group and doesn't disturb existing layout.
+  const bar = document.getElementById('activity-bar');
+  if (!bar || document.getElementById('activity-import')) return;
+  const btn = document.createElement('button');
+  btn.id = 'activity-import';
+  btn.className = 'mid-activity-btn';
+  btn.title = 'Import from…';
+  btn.setAttribute('data-icon', 'import');
+  btn.addEventListener('click', () => void openImportersChooser());
+  const spacer = bar.querySelector('.mid-activity-spacer');
+  if (spacer) bar.insertBefore(btn, spacer);
+  else bar.appendChild(btn);
+}
+
+async function openImportersChooser(): Promise<void> {
+  const importers = await importersBridge.importersList();
+  const dlg = ensureImportersDialog();
+  const list = dlg.querySelector('.mid-importers-list') as HTMLDivElement;
+  list.replaceChildren();
+  if (importers.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'mid-importers-empty';
+    empty.textContent = 'No importers registered. Drop a folder under apps/electron/importers/<id>/ and restart.';
+    list.appendChild(empty);
+  } else {
+    for (const meta of importers) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'mid-importers-row';
+      row.innerHTML = `
+        <span class="mid-icon mid-icon--md" data-icon="${meta.icon || 'import'}"></span>
+        <span class="mid-importers-row-text">
+          <span class="mid-importers-row-name"></span>
+          <span class="mid-importers-row-desc"></span>
+        </span>
+      `;
+      (row.querySelector('.mid-importers-row-name') as HTMLSpanElement).textContent = meta.name;
+      (row.querySelector('.mid-importers-row-desc') as HTMLSpanElement).textContent = meta.description || (meta.supportedFormats || []).join(', ');
+      row.addEventListener('click', () => {
+        if (dlg.open) dlg.close();
+        void runImporter(meta);
+      });
+      list.appendChild(row);
+    }
+  }
+  if (!dlg.open) dlg.showModal();
+}
+
+function ensureImportersDialog(): HTMLDialogElement {
+  let dlg = document.getElementById('mid-importers-dialog') as HTMLDialogElement | null;
+  if (dlg) return dlg;
+  dlg = document.createElement('dialog');
+  dlg.id = 'mid-importers-dialog';
+  dlg.className = 'mid-importers-dialog';
+  dlg.innerHTML = `
+    <form method="dialog" class="mid-importers-form">
+      <header class="mid-importers-header">
+        <h2>Import from…</h2>
+        <button type="submit" value="cancel" class="mid-btn mid-btn--icon mid-btn--ghost" aria-label="Close" data-icon="x"></button>
+      </header>
+      <div class="mid-importers-list"></div>
+      <div class="mid-importers-progress" hidden>
+        <div class="mid-importers-progress-text">Starting…</div>
+        <ul class="mid-importers-progress-log"></ul>
+      </div>
+    </form>
+  `;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg) dlg.close();
+  });
+  return dlg;
+}
+
+async function runImporter(meta: ImporterMetaRow): Promise<void> {
+  if (!currentFolder) {
+    const folder = await window.mid.openFolderDialog();
+    if (!folder) return;
+    applyFolder(folder.folderPath, folder.tree);
+  }
+  if (!currentFolder) return;
+
+  // Importer source: re-use the open-folder dialog as the universal picker for
+  // now. Real importers will pick zip/file/live in their own flows; for the
+  // sample (which ignores input) we just default to the workspace folder.
+  let input = currentFolder;
+  if ((meta.supportedFormats || []).some(fmt => fmt === 'folder' || fmt === 'zip' || fmt === 'file') && meta.id !== 'sample') {
+    const picked = await window.mid.openFolderDialog();
+    if (!picked) return;
+    input = picked.folderPath;
+  }
+
+  const dlg = ensureImportersDialog();
+  const list = dlg.querySelector('.mid-importers-list') as HTMLDivElement;
+  const progress = dlg.querySelector('.mid-importers-progress') as HTMLDivElement;
+  const progressText = dlg.querySelector('.mid-importers-progress-text') as HTMLDivElement;
+  const log = dlg.querySelector('.mid-importers-progress-log') as HTMLUListElement;
+  list.hidden = true;
+  progress.hidden = false;
+  log.replaceChildren();
+  progressText.textContent = `Running "${meta.name}"…`;
+  if (!dlg.open) dlg.showModal();
+
+  const offProgress = importersBridge.onImportersProgress(({ runId, current, note }) => {
+    if (runId !== expectedRunId) return;
+    progressText.textContent = `Imported ${current} note${current === 1 ? '' : 's'}…`;
+    const li = document.createElement('li');
+    li.textContent = `• ${note.title}`;
+    li.title = note.path;
+    log.appendChild(li);
+  });
+  const offDone = importersBridge.onImportersDone(({ runId, count }) => {
+    if (runId !== expectedRunId) return;
+    progressText.textContent = `Done — imported ${count} note${count === 1 ? '' : 's'} into Imported/${meta.id}/`;
+    cleanup();
+    if (currentFolder) void window.mid.listFolderMd(currentFolder).then(tree => applyFolder(currentFolder!, tree));
+  });
+  const offError = importersBridge.onImportersError(({ runId, error }) => {
+    if (runId !== expectedRunId) return;
+    progressText.textContent = `Failed: ${error}`;
+    cleanup();
+  });
+  const offLog = importersBridge.onImportersLog(({ runId, msg }) => {
+    if (runId !== expectedRunId) return;
+    const li = document.createElement('li');
+    li.className = 'mid-importers-progress-log-line';
+    li.textContent = msg;
+    log.appendChild(li);
+  });
+
+  let expectedRunId = '';
+  const cleanup = (): void => {
+    offProgress();
+    offDone();
+    offError();
+    offLog();
+  };
+
+  const result = await importersBridge.importersRun(meta.id, input, currentFolder);
+  if (!result.ok || !result.runId) {
+    progressText.textContent = `Failed to start: ${result.error ?? 'unknown error'}`;
+    cleanup();
+    return;
+  }
+  expectedRunId = result.runId;
+}
+
+buildImportersButton();
+
+interface ImportersMenuBridge {
+  onMenuImport(cb: () => void): () => void;
+}
+((window.mid as unknown as ImportersMenuBridge)).onMenuImport(() => void openImportersChooser());
