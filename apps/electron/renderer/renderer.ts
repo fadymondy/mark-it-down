@@ -1080,7 +1080,6 @@ function downloadCode(text: string, lang?: string): void {
 async function exportCodeBlockAsPNG(target: HTMLElement): Promise<void> {
   const gradient = CODE_EXPORT_GRADIENTS[settings.codeExportGradient];
   if (!gradient) {
-    // No backdrop — capture the chromed window directly.
     const dataUrl = await toPng(target, {
       pixelRatio: 2,
       backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--mid-bg').trim() || '#0d1117',
@@ -1091,26 +1090,27 @@ async function exportCodeBlockAsPNG(target: HTMLElement): Promise<void> {
     a.click();
     return;
   }
-  // Wrap the chromed window in a gradient backdrop + 60px padding so the export
-  // looks like a Carbon-style screenshot.
+  // Wrap the chromed window in a gradient backdrop + padding so the export looks
+  // like a Carbon-style screenshot. Position offscreen via translate (not opacity)
+  // so the clone html-to-image takes is fully rendered — `opacity: 0` on the
+  // wrapper makes the cloned root invisible too, producing a blank PNG (#237).
   const backdrop = document.createElement('div');
   backdrop.className = 'mid-code-export-bg';
   backdrop.style.background = gradient;
-  // The wrapper sits next to the target temporarily; clone the chrome so we
-  // don't visually disturb the live preview.
   const clone = target.cloneNode(true) as HTMLElement;
   backdrop.appendChild(clone);
-  // Position off-screen but in-document so html-to-image picks up styles.
   backdrop.style.position = 'fixed';
   backdrop.style.left = '0';
   backdrop.style.top = '0';
-  backdrop.style.zIndex = '-1';
-  backdrop.style.opacity = '0';
+  backdrop.style.transform = 'translate(-200vw, 0)';
+  backdrop.style.pointerEvents = 'none';
   document.body.appendChild(backdrop);
   try {
-    // Force a frame so layout settles.
     await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
-    const dataUrl = await toPng(backdrop, { pixelRatio: 2 });
+    const dataUrl = await toPng(backdrop, {
+      pixelRatio: 2,
+      style: { transform: 'none' },
+    });
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = 'code.png';
