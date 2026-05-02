@@ -1883,6 +1883,9 @@ function applyFolder(folderPath: string, tree: TreeEntry[]): void {
     treeRoot.appendChild(empty);
   }
   void refreshRepoStatus();
+  // First-run: if no warehouse is configured for this workspace and the
+  // user hasn't dismissed the modal, drop into onboarding (#236).
+  void maybeShowOnboarding();
 }
 
 async function refreshRepoStatus(): Promise<void> {
@@ -2051,6 +2054,394 @@ async function runGhDeviceFlow(): Promise<boolean> {
   }
   await midConfirm('Auth timed out', 'No token received within 5 minutes.');
   return false;
+}
+
+
+/* ── Warehouse onboarding wizard (#236) ───────────────────────────────
+ * First-launch flow that walks the user from a bare workspace to a
+ * working notes warehouse without leaving the app:
+ *   step 1 (gh):   detect the gh CLI; if absent, link to the install docs.
+ *   step 2 (auth): if not signed in, offer Terminal command + device flow.
+ *   step 3 (repo): pick an existing repo or create one named <ws>-notes.
+ *
+ * Trigger: after a folder has been opened, if no warehouse is registered
+ * for the active workspace AND the user hasn't dismissed the modal for
+ * that workspace before. Dismissals live in
+ * `AppState.warehouseOnboardingDismissed: string[]` keyed by workspace id.
+ *
+ * Re-trigger: status-bar repo button context menu has a "Set up warehouse…"
+ * entry that calls `openWarehouseOnboarding(true)` (force = true ignores
+ * the dismissed list).
+ */
+
+type OnboardingStep = 'gh' | 'auth' | 'repo';
+
+interface OnboardingState {
+  step: OnboardingStep;
+  ghInstalled: boolean;
+  ghAuthed: boolean;
+  ghStatusOutput: string;
+  repos: { nameWithOwner: string; description: string; visibility: string }[];
+  reposLoaded: boolean;
+  selectedRepo: string;
+  customSlug: string;
+  busy: boolean;
+  error: string;
+}
+
+let onboardingActive = false;
+
+function workspaceSlugFromPath(folderPath: string): string {
+  const base = folderPath.split('/').filter(Boolean).pop() ?? 'notes';
+  const slug = base.toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return slug || 'notes';
+}
+
+function defaultRepoNameForWorkspace(folderPath: string): string {
+  return `${workspaceSlugFromPath(folderPath)}-notes`;
+}
+
+function workspaceIdForCurrent(): string | null {
+  if (!currentFolder) return null;
+  const ws = workspaces.find(w => w.path === currentFolder);
+  return ws ? ws.id : currentFolder;
+}
+
+function isGhMissing(output: string): boolean {
+  const o = output.toLowerCase();
+  return o.includes('enoent') || o.includes('command not found') || o.includes('spawn gh') || o.includes('not found');
+}
+
+async function shouldAutoShowOnboarding(): Promise<boolean> {
+  if (!currentFolder) return false;
+  const wsId = workspaceIdForCurrent();
+  if (!wsId) return false;
+  try {
+    const existing = await window.mid.warehousesList(currentFolder);
+    if (existing.length > 0) return false;
+  } catch { /* surface as 'no warehouse' */ }
+  const state = await window.mid.readAppState();
+  const dismissed = Array.isArray(state.warehouseOnboardingDismissed) ? state.warehouseOnboardingDismissed : [];
+  if (dismissed.includes(wsId)) return false;
+  return true;
+}
+
+async function maybeShowOnboarding(): Promise<void> {
+  if (onboardingActive) return;
+  if (await shouldAutoShowOnboarding()) {
+    void openWarehouseOnboarding();
+  }
+}
+
+async function dismissOnboardingForCurrentWorkspace(): Promise<void> {
+  const wsId = workspaceIdForCurrent();
+  if (!wsId) return;
+  const state = await window.mid.readAppState();
+  const prev = Array.isArray(state.warehouseOnboardingDismissed) ? state.warehouseOnboardingDismissed : [];
+  if (prev.includes(wsId)) return;
+  await window.mid.patchAppState({ warehouseOnboardingDismissed: [...prev, wsId] });
+}
+
+async function openWarehouseOnboarding(force = false): Promise<void> {
+  if (!currentFolder) {
+    flashStatus('Open a folder before configuring a warehouse');
+    return;
+  }
+  if (onboardingActive) return;
+  onboardingActive = true;
+  if (force) {
+    const state = await window.mid.readAppState();
+    const prev = Array.isArray(state.warehouseOnboardingDismissed) ? state.warehouseOnboardingDismissed : [];
+    const wsId = workspaceIdForCurrent();
+    if (wsId && prev.includes(wsId)) {
+      await window.mid.patchAppState({ warehouseOnboardingDismissed: prev.filter(id => id !== wsId) });
+    }
+  }
+  const dlg = document.getElementById('mid-warehouse-onboarding') as HTMLDialogElement;
+  const body = document.getElementById('mid-onboarding-body') as HTMLDivElement;
+  const stepsEl = document.getElementById('mid-onboarding-steps') as HTMLOListElement;
+  const skipBtn = document.getElementById('mid-onboarding-skip') as HTMLButtonElement;
+  const closeBtn = document.getElementById('mid-onboarding-close') as HTMLButtonElement;
+  const backBtn = document.getElementById('mid-onboarding-back') as HTMLButtonElement;
+  const nextBtn = document.getElementById('mid-onboarding-next') as HTMLButtonElement;
+
+  const state: OnboardingState = {
+    step: 'gh',
+    ghInstalled: false,
+    ghAuthed: false,
+    ghStatusOutput: '',
+    repos: [],
+    reposLoaded: false,
+    selectedRepo: '',
+    customSlug: defaultRepoNameForWorkspace(currentFolder),
+    busy: false,
+    error: '',
+  };
+
+  const refreshStepsHeader = (): void => {
+    const order: OnboardingStep[] = ['gh', 'auth', 'repo'];
+    const activeIdx = order.indexOf(state.step);
+    Array.from(stepsEl.children).forEach((li, idx) => {
+      li.classList.remove('is-active', 'is-done');
+      if (idx === activeIdx) li.classList.add('is-active');
+      else if (idx < activeIdx) li.classList.add('is-done');
+    });
+  };
+
+  const closeOnboarding = (markDismissed: boolean): void => {
+    if (markDismissed) void dismissOnboardingForCurrentWorkspace();
+    skipBtn.removeEventListener('click', onSkip);
+    closeBtn.removeEventListener('click', onSkip);
+    backBtn.removeEventListener('click', onBack);
+    nextBtn.removeEventListener('click', onNext);
+    dlg.removeEventListener('cancel', onCancel);
+    if (dlg.open) dlg.close();
+    onboardingActive = false;
+  };
+
+  const onSkip = (): void => closeOnboarding(true);
+  const onCancel = (e: Event): void => { e.preventDefault(); closeOnboarding(true); };
+
+  const renderError = (): string => state.error
+    ? `<div class="mid-onboarding-error">${escapeHTML(state.error)}</div>`
+    : '';
+
+  const renderGhStep = async (): Promise<void> => {
+    state.busy = true;
+    body.innerHTML = `<p>${iconHTML('refresh', 'mid-icon--sm')} Detecting <code>gh</code> CLI…</p>`;
+    nextBtn.hidden = true;
+    backBtn.hidden = true;
+    const status = await window.mid.ghAuthStatus();
+    state.ghStatusOutput = status.output;
+    state.ghInstalled = status.authenticated || !isGhMissing(status.output);
+    state.ghAuthed = status.authenticated;
+    state.busy = false;
+    if (state.ghInstalled && state.ghAuthed) {
+      state.step = 'repo';
+      refreshStepsHeader();
+      void renderRepoStep();
+      return;
+    }
+    if (state.ghInstalled && !state.ghAuthed) {
+      state.step = 'auth';
+      refreshStepsHeader();
+      renderAuthStep();
+      return;
+    }
+    body.innerHTML = `
+      <p>The <code>gh</code> CLI isn't installed yet. It's the easiest way to connect Mark It Down to GitHub for your notes warehouse.</p>
+      <div class="mid-onboarding-card">
+        <div class="mid-onboarding-card-title">${iconHTML('download', 'mid-icon--sm')} Install GitHub CLI</div>
+        <p class="mid-onboarding-card-hint">The official page lists Homebrew, winget, apt, dnf and more.</p>
+        <div class="mid-onboarding-actions">
+          <button class="mid-btn mid-btn--primary" data-onboarding-action="open-install">${iconHTML('github', 'mid-icon--sm')} Open install page</button>
+          <button class="mid-btn" data-onboarding-action="recheck">${iconHTML('refresh', 'mid-icon--sm')} Continue once installed</button>
+        </div>
+      </div>
+      <p class="mid-onboarding-card-hint">Prefer not to install it? You can sign in via the GitHub OAuth device flow on the next step.</p>
+      <div class="mid-onboarding-actions">
+        <button class="mid-btn" data-onboarding-action="device-fallback">Use device flow instead</button>
+      </div>
+      ${renderError()}
+    `;
+    nextBtn.hidden = true;
+    backBtn.hidden = true;
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="open-install"]')?.addEventListener('click', () => {
+      void window.mid.openExternal('https://cli.github.com/');
+    });
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="recheck"]')?.addEventListener('click', () => {
+      state.error = '';
+      void renderGhStep();
+    });
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="device-fallback"]')?.addEventListener('click', () => {
+      state.step = 'auth';
+      refreshStepsHeader();
+      renderAuthStep(/* deviceOnly */ true);
+    });
+  };
+
+  const renderAuthStep = (deviceOnly = false): void => {
+    backBtn.hidden = false;
+    nextBtn.hidden = true;
+    body.innerHTML = `
+      <p>Sign in to GitHub so Mark It Down can list and create repos for your notes warehouse.</p>
+      ${deviceOnly ? '' : `
+      <div class="mid-onboarding-card">
+        <div class="mid-onboarding-card-title">${iconHTML('github', 'mid-icon--sm')} Use the Terminal</div>
+        <p class="mid-onboarding-card-hint">Run this in any terminal, follow the browser prompt, then come back and click <em>Re-check</em>.</p>
+        <div class="mid-onboarding-cmd"><code>gh auth login</code><button class="mid-btn mid-btn--icon" data-onboarding-action="copy-cmd" title="Copy">${iconHTML('copy', 'mid-icon--sm')}</button></div>
+        <div class="mid-onboarding-actions">
+          <button class="mid-btn" data-onboarding-action="recheck-auth">${iconHTML('refresh', 'mid-icon--sm')} Re-check</button>
+        </div>
+      </div>
+      `}
+      <div class="mid-onboarding-card">
+        <div class="mid-onboarding-card-title">${iconHTML('github', 'mid-icon--sm')} Use device flow</div>
+        <p class="mid-onboarding-card-hint">Get a one-time code, open <code>github.com/login/device</code>, and authorize Mark It Down — no terminal needed.</p>
+        <div class="mid-onboarding-actions">
+          <button class="mid-btn mid-btn--primary" data-onboarding-action="device-flow">Start device flow</button>
+        </div>
+      </div>
+      ${renderError()}
+    `;
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="copy-cmd"]')?.addEventListener('click', () => {
+      void navigator.clipboard.writeText('gh auth login').then(() => flashStatus('Copied: gh auth login'));
+    });
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="recheck-auth"]')?.addEventListener('click', () => {
+      state.error = '';
+      void renderGhStep();
+    });
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="device-flow"]')?.addEventListener('click', async () => {
+      state.error = '';
+      const ok = await runGhDeviceFlow();
+      if (ok) {
+        state.ghAuthed = true;
+        state.step = 'repo';
+        refreshStepsHeader();
+        void renderRepoStep();
+      } else {
+        state.error = 'Device flow did not complete. Retry, or sign in via gh auth login.';
+        renderAuthStep(deviceOnly);
+      }
+    });
+  };
+
+  const renderRepoStep = async (): Promise<void> => {
+    backBtn.hidden = false;
+    nextBtn.hidden = false;
+    nextBtn.textContent = 'Use this repo';
+    nextBtn.disabled = !state.selectedRepo;
+    if (!state.reposLoaded) {
+      body.innerHTML = `<p>${iconHTML('refresh', 'mid-icon--sm')} Loading your repos…</p>`;
+      const result = await window.mid.ghRepoList();
+      state.repos = result.repos;
+      state.reposLoaded = true;
+      if (!result.ok) state.error = result.error ?? 'gh repo list failed';
+    }
+    const defaultSlug = defaultRepoNameForWorkspace(currentFolder ?? '');
+    body.innerHTML = `
+      <p>Pick an existing GitHub repo to host your notes, or create a new private one. The first chosen repo becomes the active warehouse for this workspace.</p>
+      <div class="mid-onboarding-card">
+        <div class="mid-onboarding-card-title">${iconHTML('plus', 'mid-icon--sm')} Create a new private repo</div>
+        <p class="mid-onboarding-card-hint">The default name is derived from the workspace folder. Edit before submitting if you'd like a different slug.</p>
+        <input id="mid-onboarding-create-slug" class="mid-onboarding-input" type="text" value="${escapeHTML(state.customSlug || defaultSlug)}" spellcheck="false" />
+        <div class="mid-onboarding-actions">
+          <button class="mid-btn mid-btn--primary" data-onboarding-action="create-repo">${iconHTML('github', 'mid-icon--sm')} Create &amp; use</button>
+        </div>
+      </div>
+      <div class="mid-onboarding-card">
+        <div class="mid-onboarding-card-title">${iconHTML('github', 'mid-icon--sm')} Or pick an existing repo</div>
+        <input id="mid-onboarding-repo-filter" class="mid-onboarding-input" type="text" placeholder="Filter…" />
+        <div class="mid-onboarding-list" id="mid-onboarding-repo-list"></div>
+        <div class="mid-onboarding-status">${state.repos.length} repo${state.repos.length === 1 ? '' : 's'} loaded</div>
+      </div>
+      ${renderError()}
+    `;
+    const slugInput = body.querySelector<HTMLInputElement>('#mid-onboarding-create-slug');
+    slugInput?.addEventListener('input', () => { state.customSlug = slugInput.value; });
+    const filterInput = body.querySelector<HTMLInputElement>('#mid-onboarding-repo-filter');
+    const listEl = body.querySelector<HTMLDivElement>('#mid-onboarding-repo-list');
+    const renderList = (): void => {
+      if (!listEl) return;
+      const q = (filterInput?.value ?? '').trim().toLowerCase();
+      const matches = q
+        ? state.repos.filter(r => r.nameWithOwner.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q))
+        : state.repos;
+      listEl.replaceChildren();
+      if (matches.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'mid-onboarding-status';
+        empty.textContent = state.repos.length === 0 ? 'No repos found via gh repo list.' : 'No matches.';
+        listEl.appendChild(empty);
+        return;
+      }
+      for (const r of matches.slice(0, 100)) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'mid-onboarding-list-row';
+        if (state.selectedRepo === r.nameWithOwner) row.classList.add('is-active');
+        row.innerHTML = `<span class="mid-onboarding-list-row-name">${escapeHTML(r.nameWithOwner)}</span><span class="mid-onboarding-list-row-meta">${escapeHTML(r.visibility?.toLowerCase() ?? '')}</span>`;
+        if (r.description) row.title = r.description;
+        row.addEventListener('click', () => {
+          state.selectedRepo = r.nameWithOwner;
+          nextBtn.disabled = false;
+          renderList();
+        });
+        listEl.appendChild(row);
+      }
+    };
+    filterInput?.addEventListener('input', renderList);
+    renderList();
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="create-repo"]')?.addEventListener('click', async () => {
+      const slugRaw = (slugInput?.value ?? '').trim();
+      if (!slugRaw) { state.error = 'Repo name is required'; void renderRepoStep(); return; }
+      const result = await window.mid.ghRepoCreate(slugRaw, 'private');
+      if (!result.ok) {
+        state.error = `gh repo create failed: ${result.error ?? 'unknown'}`;
+        void renderRepoStep();
+        return;
+      }
+      const url = (result.url ?? '').trim();
+      const m = /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?\/?$/.exec(url);
+      const finalSlug = m ? m[1] : slugRaw;
+      await persistAndConnect(finalSlug);
+    });
+    nextBtn.onclick = (): void => {
+      if (state.selectedRepo) void persistAndConnect(state.selectedRepo);
+    };
+  };
+
+  const persistAndConnect = async (slug: string): Promise<void> => {
+    if (!currentFolder) return;
+    state.busy = true;
+    nextBtn.disabled = true;
+    backBtn.disabled = true;
+    const id = workspaceSlugFromPath(currentFolder);
+    const name = slug.split('/').pop() ?? slug;
+    const addResult = await window.mid.warehousesAdd(currentFolder, { id, name, repo: slug });
+    if (!addResult.ok) {
+      state.error = `Could not save warehouse: ${addResult.error ?? 'unknown'}`;
+      state.busy = false;
+      nextBtn.disabled = false;
+      backBtn.disabled = false;
+      void renderRepoStep();
+      return;
+    }
+    try {
+      await window.mid.repoConnect(currentFolder, slug);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[mid] repoConnect failed during onboarding:', err);
+    }
+    flashStatus(`Warehouse ready: ${slug}`);
+    warehouses = await window.mid.warehousesList(currentFolder);
+    void refreshRepoStatus();
+    closeOnboarding(/* markDismissed */ false);
+  };
+
+  const onBack = (): void => {
+    if (state.step === 'auth') { state.step = 'gh'; refreshStepsHeader(); void renderGhStep(); }
+    else if (state.step === 'repo') {
+      state.step = state.ghAuthed ? 'gh' : 'auth';
+      refreshStepsHeader();
+      if (state.step === 'gh') void renderGhStep();
+      else renderAuthStep();
+    }
+  };
+
+  const onNext = (): void => {
+    if (state.step === 'repo' && state.selectedRepo) void persistAndConnect(state.selectedRepo);
+  };
+
+  skipBtn.addEventListener('click', onSkip);
+  closeBtn.addEventListener('click', onSkip);
+  backBtn.addEventListener('click', onBack);
+  nextBtn.addEventListener('click', onNext);
+  dlg.addEventListener('cancel', onCancel);
+
+  refreshStepsHeader();
+  if (!dlg.open) dlg.showModal();
+  void renderGhStep();
 }
 
 // Conflict banner for git pull --rebase failures
@@ -3074,12 +3465,15 @@ statusRepoBtn.addEventListener('contextmenu', e => {
   if (!currentFolder) return;
   e.preventDefault();
   const connected = statusRepoBtn.dataset.connected === 'true';
+  const setupItem = { icon: 'github', label: 'Set up warehouse…', action: () => void openWarehouseOnboarding(true) };
   openContextMenu(connected ? [
     { icon: 'refresh', label: 'Sync (commit + pull + push)', action: () => void syncRepo() },
     { separator: true, label: '' },
     { icon: 'github', label: 'Connect to a different repo…', action: () => void promptConnectRepo() },
+    setupItem,
   ] : [
     { icon: 'github', label: 'Connect repo…', action: () => void promptConnectRepo() },
+    setupItem,
   ], e.clientX, e.clientY);
 });
 
