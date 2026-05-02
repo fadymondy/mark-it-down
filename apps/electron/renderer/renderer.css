@@ -142,9 +142,10 @@ body.has-sidebar .mid-shell {
 .mid-tree-item {
   display: flex;
   align-items: center;
-  gap: var(--mid-space-1);
-  padding: 2px var(--mid-space-2);
+  gap: var(--mid-space-2);
+  padding: 4px var(--mid-space-2);
   font-size: var(--mid-font-size-sm);
+  line-height: 1.3;
   color: var(--mid-fg);
   cursor: pointer;
   user-select: none;
@@ -158,14 +159,16 @@ body.has-sidebar .mid-shell {
 .mid-tree-item.is-active .mid-icon { color: var(--mid-accent-fg); }
 .mid-tree-chevron {
   display: inline-flex;
-  width: 14px;
+  width: 18px;
+  height: 18px;
   align-items: center;
   justify-content: center;
   color: var(--mid-fg-muted);
   transition: transform var(--mid-motion-fast) var(--mid-ease-out);
 }
+.mid-tree-chevron .mid-icon { width: 16px; height: 16px; }
 .mid-tree-chevron.is-open { transform: rotate(90deg); }
-.mid-tree-item .mid-tree-icon { flex-shrink: 0; }
+.mid-tree-item .mid-tree-icon { flex-shrink: 0; width: 18px; height: 18px; }
 .mid-tree-item.is-active .mid-tree-icon { color: var(--mid-accent-fg) !important; }
 .mid-tree-children { padding-left: var(--mid-space-3); }
 .mid-tree-empty {

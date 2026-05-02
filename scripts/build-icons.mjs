@@ -78,8 +78,11 @@ function buildWindowsIco() {
 }
 
 function buildMacTemplateImages(svgText) {
+  // macOS menu bar template icons live in a 22pt slot (22@1x, 44@2x, 66@3x).
+  // Rendering at 16pt — the previous size — left our tray glyph visibly
+  // smaller than every other system / app icon in the menu bar (#254).
   for (const [scale, suffix] of [[1, ''], [2, '@2x'], [3, '@3x']]) {
-    rasterize(svgText, 16 * scale, join(TEMPLATE_DIR, `iconTemplate${suffix}.png`));
+    rasterize(svgText, 22 * scale, join(TEMPLATE_DIR, `iconTemplate${suffix}.png`));
   }
 }
 
