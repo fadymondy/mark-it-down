@@ -339,34 +339,63 @@ body.has-sidebar .mid-shell {
   box-shadow: var(--mid-shadow-lg);
   overflow: hidden;
 }
-.mid-spotlight-tabs {
+.mid-spotlight-input-row {
   display: flex;
-  gap: 2px;
-  padding: var(--mid-space-2) var(--mid-space-3);
+  align-items: center;
+  gap: var(--mid-space-2);
+  padding: 0 var(--mid-space-4);
   border-bottom: 1px solid var(--mid-border);
+  background: var(--mid-bg);
+}
+.mid-spotlight-input-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--mid-fg-muted);
+}
+.mid-spotlight-input-icon .mid-icon { width: 16px; height: 16px; }
+.mid-spotlight-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--mid-space-3) 0;
+  font-family: inherit;
+  font-size: var(--mid-font-size-lg);
+  color: var(--mid-fg);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.mid-spotlight-input::placeholder { color: var(--mid-fg-muted); opacity: 0.7; }
+.mid-spotlight-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: var(--mid-space-2) var(--mid-space-3);
+  padding: 2px;
+  background: var(--mid-surface);
+  border: 1px solid var(--mid-border);
+  border-radius: 999px;
+  width: max-content;
 }
 .mid-spotlight-tab {
   padding: 4px var(--mid-space-3);
   font-family: inherit;
-  font-size: var(--mid-font-size-sm);
+  font-size: var(--mid-font-size-xs);
+  font-weight: var(--mid-weight-medium);
   color: var(--mid-fg-muted);
   background: transparent;
   border: 0;
-  border-radius: var(--mid-radius-sm);
+  border-radius: 999px;
   cursor: pointer;
+  line-height: 1.4;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
-.mid-spotlight-tab:hover { background: var(--mid-surface); color: var(--mid-fg); }
-.mid-spotlight-tab.is-active { background: var(--mid-surface); color: var(--mid-fg); }
-.mid-spotlight-input {
-  width: 100%;
-  padding: var(--mid-space-3) var(--mid-space-4);
-  font-family: inherit;
-  font-size: var(--mid-font-size-lg);
-  color: var(--mid-fg);
+.mid-spotlight-tab:hover { color: var(--mid-fg); }
+.mid-spotlight-tab.is-active {
   background: var(--mid-bg);
-  border: 0;
-  border-bottom: 1px solid var(--mid-border);
-  outline: none;
+  color: var(--mid-fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .mid-spotlight-results {
   max-height: 50vh;
@@ -384,10 +413,9 @@ body.has-sidebar .mid-shell {
   color: var(--mid-fg-muted);
 }
 .mid-spotlight-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   align-items: center;
-  gap: var(--mid-space-2);
+  gap: var(--mid-space-3);
   width: 100%;
   padding: var(--mid-space-2) var(--mid-space-3);
   background: transparent;
@@ -398,10 +426,43 @@ body.has-sidebar .mid-shell {
   color: var(--mid-fg);
   text-align: left;
 }
+.mid-spotlight-row > .mid-icon { flex-shrink: 0; }
 .mid-spotlight-row:hover { background: var(--mid-surface); }
 .mid-spotlight-row.is-active { background: var(--mid-accent-soft, var(--mid-surface)); outline: 1px solid var(--mid-accent, var(--mid-border)); }
-.mid-spotlight-row-name { font-weight: var(--mid-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mid-spotlight-row-path { font-family: var(--mid-font-mono); font-size: var(--mid-font-size-xs); color: var(--mid-fg-muted); white-space: nowrap; }
+.mid-spotlight-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.mid-spotlight-row-name {
+  font-weight: var(--mid-weight-regular, 400);
+  font-size: var(--mid-font-size-sm);
+  color: var(--mid-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.mid-spotlight-row-desc {
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.mid-spotlight-row-path {
+  font-family: var(--mid-font-mono);
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
 .mid-spotlight-empty { padding: var(--mid-space-4); text-align: center; color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); }
 .mid-spotlight-match { font-weight: var(--mid-weight-bold, 700); color: var(--mid-accent, var(--mid-fg)); background: var(--mid-accent-soft, transparent); border-radius: 2px; padding: 0 1px; }
 .mid-spotlight-row.is-active .mid-spotlight-match { color: inherit; }

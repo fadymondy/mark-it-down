@@ -82,11 +82,14 @@
   </nav>
   <dialog id="mid-spotlight" class="mid-spotlight">
     <div class="mid-spotlight-frame">
-      <div class="mid-spotlight-tabs">
-        <button class="mid-spotlight-tab is-active" data-spotlight-scope="workspace">Workspace</button>
-        <button class="mid-spotlight-tab" data-spotlight-scope="file">Current file</button>
+      <div class="mid-spotlight-input-row">
+        <span id="mid-spotlight-input-icon" class="mid-spotlight-input-icon" aria-hidden="true"></span>
+        <input id="mid-spotlight-input" class="mid-spotlight-input" type="text" placeholder="Type to search…" autocomplete="off" />
       </div>
-      <input id="mid-spotlight-input" class="mid-spotlight-input" type="text" placeholder="Type to search…" autocomplete="off" />
+      <div class="mid-spotlight-tabs" role="tablist" aria-label="Search scope">
+        <button class="mid-spotlight-tab is-active" data-spotlight-scope="workspace" role="tab" aria-selected="true">Workspace</button>
+        <button class="mid-spotlight-tab" data-spotlight-scope="file" role="tab" aria-selected="false">Current file</button>
+      </div>
       <div id="mid-spotlight-results" class="mid-spotlight-results"></div>
       <div id="mid-spotlight-footer" class="mid-spotlight-footer">
         <span class="mid-spotlight-hint"><kbd class="mid-spotlight-kbd">↑↓</kbd> navigate</span>
