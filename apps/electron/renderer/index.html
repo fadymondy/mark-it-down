@@ -130,6 +130,13 @@
     <div class="mid-notes-list" id="notes-list" hidden></div>
   </aside>
   <main id="root" class="viewing"></main>
+  <aside class="mid-outline" id="outline-rail" aria-label="Document outline" hidden>
+    <header class="mid-outline-header">
+      <span class="mid-outline-title">Outline</span>
+      <button id="outline-close" class="mid-btn mid-btn--icon mid-btn--ghost" title="Hide outline" data-icon="x"></button>
+    </header>
+    <nav id="outline-list" class="mid-outline-list" aria-label="Headings"></nav>
+  </aside>
 </div>
 <footer class="mid-statusbar" id="statusbar">
   <button class="mid-status-cell mid-status-cell--button" id="status-repo" title="Click to connect / sync">
@@ -139,6 +146,10 @@
   <span class="mid-status-spacer"></span>
   <span class="mid-status-cell" id="status-cursor" hidden>L1:C1</span>
   <span class="mid-status-cell" id="status-words">0 words</span>
+  <button class="mid-status-cell mid-status-cell--button" id="status-outline" title="Toggle outline (Cmd/Ctrl+Shift+L)">
+    <span class="mid-icon mid-icon--sm" data-icon="list-ul"></span>
+    <span id="status-outline-text">Outline</span>
+  </button>
   <span class="mid-status-cell mid-status-dot" id="status-save" title="Saved">●</span>
 </footer>
 <dialog id="mid-mermaid-editor" class="mid-mermaid-editor">

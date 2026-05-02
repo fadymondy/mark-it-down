@@ -373,6 +373,16 @@ body.has-sidebar .mid-shell {
   overflow: auto;
   padding: var(--mid-space-1);
 }
+.mid-spotlight-section { padding: var(--mid-space-1) 0; }
+.mid-spotlight-section + .mid-spotlight-section { border-top: 1px solid var(--mid-border); margin-top: var(--mid-space-1); padding-top: var(--mid-space-2); }
+.mid-spotlight-section-label {
+  padding: var(--mid-space-1) var(--mid-space-3) 2px;
+  font-size: 10px;
+  font-weight: var(--mid-weight-bold, 600);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mid-fg-muted);
+}
 .mid-spotlight-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -389,9 +399,37 @@ body.has-sidebar .mid-shell {
   text-align: left;
 }
 .mid-spotlight-row:hover { background: var(--mid-surface); }
+.mid-spotlight-row.is-active { background: var(--mid-accent-soft, var(--mid-surface)); outline: 1px solid var(--mid-accent, var(--mid-border)); }
 .mid-spotlight-row-name { font-weight: var(--mid-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mid-spotlight-row-path { font-family: var(--mid-font-mono); font-size: var(--mid-font-size-xs); color: var(--mid-fg-muted); white-space: nowrap; }
 .mid-spotlight-empty { padding: var(--mid-space-4); text-align: center; color: var(--mid-fg-muted); font-size: var(--mid-font-size-sm); }
+.mid-spotlight-match { font-weight: var(--mid-weight-bold, 700); color: var(--mid-accent, var(--mid-fg)); background: var(--mid-accent-soft, transparent); border-radius: 2px; padding: 0 1px; }
+.mid-spotlight-row.is-active .mid-spotlight-match { color: inherit; }
+.mid-spotlight-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mid-space-3);
+  padding: var(--mid-space-2) var(--mid-space-3);
+  border-top: 1px solid var(--mid-border);
+  background: var(--mid-bg);
+  font-size: var(--mid-font-size-xs);
+  color: var(--mid-fg-muted);
+}
+.mid-spotlight-hint { display: inline-flex; align-items: center; gap: 6px; }
+.mid-spotlight-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 1px 5px;
+  font-family: var(--mid-font-mono);
+  font-size: 10px;
+  color: var(--mid-fg);
+  background: var(--mid-surface);
+  border: 1px solid var(--mid-border);
+  border-radius: var(--mid-radius-sm);
+}
 
 /* File history viewer (#219) */
 .mid-fh-row {
@@ -1745,3 +1783,94 @@ main.editing textarea {
   white-space: nowrap;
   max-width: 200px;
 }
+
+/* Outline rail (#252) — right-side fast-access menu (TOC) for markdown headings.
+ * Visible by default in view + split modes; hidden in edit-only mode and
+ * during print (`body.is-printing`) so PDF export stays clean. */
+:root { --mid-outline-w: 220px; }
+
+body.has-outline .mid-shell { grid-template-columns: 44px 1fr var(--mid-outline-w); }
+body.has-outline.has-sidebar .mid-shell {
+  grid-template-columns: 44px var(--mid-sidebar-w) 1fr var(--mid-outline-w);
+}
+
+.mid-outline {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--mid-bg);
+  border-left: 1px solid var(--mid-border);
+}
+.mid-outline[hidden] { display: none; }
+
+.mid-outline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mid-space-2);
+  padding: var(--mid-space-2) var(--mid-space-3);
+  border-bottom: 1px solid var(--mid-border);
+  height: 40px;
+  flex-shrink: 0;
+}
+.mid-outline-title {
+  font-size: var(--mid-font-size-xs);
+  font-weight: var(--mid-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mid-fg-muted);
+}
+
+.mid-outline-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--mid-space-2) 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mid-outline-item {
+  display: block;
+  padding: 4px var(--mid-space-3) 4px var(--mid-space-4);
+  font-size: var(--mid-font-size-sm);
+  line-height: 1.35;
+  color: var(--mid-fg-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background var(--mid-motion-fast), color var(--mid-motion-fast);
+}
+.mid-outline-item:hover { background: var(--mid-surface-hover); color: var(--mid-fg); }
+.mid-outline-item.is-active {
+  color: var(--mid-fg);
+  background: var(--mid-surface);
+  border-left-color: var(--mid-accent, var(--mid-link));
+  font-weight: var(--mid-weight-medium);
+}
+.mid-outline-item[data-level="1"] { padding-left: var(--mid-space-3); font-weight: var(--mid-weight-medium); color: var(--mid-fg); }
+.mid-outline-item[data-level="2"] { padding-left: var(--mid-space-4); }
+.mid-outline-item[data-level="3"] { padding-left: var(--mid-space-5); }
+.mid-outline-item[data-level="4"] { padding-left: var(--mid-space-6); }
+.mid-outline-item[data-level="5"] { padding-left: calc(var(--mid-space-6) + var(--mid-space-2)); }
+.mid-outline-item[data-level="6"] { padding-left: calc(var(--mid-space-6) + var(--mid-space-3)); }
+
+.mid-outline-empty {
+  padding: var(--mid-space-3) var(--mid-space-4);
+  color: var(--mid-fg-subtle);
+  font-size: var(--mid-font-size-sm);
+  font-style: italic;
+}
+
+#status-outline[data-active="false"] { color: var(--mid-fg-subtle); }
+#status-outline[data-active="false"] .mid-icon { color: var(--mid-fg-subtle); }
+
+/* Print mode — keep the rail out of PDF / image exports. */
+body.is-printing .mid-outline { display: none !important; }
+body.is-printing .mid-shell { grid-template-columns: 1fr !important; }
+
