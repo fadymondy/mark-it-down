@@ -67,6 +67,11 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:patch-app-state', patch),
   recordExport: (row: { id: string; sourcePath?: string; format: string; filePath: string }): Promise<void> =>
     ipcRenderer.invoke('mid:record-export', row),
+  // Tab persistence (#287) — renderer owns layout, main is a dumb store.
+  tabsList: (): Promise<{ strip_id: number; idx: number; path: string; active: number }[]> =>
+    ipcRenderer.invoke('mid:tabs-list'),
+  tabsReplace: (rows: { strip_id: number; idx: number; path: string; active: number }[]): Promise<boolean> =>
+    ipcRenderer.invoke('mid:tabs-replace', rows),
   listExportHistory: (limit?: number): Promise<{ id: string; source_path: string; format: string; file_path: string; exported_at: number }[]> =>
     ipcRenderer.invoke('mid:list-export-history', limit),
   notesList: (workspace: string): Promise<NoteEntry[]> =>
