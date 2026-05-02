@@ -458,7 +458,10 @@ ipcMain.handle('mid:gh-auth-status', async () => {
 // v1: requests device code, returns user_code + verification_uri to the renderer,
 // then polls for the token. The OAuth client_id is a placeholder — registering a
 // real GitHub OAuth app is a follow-up for production builds.
-const MID_GH_CLIENT_ID = process.env.MID_GH_CLIENT_ID || 'Iv1.placeholder-client-id';
+// GitHub OAuth device-flow client_id. Defaults to the official `gh` CLI's
+// public client_id (documented + intended for reuse by trusted OSS clients);
+// can be overridden via MID_GH_CLIENT_ID for a private brand-specific app.
+const MID_GH_CLIENT_ID = process.env.MID_GH_CLIENT_ID || '178c6fc778ccc68e1d6a';
 ipcMain.handle('mid:gh-device-flow-start', async (): Promise<{ ok: boolean; userCode?: string; verificationUri?: string; deviceCode?: string; interval?: number; error?: string }> => {
   try {
     const res = await fetch('https://github.com/login/device/code', {
@@ -466,8 +469,21 @@ ipcMain.handle('mid:gh-device-flow-start', async (): Promise<{ ok: boolean; user
       headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: MID_GH_CLIENT_ID, scope: 'repo read:user' }),
     });
-    const data = await res.json() as { user_code?: string; verification_uri?: string; device_code?: string; interval?: number; error_description?: string };
-    if (data.error_description) return { ok: false, error: data.error_description };
+    const text = await res.text();
+    let data: { user_code?: string; verification_uri?: string; device_code?: string; interval?: number; error?: string; error_description?: string } = {};
+    try { data = JSON.parse(text); } catch { /* GH may return text/html on hard failures */ }
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data.error_description || data.error || `GitHub returned ${res.status} ${res.statusText}: ${text.slice(0, 160)}`,
+      };
+    }
+    if (data.error_description || data.error) {
+      return { ok: false, error: data.error_description || data.error };
+    }
+    if (!data.user_code || !data.device_code) {
+      return { ok: false, error: 'GitHub response missing user_code / device_code' };
+    }
     return {
       ok: true,
       userCode: data.user_code,

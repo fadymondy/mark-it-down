@@ -2620,6 +2620,37 @@ async function openWarehouseOnboarding(force = false): Promise<void> {
     if (state.step === 'repo' && state.selectedRepo) void persistAndConnect(state.selectedRepo);
   };
 
+  // Intro page — shown first so users understand what a "warehouse" is before
+  // any technical UI. Hides the 3-step rail and replaces the footer with a
+  // single "Set up warehouse" CTA. Clicking it transitions into the gh-CLI step.
+  const renderIntroStep = (): void => {
+    stepsEl.hidden = true;
+    backBtn.hidden = true;
+    nextBtn.hidden = false;
+    nextBtn.disabled = false;
+    nextBtn.textContent = 'Set up warehouse';
+    body.innerHTML = `
+      <div class="mid-onboarding-intro">
+        <div class="mid-onboarding-intro-glyph">${iconHTML('github', 'mid-icon--lg')}</div>
+        <h2>Set up your notes warehouse</h2>
+        <p>A warehouse is a private GitHub repo where Mark It Down syncs your notes. You'll always own the data, version history, and can read it from anywhere — terminal, web, mobile.</p>
+        <ul class="mid-onboarding-intro-checks">
+          <li>${iconHTML('check', 'mid-icon--sm')} Private repo by default</li>
+          <li>${iconHTML('check', 'mid-icon--sm')} You can pick an existing repo or create a new one</li>
+          <li>${iconHTML('check', 'mid-icon--sm')} Skip for now and connect later from the status bar</li>
+        </ul>
+      </div>
+    `;
+    nextBtn.onclick = (): void => {
+      stepsEl.hidden = false;
+      nextBtn.textContent = 'Next';
+      nextBtn.onclick = null;
+      state.step = 'gh';
+      refreshStepsHeader();
+      void renderGhStep();
+    };
+  };
+
   skipBtn.addEventListener('click', onSkip);
   closeBtn.addEventListener('click', onSkip);
   backBtn.addEventListener('click', onBack);
@@ -2628,7 +2659,7 @@ async function openWarehouseOnboarding(force = false): Promise<void> {
 
   refreshStepsHeader();
   if (!dlg.open) dlg.showModal();
-  void renderGhStep();
+  renderIntroStep();
 }
 
 // Conflict banner for git pull --rebase failures
@@ -5080,6 +5111,18 @@ void window.mid.readAppState().then(async state => {
     }
   }
   setMode(currentMode);
+  // #303 — if the launched workspace has no warehouse, force-open the
+  // onboarding modal regardless of the dismissed list. The dismissed list
+  // only suppresses *during* a session (re-triggers from the welcome CTA,
+  // status-bar context menu, etc.); on each launch we ask again.
+  if (currentFolder) {
+    try {
+      const existing = await window.mid.warehousesList(currentFolder);
+      if (existing.length === 0) {
+        await openWarehouseOnboarding(true);
+      }
+    } catch (err) { console.debug('[mid] launch onboarding gate error:', err); }
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
