@@ -3045,45 +3045,77 @@ function invalidateTreeCache(folderPath?: string): void {
   else treeCache.clear();
 }
 
+function renderClusterFileRow(pin: PinnedFolder, filePath: string): HTMLElement {
+  const item = document.createElement('div');
+  item.className = 'mid-tree-item mid-tree-item--cluster';
+  if (currentPath === filePath) item.classList.add('is-active');
+  // Match the chevron-padded layout of regular tree rows so file names align.
+  item.insertAdjacentHTML('beforeend', '<span class="mid-tree-chevron"></span>');
+  const fileMatch = iconForFile(filePath.split('/').pop() ?? '', 'file');
+  const iconSpan = document.createElement('span');
+  iconSpan.innerHTML = iconHTML(fileMatch.icon, 'mid-icon--muted mid-tree-icon');
+  const svg = iconSpan.firstElementChild as HTMLElement | null;
+  if (svg && fileMatch.color) svg.style.color = fileMatch.color;
+  item.appendChild(iconSpan.firstElementChild!);
+  item.appendChild(document.createTextNode(` ${filePath.split('/').pop() ?? filePath}`));
+  item.title = filePath;
+  item.addEventListener('click', () => void selectTreeFile(filePath));
+  item.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openContextMenu([
+      { icon: 'show', label: 'Open', action: () => void selectTreeFile(filePath) },
+      { icon: 'folder-open', label: 'Reveal in Finder', action: () => void window.mid.openExternal(`file://${filePath.replace(/\/[^/]+$/, '')}`) },
+      { separator: true, label: '' },
+      { icon: 'trash', label: 'Remove from pin', action: () => {
+        pin.files = (pin.files ?? []).filter(f => f !== filePath);
+        void window.mid.patchAppState({ pinnedFolders });
+        if (activeActivity === `pinned:${pin.path}`) void loadPinnedTree(pin.path);
+      } },
+    ], e.clientX, e.clientY);
+  });
+  return item;
+}
+
 async function loadPinnedTree(folderPath: string): Promise<void> {
   try {
     const pin = pinnedFolders.find(p => p.path === folderPath);
     const name = pin?.name ?? folderPath.split('/').pop() ?? folderPath;
     sidebarFolderName.textContent = name;
     sidebarFolderName.title = folderPath;
+    treeRoot.replaceChildren();
+
+    // v2 (#189): hybrid display — assigned cluster files render in their own
+    // section above the folder tree. Files can live anywhere on disk; the
+    // folder tree below keeps the directory listing intact.
     if (pin && pin.files && pin.files.length > 0) {
-      // Cluster mode — render a flat list of registered files.
-      treeRoot.replaceChildren();
+      const section = document.createElement('div');
+      section.className = 'mid-tree-section mid-tree-section--cluster';
+      const header = document.createElement('div');
+      header.className = 'mid-tree-section-header';
+      header.textContent = `Pinned files (${pin.files.length})`;
+      section.appendChild(header);
       for (const filePath of pin.files) {
-        const item = document.createElement('div');
-        item.className = 'mid-tree-item';
-        if (currentPath === filePath) item.classList.add('is-active');
-        const fileMatch = iconForFile(filePath.split('/').pop() ?? '', 'file');
-        const span = document.createElement('span');
-        span.innerHTML = iconHTML(fileMatch.icon, 'mid-icon--muted mid-tree-icon');
-        const svg = span.firstElementChild as HTMLElement | null;
-        if (svg && fileMatch.color) svg.style.color = fileMatch.color;
-        item.appendChild(span.firstElementChild!);
-        item.appendChild(document.createTextNode(` ${filePath.split('/').pop() ?? filePath}`));
-        item.addEventListener('click', () => void selectTreeFile(filePath));
-        item.addEventListener('contextmenu', e => {
-          e.preventDefault();
-          openContextMenu([
-            { icon: 'show', label: 'Open', action: () => void selectTreeFile(filePath) },
-            { icon: 'trash', label: 'Remove from cluster', action: () => {
-              pin.files = (pin.files ?? []).filter(f => f !== filePath);
-              void window.mid.patchAppState({ pinnedFolders });
-              void loadPinnedTree(folderPath);
-            } },
-          ], e.clientX, e.clientY);
-        });
-        treeRoot.appendChild(item);
+        section.appendChild(renderClusterFileRow(pin, filePath));
       }
-      return;
+      treeRoot.appendChild(section);
     }
+
+    // Folder subtree below — same listing as before so users can browse and
+    // drag additional files into the cluster from this view too.
     const tree = await loadFolderTree(folderPath);
-    treeRoot.replaceChildren(...renderTree(tree));
-    if (tree.length === 0) {
+    if (tree.length > 0) {
+      const folderSection = document.createElement('div');
+      folderSection.className = 'mid-tree-section mid-tree-section--folder';
+      if (pin && pin.files && pin.files.length > 0) {
+        const header = document.createElement('div');
+        header.className = 'mid-tree-section-header';
+        header.textContent = 'Folder contents';
+        folderSection.appendChild(header);
+      }
+      folderSection.append(...renderTree(tree));
+      treeRoot.appendChild(folderSection);
+    } else if (!pin || !pin.files || pin.files.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'mid-tree-empty';
       empty.textContent = 'No markdown files in this folder.';
@@ -3124,19 +3156,40 @@ function renderActivityPinned(): void {
       e.dataTransfer?.setData('text/plain', String(idx));
       btn.classList.add('is-dragging');
     });
-    btn.addEventListener('dragend', () => btn.classList.remove('is-dragging'));
-    btn.addEventListener('dragover', e => { e.preventDefault(); btn.classList.add('is-drop-target'); });
-    btn.addEventListener('dragleave', () => btn.classList.remove('is-drop-target'));
+    btn.addEventListener('dragend', () => btn.classList.remove('is-dragging', 'is-drop-target', 'is-file-drop-target'));
+    // v2 (#189): differentiate file-assignment drop vs pin-reorder drop visually.
+    // dataTransfer.getData() returns "" during dragover for security; dataTransfer.types
+    // is the spec-blessed way to peek at what the drag carries.
+    const dragOver = (e: DragEvent): void => {
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      const types = Array.from(dt.types ?? []);
+      const isFile = types.includes('application/x-mid-file');
+      const isPin = types.includes('application/x-mid-pin');
+      if (!isFile && !isPin) return;
+      e.preventDefault();
+      btn.classList.toggle('is-file-drop-target', isFile);
+      btn.classList.toggle('is-drop-target', !isFile && isPin);
+      if (dt.dropEffect !== undefined) dt.dropEffect = isFile ? 'link' : 'move';
+    };
+    btn.addEventListener('dragenter', dragOver);
+    btn.addEventListener('dragover', dragOver);
+    btn.addEventListener('dragleave', () => btn.classList.remove('is-drop-target', 'is-file-drop-target'));
     btn.addEventListener('drop', e => {
       e.preventDefault();
-      btn.classList.remove('is-drop-target');
+      btn.classList.remove('is-drop-target', 'is-file-drop-target');
       const dt = e.dataTransfer;
       if (!dt) return;
       // File drop → register in cluster
       const filePath = dt.getData('application/x-mid-file');
       if (filePath) {
         const target = pinnedFolders[idx];
+        const before = (target.files ?? []).length;
         target.files = Array.from(new Set([...(target.files ?? []), filePath]));
+        if (target.files.length === before) {
+          flashStatus(`${filePath.split('/').pop()} already in "${target.name}"`);
+          return;
+        }
         void window.mid.patchAppState({ pinnedFolders });
         flashStatus(`Added ${filePath.split('/').pop()} to "${target.name}"`);
         if (activeActivity === `pinned:${target.path}`) void loadPinnedTree(target.path);
