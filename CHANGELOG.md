@@ -4,6 +4,14 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-05-03
+
+### Fixed — onboarding wizard rebuilt + device-flow auth (#300, #301, #303)
+
+- **#300 — Onboarding modal redesigned.** The previous version had no CSS and rendered as a flat numbered list with all step content inline. Added the full `.mid-onboarding*` styling surface: frame, stepper rail (1·2·3 pills with active/done states), per-step card body, footer, error/status badges, repo list rows. Added a proper **intro page** that runs first — title + paragraph explaining what a warehouse is + three check-mark bullets + single primary CTA. Stepper hidden on intro and revealed when user clicks *Set up warehouse*.
+- **#301 — GitHub device flow now works end-to-end.** Default `MID_GH_CLIENT_ID` to the official `gh` CLI's public client_id (`178c6fc778ccc68e1d6a`) when the env var is unset. Surface real GitHub API error bodies — non-200 responses include status + truncated body in the error dialog instead of "Unknown error".
+- **#303 — Onboarding now fires on launch when no warehouse is connected.** Force-opens the modal at app start whenever the active workspace has no warehouse, regardless of the dismissed list. Dismiss still suppresses re-triggers within a session; on each launch we ask again.
+
 ## [0.2.3] — 2026-05-03
 
 ### Fixed — packaged-build polish (#288, #289, #291)
