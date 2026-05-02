@@ -4,6 +4,27 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-05-03
+
+### Added — Tab manager MVP (#287)
+
+- VSCode-style tab strip above the editor when one or more files are open. Click a tree row to open a new tab; clicking a file already open focuses its existing tab (no duplicates).
+- Per-tab close button + middle-click close + `Cmd/Ctrl+W` close-active. `Cmd/Ctrl+Shift+T` reopens the last closed tab. `Cmd/Ctrl+Alt+ArrowLeft/Right` cycles tabs.
+- Drag tabs to reorder.
+- Open tabs persist across restart via a new SQLite `open_tabs` table.
+- Window detach (#308) and split-screen (#309) deferred to follow-up issues; the IPC contract for both is sketched in `docs/desktop-tabs.md`.
+
+### Added — Typed-notes follow-ups (#295, #296, #297, #302)
+
+- **Task-list custom view** (#295) — notes with `type: task-list` swap the markdown editor for a checklist editor (checkbox + free text + drag-reorder rows). Persists as `- [ ]` / `- [x]` markdown so the underlying file stays human-readable.
+- **Meeting custom view** (#296) — notes with `type: meeting` render a structured form (date, attendees chips, location, agenda + notes editors, decisions chips). Persists as YAML frontmatter + body.
+- **User-defined custom note types in settings** (#297) — Settings → Notes → Note types lists built-in types (read-only) and user-defined types (editable). Add custom types with a chosen id, label, icon, color, and viewKind. Stored in a new SQLite `note_types` table with built-ins seeded on first read.
+- **Filter strip control** (#302) — Settings → Notes → Filter strip has a master toggle, per-type visibility checkboxes, and drag-to-reorder. Strip respects all three settings; updates live with no restart.
+
+### Fixed — release pipeline auto-publishes (#306)
+
+- The `Generate release notes from CHANGELOG` job kept failing across releases because `gh release view` returns nonzero for draft releases. Switched the wait loop to the raw `repos/.../releases` API (which lists drafts unconditionally) and added a final `gh release edit --draft=false` step. Future releases (this one included) publish without manual `gh release edit` after every tag.
+
 ## [0.2.4] — 2026-05-03
 
 ### Fixed — onboarding wizard rebuilt + device-flow auth (#300, #301, #303)
