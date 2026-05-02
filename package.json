@@ -55,8 +55,15 @@
     },
     "files": [
       "out/electron/**/*",
+      "out/mcp/**/*",
+      "media/brand/**/*",
+      "build/icons/**/*",
       "package.json",
       "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "out/mcp/**/*",
+      "node_modules/better-sqlite3/**/*"
     ],
     "extraMetadata": {
       "main": "out/electron/main.js"
@@ -72,15 +79,13 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "universal"
           ]
         },
         {
           "target": "zip",
           "arch": [
-            "arm64",
-            "x64"
+            "universal"
           ]
         }
       ]
