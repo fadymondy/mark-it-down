@@ -45,6 +45,9 @@ interface AppState {
   pinnedFolders?: PinnedFolder[];
   workspaces?: Workspace[];
   activeWorkspace?: string;
+  outlineHidden?: boolean;
+  /** Workspace ids that have dismissed the first-run warehouse onboarding (#236). */
+  warehouseOnboardingDismissed?: string[];
 }
 
 interface PinnedFolder {
@@ -113,6 +116,7 @@ interface Mid {
   notesDelete(workspace: string, id: string): Promise<boolean>;
   notesTag(workspace: string, id: string, tags: string[]): Promise<NoteEntry | null>;
   warehousesList(workspace: string): Promise<Warehouse[]>;
+  warehousesAdd(workspace: string, warehouse: Warehouse): Promise<{ ok: boolean; warehouses: Warehouse[]; error?: string }>;
   notesAttachWarehouse(workspace: string, id: string, warehouseId: string | null): Promise<NoteEntry | null>;
   notesMarkPushed(workspace: string, id: string): Promise<NoteEntry | null>;
   ghAuthStatus(): Promise<{ authenticated: boolean; output: string }>;
@@ -171,6 +175,10 @@ const statusRepoIcon = document.getElementById('status-repo-icon') as HTMLSpanEl
 const statusWords = document.getElementById('status-words') as HTMLSpanElement;
 const statusCursor = document.getElementById('status-cursor') as HTMLSpanElement;
 const statusSave = document.getElementById('status-save') as HTMLSpanElement;
+const statusOutline = document.getElementById('status-outline') as HTMLButtonElement;
+const outlineRail = document.getElementById('outline-rail') as HTMLElement;
+const outlineList = document.getElementById('outline-list') as HTMLElement;
+const outlineCloseBtn = document.getElementById('outline-close') as HTMLButtonElement;
 
 let currentText = '';
 let currentPath: string | null = null;
@@ -187,6 +195,9 @@ let recentFiles: string[] = [];
 let warehouses: Warehouse[] = [];
 let pinnedFolders: PinnedFolder[] = [];
 let workspaces: Workspace[] = [];
+let outlineHidden = false;
+let outlineObserver: IntersectionObserver | null = null;
+const outlineLinkByHeadingId = new Map<string, HTMLElement>();
 const settings = { ...DEFAULT_SETTINGS };
 const expandedDirs = new Set<string>();
 const treeCache = new Map<string, TreeEntry[]>();
@@ -585,16 +596,19 @@ function renderView(): void {
   if (!currentText) {
     root.innerHTML = emptyStateHTML();
     attachWelcomeHandlers(root);
+    rebuildOutline(null);
     return;
   }
   if (isMermaidFile(currentPath)) {
     renderMermaidStandalone();
+    rebuildOutline(null);
     return;
   }
   const preview = document.createElement('div');
   preview.className = 'mid-preview';
   populatePreview(preview);
   root.replaceChildren(preview);
+  rebuildOutline(preview);
 }
 
 function renderMermaidStandalone(): void {
@@ -1161,6 +1175,102 @@ function attachHeadingAnchors(scope: HTMLElement): void {
   });
 }
 
+/** Outline rail (#252) — extracts the heading tree from the active preview
+ * and wires click-to-jump + scroll-spy via IntersectionObserver. The rail is
+ * hidden in edit-only mode and during PDF print (CSS handles `is-printing`). */
+function rebuildOutline(preview: HTMLElement | null): void {
+  if (outlineObserver) {
+    outlineObserver.disconnect();
+    outlineObserver = null;
+  }
+  outlineLinkByHeadingId.clear();
+  outlineList.replaceChildren();
+
+  if (!preview || currentMode === 'edit' || outlineHidden) {
+    return;
+  }
+
+  const headings = Array.from(
+    preview.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6')
+  ).filter(h => (h.id ?? '').length > 0);
+
+  if (headings.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'mid-outline-empty';
+    empty.textContent = 'No headings in this document.';
+    outlineList.appendChild(empty);
+    return;
+  }
+
+  for (const h of headings) {
+    const level = Number(h.tagName.slice(1));
+    const link = document.createElement('a');
+    link.className = 'mid-outline-item';
+    link.href = `#${h.id}`;
+    link.dataset.level = String(level);
+    link.dataset.headingId = h.id;
+    // Strip the trailing `#` anchor character that attachHeadingAnchors appends.
+    const text = (h.textContent ?? '').replace(/#\s*$/, '').trim();
+    link.textContent = text || h.id;
+    link.title = text || h.id;
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const target = preview.querySelector<HTMLElement>(`#${CSS.escape(h.id)}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveOutlineItem(h.id);
+    });
+    outlineList.appendChild(link);
+    outlineLinkByHeadingId.set(h.id, link);
+  }
+
+  // Scroll-spy: highlight the heading nearest the top of the preview viewport.
+  outlineObserver = new IntersectionObserver(entries => {
+    // Pick the entry whose top is closest to (and above) the trigger band.
+    const visible = entries
+      .filter(e => e.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible.length > 0) {
+      const id = (visible[0].target as HTMLElement).id;
+      if (id) setActiveOutlineItem(id);
+    }
+  }, {
+    root: preview,
+    // Trigger band roughly the top fifth of the preview.
+    rootMargin: '0px 0px -75% 0px',
+    threshold: 0,
+  });
+  for (const h of headings) outlineObserver.observe(h);
+}
+
+function setActiveOutlineItem(headingId: string): void {
+  for (const [id, link] of outlineLinkByHeadingId) {
+    link.classList.toggle('is-active', id === headingId);
+  }
+}
+
+function applyOutlineVisibility(): void {
+  outlineRail.hidden = outlineHidden || currentMode === 'edit';
+  document.body.classList.toggle('has-outline', !outlineRail.hidden);
+  statusOutline.dataset.active = outlineHidden ? 'false' : 'true';
+  statusOutline.title = outlineHidden
+    ? 'Show outline (Cmd/Ctrl+Shift+L)'
+    : 'Hide outline (Cmd/Ctrl+Shift+L)';
+}
+
+function setOutlineHidden(hidden: boolean, persist = true): void {
+  outlineHidden = hidden;
+  applyOutlineVisibility();
+  // Re-scan against the current preview so the rail content matches state.
+  const preview = root.querySelector<HTMLElement>('.mid-preview');
+  rebuildOutline(preview);
+  if (persist) void window.mid.patchAppState({ outlineHidden: hidden });
+}
+
+function toggleOutline(): void {
+  setOutlineHidden(!outlineHidden);
+}
+
 const ALERT_ICONS: Record<string, IconName> = {
   note: 'list-ul',
   tip: 'bookmark',
@@ -1629,6 +1739,7 @@ function renderSplit(): void {
   root.classList.add('splitting');
   if (!currentText && !currentPath) {
     root.innerHTML = emptyStateHTML();
+    rebuildOutline(null);
     return;
   }
   const wrap = document.createElement('div');
@@ -1647,6 +1758,7 @@ function renderSplit(): void {
   const preview = document.createElement('div');
   preview.className = 'mid-preview mid-split-preview';
   populatePreview(preview);
+  rebuildOutline(preview);
 
   editor.addEventListener('input', () => {
     currentText = editor.value;
@@ -1689,6 +1801,7 @@ function scheduleSplitRender(preview: HTMLElement): void {
   if (renderTimer !== null) window.clearTimeout(renderTimer);
   renderTimer = window.setTimeout(() => {
     populatePreview(preview);
+    rebuildOutline(preview);
     renderTimer = null;
   }, 50);
 }
@@ -1719,6 +1832,9 @@ function setMode(mode: Mode): void {
   else if (mode === 'edit') renderEdit();
   else renderSplit();
   if (mode === 'view') hideCursor();
+  // Edit-only mode hides the rail; view/split modes show it (subject to user toggle).
+  applyOutlineVisibility();
+  if (mode === 'edit') rebuildOutline(null);
 }
 
 async function openFile(): Promise<void> {
@@ -3381,6 +3497,16 @@ document.addEventListener('contextmenu', e => {
 hydrateIconButtons(document);
 wireSettingsPanel();
 
+// Outline rail (#252) — toggle wiring + keyboard shortcut.
+statusOutline.addEventListener('click', () => toggleOutline());
+outlineCloseBtn.addEventListener('click', () => setOutlineHidden(true));
+window.addEventListener('keydown', e => {
+  if (e.key === 'L' && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    toggleOutline();
+  }
+});
+
 function populateThemeOptions(sel: HTMLSelectElement): void {
   // Modes group
   const modes = document.createElement('optgroup');
@@ -3531,6 +3657,10 @@ void window.mid.readAppState().then(async state => {
   if (Array.isArray(state.workspaces)) {
     workspaces = state.workspaces;
   }
+  if (typeof state.outlineHidden === 'boolean') {
+    outlineHidden = state.outlineHidden;
+  }
+  applyOutlineVisibility();
   // Auto-register the lastFolder as a workspace if it's not in the list yet.
   if (state.lastFolder && !workspaces.find(w => w.path === state.lastFolder)) {
     const name = state.lastFolder.split('/').pop() ?? state.lastFolder;
