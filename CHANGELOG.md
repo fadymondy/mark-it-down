@@ -4,7 +4,29 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
-### Added — v2.0: Per-token highlight.js theme mapping (#51)
+## [0.2.0] — 2026-05-03
+
+### Added — Desktop app (Electron) — release engineering
+
+- **GitHub Releases auto-updater** (#264) — `electron-updater` is wired against `package.json#build.publish`; running clients check on launch, download the matching artifact in the background, prompt the user to restart-and-install or defer to next-launch. Channels (`stable` / `beta`) honour `MID_CHANNEL`; pre-release tags (e.g. `v0.2.0-rc.1`) are auto-flagged so the stable channel skips them. Docs: `docs/desktop-auto-update.md`.
+- **macOS hardened-runtime signing + notarization** (#265) — `package.json#build.mac` now sets `hardenedRuntime: true`, points at a new `build/entitlements.mac.plist` with the minimum capabilities Electron + V8 + better-sqlite3 + the file picker need, and disables the post-sign Gatekeeper assess step. `release.yml` already exports the five required Apple secrets when present. Docs: `docs/desktop-mac-signing.md`.
+- **macOS .zip target** alongside DMG so `electron-updater` can apply blockmap-based delta updates (without it the DMG-only build couldn't auto-update on Mac).
+
+### Added — Desktop app (Electron) — data layer & exports
+
+- **Local SQLite store** (#239) for settings, recent files, pinned folders, workspaces, GitHub warehouses, and an export-history audit log. Database lives at `<userData>/mid.sqlite`. One-shot migration from `state.json` runs in a single transaction on first launch and renames the source file to `state.json.migrated`. Renderer-facing IPC (`mid:read-app-state` / `mid:patch-app-state`) is unchanged — all migration cost was paid in the main process. Two new IPCs: `mid:record-export`, `mid:list-export-history`. Docs: `docs/sqlite-store.md`.
+- **Native module rebuild on install** (#258) — `postinstall` hook runs `electron-rebuild` for `better-sqlite3` so its native binary matches Electron's Node ABI. Without it, fresh installs crashed on launch with `NODE_MODULE_VERSION` mismatch.
+- **Unique-id export filenames** (#238) — every export (PDF / DOCX / HTML / PNG / TXT / MD / code-PNG / mermaid SVG+PNG / table CSV+JSON+XLSX+PNG) is suffixed with an 8-char id, so re-exporting never overwrites a prior file. Docs: `docs/export-filenames.md`.
+- **Code-block PNG export** (#237, #260) — fixed blank-image regression caused by `opacity: 0` on the temp wrapper bleeding into html-to-image's clone; bumped backdrop padding to 96px and inner pre padding to ~28px so the snapshot looks like a Carbon screenshot. Docs: `docs/desktop-export-image.md`.
+- **Table PNG export** (#261) — DataTable export menu has a new "Export as PNG" item; snapshots the filtered + sorted view inside the same macOS-style chrome the code blocks use.
+
+### Added — Desktop app (Electron) — UX
+
+- **Cmd+K spotlight closes on backdrop click** (#242). Esc still works.
+- **DataTable toolbar / header gap fix** (#241) — scoped the markdown-table base styles to `:not(.mid-dt-table)` so they stop leaking into the upgraded DataTable.
+- **Sidebar tree icons bumped to 18px** + **macOS tray icon re-rasterized at 22pt** (#253, #254) — match JetBrains-size and macOS menu-bar conventions respectively.
+
+### Added — VSCode extension — v2.0: Per-token highlight.js theme mapping (#51)
 
 - All 25 bundled themes now ship with a coherent code-highlight palette tuned against their chrome (keyword, built-in, string, number, comment, fn, type, variable, operator, params, meta, regex, title, tag, attribute)
 - New `packages/core/src/themes/hljsCss.ts`: pure helpers `deriveHljsTokens` (algorithmic mapping from chrome palette → token colours), `hljsTokensFor` (curated overrides + derived fallback), `hljsCssFor` (emits the CSS rules)
