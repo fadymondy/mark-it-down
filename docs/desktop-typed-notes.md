@@ -25,14 +25,14 @@ export interface NoteType {
 
 Order in `BUILT_IN_TYPES` is stable — the filter strip and chooser modal render in declaration order. The first entry, `'note'`, is the default for legacy entries created before this feature shipped.
 
-| id          | icon          | color   | viewKind   | purpose                                   |
-| ----------- | ------------- | ------- | ---------- | ----------------------------------------- |
-| `note`      | `bookmark`    | grey    | (markdown) | Plain markdown — the default              |
-| `secret`    | `lock`        | amber   | `secret`   | Key/value secrets editor                  |
-| `task-list` | `check-square`| green   | (markdown) | Checklist (markdown view in MVP)          |
-| `meeting`   | `calendar`    | blue    | (markdown) | Date/attendees frontmatter (markdown)     |
-| `reference` | `book`        | purple  | (markdown) | Long-lived reference doc                  |
-| `snippet`   | `code`        | red     | (markdown) | Code or shell snippet                     |
+| id          | icon          | color   | viewKind    | purpose                                   |
+| ----------- | ------------- | ------- | ----------- | ----------------------------------------- |
+| `note`      | `bookmark`    | grey    | (markdown)  | Plain markdown — the default              |
+| `secret`    | `lock`        | amber   | `secret`    | Key/value secrets editor                  |
+| `task-list` | `check-square`| green   | `task-list` | Checklist editor (#295)                   |
+| `meeting`   | `calendar`    | blue    | `meeting`   | Structured meeting form (#296)            |
+| `reference` | `book`        | purple  | (markdown)  | Long-lived reference doc                  |
+| `snippet`   | `code`        | red     | (markdown)  | Code or shell snippet                     |
 
 ## Storage shape
 
@@ -70,6 +70,8 @@ Currently registered view kinds:
 
 - **`markdown`** (default) — `renderView` / `renderEdit` / `renderSplit` from the existing flow.
 - **`secret`** — `renderSecretEditor`. A key/value list backed by YAML frontmatter (`secrets: { key: value }`). Each row exposes a reveal toggle, copy-to-clipboard, and delete.
+- **`task-list`** (#295) — `renderTaskListEditor`. A checklist editor backed by plain `- [ ]` / `- [x]` markdown lines. See [`docs/desktop-typed-notes-tasklist.md`](desktop-typed-notes-tasklist.md).
+- **`meeting`** (#296) — `renderMeetingEditor`. A structured form (date, attendees, location, agenda, notes, decisions) backed by YAML frontmatter + body sections. See [`docs/desktop-typed-notes-meeting.md`](desktop-typed-notes-meeting.md).
 
 When a typed view is active:
 
@@ -98,12 +100,52 @@ That's the whole contract. The registry is intentionally kept as a TS module rat
 - bundlers can tree-shake unused metadata,
 - adding a new built-in type is a single PR (just append to `BUILT_IN_TYPES`).
 
-User-defined custom types in settings are intentionally **out of scope** for the MVP cut — see the follow-up issue noted in the original feature ticket.
+User-defined custom types are now first-class. See the next two sections.
 
-## Out of scope (MVP cut)
+## User-defined types (#297)
 
-The following pieces from the original spec are deferred to follow-ups:
+Settings → Notes → **Note types** lists every registered type. Built-in entries (the table above) are read-only — only the label / icon / color / description can be tweaked, and `id` + `viewKind` stay locked because their renderer dispatch is wired in code. User-defined entries are fully editable and can be deleted.
 
-- `task-list` custom view — currently renders as plain markdown.
-- `meeting` custom view — currently renders as plain markdown.
-- User-defined custom types in settings.
+**Storage.** A new `note_types` SQLite table holds the merged registry:
+
+```sql
+CREATE TABLE note_types (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  color TEXT NOT NULL,
+  view_kind TEXT NOT NULL,
+  description TEXT,
+  builtin INTEGER NOT NULL DEFAULT 0,
+  sort INTEGER NOT NULL DEFAULT 0
+);
+```
+
+Built-ins are seeded on first read (idempotent — `INSERT OR IGNORE` semantics). User edits to a built-in's appearance survive seeding because the seeder only inserts rows whose ids don't already exist. The `sort` column is preserved across restarts so user-driven reorder via the filter strip (#302) is durable.
+
+**Runtime registry.** `apps/electron/notes/note-types.ts` keeps a mutable `RUNTIME_TYPES` array that starts as the built-ins (so first paint never blocks on IPC) and is overwritten by `setRegistry()` once the renderer hydrates from `mid:note-types-list`. Main calls the same `setRegistry()` after seeding so `notes-create` and `notes-set-type` see user types without an extra round-trip.
+
+**IPC surface.**
+
+| Channel                  | Signature                                                              |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `mid:note-types-list`    | `() → NoteType[]`                                                      |
+| `mid:note-types-upsert`  | `(type) → { ok, types, error? }` — built-in id refuses view_kind change |
+| `mid:note-types-delete`  | `(id) → { ok, types, error? }` — built-ins are protected               |
+| `mid:note-types-reorder` | `(orderedIds) → NoteType[]`                                            |
+
+**Settings UI.** The Note types panel renders one row per registered type with the icon swatch + id + view kind label. The "Add type…" button opens a modal with id (slug input), label, description, icon picker (12 boxicons), color picker (12 swatches), and a viewKind dropdown — initial choices are the built-in views (`markdown`, `task-list`, `secret`, `meeting`). New entries flow through the existing chip / chooser / context-menu plumbing automatically because every consumer reads `listNoteTypes()`.
+
+## Filter strip preferences (#302)
+
+The horizontal type-filter strip above the notes sidebar honours three persisted prefs:
+
+| AppState key             | Type       | Default | Purpose                                              |
+| ------------------------ | ---------- | ------- | ---------------------------------------------------- |
+| `noteTypeStripHidden`    | `boolean`  | `false` | Master toggle — hide the strip entirely              |
+| `noteTypeStripExclude`   | `string[]` | `[]`    | Type ids to omit even when the strip is visible      |
+| `noteTypeOrder`          | `string[]` | `[]`    | Explicit display order; missing ids append in registry order |
+
+The strip itself only renders when the sidebar mode is `notes` AND `noteTypeStripHidden` is false — `setSidebarMode()` enforces both. Settings → Notes → **Filter strip** exposes a master toggle, per-type "Show in strip" checkbox, and a drag-to-reorder list. Changes apply immediately (no app restart): the master toggle / checkbox / drag handler each call `renderNoteTypesStrip()` after persisting via `mid:patch-app-state`.
+
+Newly added types (whether built-in or user-defined) appear in the strip immediately because `orderedStripTypes()` appends any registry entry that's missing from `noteTypeOrder`.
