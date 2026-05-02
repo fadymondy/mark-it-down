@@ -502,6 +502,11 @@ function welcomeHeroHTML(recent: string[]): string {
           <span class="mid-welcome-action-label">Try the sample</span>
           <span class="mid-welcome-action-kbd"></span>
         </button>
+        <button class="mid-welcome-action" data-welcome-action="connect-warehouse" ${currentFolder ? '' : 'disabled'}>
+          ${iconHTML('github')}
+          <span class="mid-welcome-action-label">Connect GitHub warehouse</span>
+          <span class="mid-welcome-action-kbd"></span>
+        </button>
       </div>
       ${recentHTML}
     </div>`;
@@ -541,6 +546,7 @@ function attachWelcomeHandlers(container: HTMLElement): void {
       else if (action === 'open-file') void openFile();
       else if (action === 'new-note') void promptCreateNote();
       else if (action === 'sample') void openSample();
+      else if (action === 'connect-warehouse') void openWarehouseOnboarding(true);
     });
   });
   container.querySelectorAll<HTMLButtonElement>('[data-recent-path]').forEach(btn => {
@@ -1866,6 +1872,9 @@ async function selectTreeFile(filePath: string): Promise<void> {
 async function openFolder(): Promise<void> {
   const result = await window.mid.openFolderDialog();
   if (!result) return;
+  // The dialog returns the tree pre-fetched, so no extra loader needed here.
+  // Cache it so a subsequent switchWorkspace to the same folder is instant.
+  treeCache.set(result.folderPath, result.tree);
   applyFolder(result.folderPath, result.tree);
 }
 
@@ -2113,16 +2122,29 @@ function isGhMissing(output: string): boolean {
 }
 
 async function shouldAutoShowOnboarding(): Promise<boolean> {
-  if (!currentFolder) return false;
+  if (!currentFolder) {
+    console.debug('[mid] onboarding skip: no current folder');
+    return false;
+  }
   const wsId = workspaceIdForCurrent();
-  if (!wsId) return false;
+  if (!wsId) {
+    console.debug('[mid] onboarding skip: no workspace id');
+    return false;
+  }
   try {
     const existing = await window.mid.warehousesList(currentFolder);
-    if (existing.length > 0) return false;
-  } catch { /* surface as 'no warehouse' */ }
+    if (existing.length > 0) {
+      console.debug('[mid] onboarding skip: warehouse already configured', existing);
+      return false;
+    }
+  } catch (err) { console.debug('[mid] warehousesList error (treating as none):', err); }
   const state = await window.mid.readAppState();
   const dismissed = Array.isArray(state.warehouseOnboardingDismissed) ? state.warehouseOnboardingDismissed : [];
-  if (dismissed.includes(wsId)) return false;
+  if (dismissed.includes(wsId)) {
+    console.debug('[mid] onboarding skip: workspace previously dismissed', wsId);
+    return false;
+  }
+  console.debug('[mid] onboarding will show for workspace', wsId);
   return true;
 }
 
@@ -3035,9 +3057,32 @@ function selectActivity(target: ActivityTarget): void {
 
 async function loadFolderTree(folderPath: string): Promise<TreeEntry[]> {
   if (treeCache.has(folderPath)) return treeCache.get(folderPath)!;
-  const tree = await window.mid.listFolderMd(folderPath);
-  treeCache.set(folderPath, tree);
-  return tree;
+  // Delayed-show loader: only flash the spinner if indexing takes >150ms,
+  // so cached / instant returns don't visually blip.
+  const showAt = window.setTimeout(() => showTreeIndexing(folderPath), 150);
+  try {
+    const tree = await window.mid.listFolderMd(folderPath);
+    treeCache.set(folderPath, tree);
+    return tree;
+  } finally {
+    window.clearTimeout(showAt);
+    hideTreeIndexing();
+  }
+}
+
+function showTreeIndexing(folderPath: string): void {
+  if (!treeRoot) return;
+  const name = folderPath.split('/').pop() ?? folderPath;
+  treeRoot.replaceChildren();
+  const overlay = document.createElement('div');
+  overlay.className = 'mid-tree-indexing';
+  overlay.id = 'mid-tree-indexing';
+  overlay.innerHTML = `<div class="mid-tree-indexing-spinner"></div><div class="mid-tree-indexing-label">Indexing ${escapeHTML(name)}…</div>`;
+  treeRoot.appendChild(overlay);
+}
+
+function hideTreeIndexing(): void {
+  document.getElementById('mid-tree-indexing')?.remove();
 }
 
 function invalidateTreeCache(folderPath?: string): void {

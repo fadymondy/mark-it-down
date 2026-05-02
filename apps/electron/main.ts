@@ -779,14 +779,23 @@ function startMCP(): void {
   const script = resolveMCPServerScript();
   if (!script) {
     setMCPStatus('error', 'MCP server script not found');
+    console.error('[mid] MCP start failed: script not found');
     return;
   }
   const notesDir = resolveMCPNotesDir();
   let stderrTail = '';
+  console.log('[mid] starting MCP server', { script, notesDir });
   try {
+    // In packaged Electron, fork() re-launches the Electron binary (process.execPath
+    // is Electron, not Node). ELECTRON_RUN_AS_NODE=1 makes the child boot as plain
+    // Node so the MCP server actually runs instead of spawning a second app.
     mcpProcess = fork(script, ['--notes-dir', notesDir], {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      env: { ...process.env, MID_TRAY_MANAGED: '1' },
+      env: {
+        ...process.env,
+        MID_TRAY_MANAGED: '1',
+        ELECTRON_RUN_AS_NODE: '1',
+      },
     });
     setMCPStatus('running');
     mcpProcess.stderr?.on('data', chunk => {
