@@ -753,6 +753,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
+    "postinstall": "electron-rebuild -w better-sqlite3",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "compile": "npm run compile:extension && npm run compile:webview && npm run compile:mcp",
     "compile:extension": "tsc -p ./",
     "compile:webview": "esbuild src/webview/main.ts --bundle --outfile=out/webview/main.js --format=iife --target=es2020 --platform=browser",
@@ -801,6 +803,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^10.0.1",
     "@resvg/resvg-js": "^2.6.2",
     "@types/better-sqlite3": "^7.6.13",
