@@ -683,6 +683,14 @@ ipcMain.handle('mid:repo-status', async (_e, workspace: string) => {
 });
 
 ipcMain.handle('mid:repo-connect', async (_e, workspace: string, repoSlug: string) => {
+  // #314 — local-folder warehouses use the `local:<path>` prefix. Skip every
+  // git remote step and just confirm the target folder exists; the workspace
+  // doesn't need to be a git repo at all for local-only sync.
+  if (repoSlug.startsWith('local:')) {
+    const targetPath = repoSlug.slice('local:'.length);
+    try { await fs.mkdir(targetPath, { recursive: true }); } catch { /* fine */ }
+    return { url: `file://${targetPath}` };
+  }
   // 1. Ensure git initialized
   try {
     await runGit(workspace, ['rev-parse', '--git-dir']);
@@ -1003,19 +1011,34 @@ function startMCP(): void {
         ELECTRON_RUN_AS_NODE: '1',
       },
     });
+    // Provisionally start. Re-evaluate after 500ms so an early crash flips
+    // the tray to 'error' instead of staying stuck on 'running' (#316).
     setMCPStatus('running');
+    setTimeout(() => {
+      if (mcpProcess && !mcpProcess.killed && mcpProcess.exitCode === null) {
+        // Still alive — refresh the menu so the running label is correct
+        // even if the renderer wasn't ready when the first paint happened.
+        rebuildTrayMenu();
+        console.log('[mid] MCP server alive', { pid: mcpProcess.pid });
+      }
+    }, 500);
     mcpProcess.stderr?.on('data', chunk => {
       stderrTail = (stderrTail + chunk.toString()).slice(-500);
+      // Surface the MCP child's stderr in the main-process console so a real
+      // failure mode is visible during development / packaged testing (#316).
+      console.warn('[mid][mcp]', chunk.toString().trim());
     });
     mcpProcess.on('error', e => {
       mcpProcess = null;
       setMCPStatus('error', e.message);
+      console.error('[mid] MCP fork error:', e.message);
     });
     mcpProcess.on('exit', code => {
       mcpProcess = null;
       if (code !== 0 && mcpStatus !== 'stopped') {
         const detail = stderrTail.trim().split('\n').slice(-1)[0] || `code ${code}`;
         setMCPStatus('error', detail);
+        console.error('[mid] MCP exited with non-zero code:', code, detail);
       } else {
         setMCPStatus('stopped');
       }
