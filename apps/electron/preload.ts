@@ -28,6 +28,17 @@ export interface AppState {
   workspaces?: { id: string; name: string; path: string }[];
   activeWorkspace?: string;
   warehouseOnboardingDismissed?: string[];
+  // #315 — settings page wiring.
+  defaultMode?: 'view' | 'split' | 'edit';
+  reopenLastFolder?: boolean;
+  confirmDirtyClose?: boolean;
+  editorWordWrap?: boolean;
+  codeLineNumbers?: boolean;
+  autoSaveMode?: 'off' | 'blur' | 'interval';
+  defaultNoteType?: string;
+  exportUniqueId?: boolean;
+  defaultExportFolder?: string;
+  ghToken?: string;
 }
 
 export interface NoteEntry {
@@ -143,6 +154,12 @@ contextBridge.exposeInMainWorld('mid', {
     ipcRenderer.invoke('mid:save-file-dialog', defaultName, content),
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke('mid:get-app-info'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('mid:open-external', url),
+  // #315 — show the userData directory in the OS file manager (Settings → Advanced).
+  openUserDataFolder: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('mid:open-user-data-folder'),
+  // #315 — pick a folder used as the default location for `Save As` / exports.
+  pickFolder: (initial?: string): Promise<{ folderPath: string } | null> =>
+    ipcRenderer.invoke('mid:pick-folder', initial),
   onThemeChanged: (cb: (isDark: boolean) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, isDark: boolean) => cb(isDark);
     ipcRenderer.on('mid:theme-changed', handler);

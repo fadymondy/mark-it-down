@@ -1,11 +1,9 @@
 # Desktop settings page
 
 The Mark It Down desktop app exposes preferences through a dedicated full-screen
-settings view (Issue #232). The view replaces the right-sidebar drawer that had
-been in place since v0.1 and adopts the visual patterns from
-`/Users/fadymondy/Sites/orchestra-agents/apps/components/settings` and
-`/Users/fadymondy/Sites/orchestra-agents/apps/components/theme`, rebuilt against
-our existing `--mid-*` tokens.
+settings view. The original layout shipped in #232/#234; the controls were
+wired through to real persisted settings in #315. Theme picker landed in #233;
+typed-notes registry + filter strip wiring landed in #297/#302.
 
 ## At a glance
 
@@ -35,72 +33,116 @@ our existing `--mid-*` tokens.
 When the page opens, the renderer captures `root.scrollTop` so closing the
 page restores the previously-open document at the same scroll position.
 
-## Categories
+## Persistence model
 
-The left rail lists seven categories. Arrow keys navigate between them; `Tab`
-cycles controls inside the active section in DOM order.
+Every setting in this page round-trips through three APIs:
 
-| Category    | Contents                                                                |
-|-------------|-------------------------------------------------------------------------|
-| General     | Reset all settings (theme · fonts · preview width · code-export gradient) |
-| Appearance  | Mode toggle (light/dark/system) · 25-theme grid · typography             |
-| Editor      | Reserved (placeholder until per-editor settings ship)                    |
-| Notes       | Reserved (placeholder until per-workspace note defaults ship)            |
-| GitHub      | Live `gh` CLI status (signed in / not signed in / not detected)          |
-| Export      | Code-export gradient backdrop (`none`, `sunset`, `ocean`, …)             |
-| Advanced    | App version, platform, user-data path, documents path                    |
+- `mid:read-app-state` — read at boot in `apps/electron/renderer/renderer.ts`.
+- `mid:patch-app-state` — written on every change. The handler in
+  `apps/electron/main.ts` accepts arbitrary JSON-blob keys and writes them
+  through `setSetting()` in `apps/electron/db.ts`. Because the SQLite
+  `app_state` table is a key/JSON store, adding new keys never requires a
+  migration.
+- The renderer's `applySettings()` mirrors the in-memory `settings` object
+  into CSS variables, body classes, and DOM attributes so toggling a control
+  takes effect immediately — no restart.
 
-## Persisted setting keys
+Defaults live in `DEFAULT_SETTINGS` at the top of `renderer.ts`. The
+**Reset all settings** button in **Advanced** writes that object verbatim
+back to disk and re-runs `applySettings()` so the live UI matches.
 
-The page is purely a UI relocation — no schema changes from the prior drawer.
-Every key is read and written through the existing IPCs:
+## General
 
-- `mid:read-app-state` — read at boot in `apps/electron/renderer/renderer.ts`
-- `mid:patch-app-state` — written on every change
+| Control | Key | Type | Default | Effect |
+|---|---|---|---|---|
+| Default mode on launch | `defaultMode` | `'view' \| 'split' \| 'edit'` | `'view'` | Picks the initial editor layout when opening a fresh window. |
+| Open last folder on launch | `reopenLastFolder` | `boolean` | `true` | When off, the app cold-starts to the welcome screen even if SQLite remembers a folder. |
+| Confirm before closing dirty tabs | `confirmDirtyClose` | `boolean` | `true` | Prompts before closing a tab with unsaved changes (the prompt is `window.confirm`). |
 
-Persisted keys preserved across the migration:
+## Appearance
 
-| Key                  | Type                                                                   |
-|----------------------|------------------------------------------------------------------------|
-| `theme`              | `'auto' \| 'light' \| 'dark' \| 'sepia' \| theme:<id>`                  |
-| `fontFamily`         | `'system' \| 'sans' \| 'serif' \| 'mono'`                              |
-| `fontSize`           | `12..22` (number)                                                      |
-| `previewMaxWidth`    | `600..1400` (number)                                                   |
-| `codeExportGradient` | `'none' \| 'sunset' \| 'ocean' \| 'lavender' \| 'forest' \| 'slate' \| 'midnight'` |
+| Control | Key | Type | Default | Effect |
+|---|---|---|---|---|
+| Mode pills | `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` | Light/Dark/System mode. `auto` follows `nativeTheme`. |
+| Color theme grid | `theme` | `theme:<id>` | (not set) | Picks one of the 25 named themes from `packages/core/src/themes/themes.ts`. |
+| Font family | `fontFamily` | `'system' \| 'sans' \| 'serif' \| 'mono'` | `'system'` | Swaps the `--mid-font-sans` CSS variable used by the preview. |
+| Body font size | `fontSize` | `12..22` (number) | `17` | Sets the `--mid-font-size-reading` CSS variable. |
+| Preview max-width | `previewMaxWidth` | `600..1400` (number) | `760` | Caps `.mid-preview` column width. |
 
-## Mode toggle (Issue #233)
+## Editor
 
-The Appearance section's Mode group exposes three pills — Light, Dark, System.
+| Control | Key | Type | Default | Effect |
+|---|---|---|---|---|
+| Word wrap | `editorWordWrap` | `boolean` | `true` | Soft-wraps long lines. Off → `wrap="off"` + horizontal scrollbar; the body class `editor-nowrap` is also flipped for any future CSS hooks. Live-applied to the mounted textarea. |
+| Show line numbers in code blocks | `codeLineNumbers` | `boolean` | `true` | Gates `addLineNumbers()` in the preview pipeline. Toggle re-renders the active document so the gutter appears/disappears immediately. |
+| Auto-save | `autoSaveMode` | `'off' \| 'blur' \| 'interval'` | `'off'` | Off → manual `Cmd/Ctrl+S` only. Blur → save the active tab when the editor loses focus. Interval → `setInterval(autoSaveActiveTab, 5000)`. Untitled buffers are skipped to avoid surprise Save-As dialogs. |
 
-- Light / Dark: write `theme: 'light'` or `theme: 'dark'` to `app_state`.
-- System: writes `theme: 'auto'` and follows `nativeTheme`'s `is-dark` event,
-  which `apps/electron/main.ts` forwards to the renderer at boot and on
-  OS-appearance change.
-- Switching mode releases any named theme — every `mid-theme-card` resets its
-  border and `aria-pressed` state.
+## Notes
 
-## Theme picker grid (Issue #233)
+| Control | Key | Type | Default | Effect |
+|---|---|---|---|---|
+| Default note type | `defaultNoteType` | type id | `'note'` | Used when the create-note chooser is dismissed via "Just a note". Falls back to `DEFAULT_TYPE_ID` if the saved id no longer exists in the registry. |
+| Show type filter strip | `noteTypeStripHidden` | `boolean` | `false` | Master toggle for the horizontal type chips above the notes sidebar. |
+| Per-type strip visibility | `noteTypeStripExclude` | `string[]` | `[]` | Type ids to omit from the strip even when it's visible. |
+| Strip ordering (drag) | `noteTypeOrder` | `string[]` | `[]` | Explicit ordering; ids missing from this list append in registry order. |
+| Note types registry | n/a | `note_types` SQLite table | (built-ins) | Built-in types are locked; user-defined types can be edited / deleted via `mid:note-types-upsert` / `mid:note-types-delete`. |
 
-The Appearance section's Color theme group renders one card per theme defined
-in `packages/core/src/themes/themes.ts` (25 themes total). Cards are grouped
-by `kind` (Light themes / Dark themes) and ordered as they appear in the
-`THEMES` array.
+## GitHub
 
-Each card:
+| Control | Key | Type | Effect |
+|---|---|---|---|
+| Active warehouse readout | n/a | read from `<workspace>/.mid/warehouse.json` | Displays the current workspace's first warehouse (name / repo / branch / subdir). |
+| Change warehouse… | n/a | trigger | Calls `openWarehouseOnboarding(true)` to re-enter the onboarding flow with `force=true` (clears the dismissed list). |
+| gh CLI status | n/a | derived from `mid:gh-auth-status` | Live read of `gh auth status` so the user knows whether sync will work. |
+| Reset GitHub token | `ghToken` | `string` (cleared to `''`) | Wipes the device-flow OAuth token so the next push triggers a fresh login. Confirms via `midConfirm` first. |
 
-- Uses the theme's own `bg`, `fg`, and `border` for its visible surface, so
-  the card itself previews the theme.
-- Renders four bars in `--theme.fgMuted`, `--theme.accent`, `--theme.codeBg`
-  to evoke a code mockup (matches the reference's preview pattern).
-- Tags the kind in the corner (`Light` / `Dark`) using
-  `--theme.accent` on `--theme.bg`.
-- On click, writes `theme: 'theme:<id>'`. Active state uses
-  `border-color: var(--mid-accent)` and `box-shadow: 0 0 0 2px var(--mid-accent)`.
+## Export
 
-The transition is smooth because the renderer updates only the active borders
-and the mode-pill state — it never re-renders the entire grid on selection.
+| Control | Key | Type | Default | Effect |
+|---|---|---|---|---|
+| Code export background | `codeExportGradient` | `'none' \| 'sunset' \| 'ocean' \| 'lavender' \| 'forest' \| 'slate' \| 'midnight'` | `'sunset'` | Backdrop gradient for the code-block PNG export. |
+| Add unique id suffix | `exportUniqueId` | `boolean` | `true` | Appends an 8-char id to every exported filename (e.g. `notes--ab12cd34.md`). Off reuses the source basename verbatim. |
+| Default export folder | `defaultExportFolder` | `string` (path) | `''` | When set, prepended to the default name passed to `dialog.showSaveDialog` so exports open at that folder. Empty = OS default. |
 
-## Row pattern (Issue #234)
+## Advanced
+
+| Control | Effect |
+|---|---|
+| Diagnostics readout | App version, platform, `app.getPath('userData')`, `app.getPath('documents')`. |
+| Open user data folder | `shell.openPath(userData)` — reveals the SQLite/notes/settings directory in Finder/Explorer. |
+| Re-open warehouse onboarding | `openWarehouseOnboarding(true)` — restarts the first-run flow even when a warehouse already exists. |
+| Reset all settings | Wipes every preference back to `DEFAULT_SETTINGS`, re-applies, and re-renders the section. Notes, warehouses, and tabs are preserved. |
+
+## Persisted setting keys (full)
+
+| Key                  | Type                                                                              | Section    |
+|----------------------|------------------------------------------------------------------------------------|------------|
+| `theme`              | `'auto' \| 'light' \| 'dark' \| 'sepia' \| theme:<id>`                            | Appearance |
+| `fontFamily`         | `'system' \| 'sans' \| 'serif' \| 'mono'`                                         | Appearance |
+| `fontSize`           | `12..22` (number)                                                                  | Appearance |
+| `previewMaxWidth`    | `600..1400` (number)                                                               | Appearance |
+| `defaultMode`        | `'view' \| 'split' \| 'edit'`                                                     | General    |
+| `reopenLastFolder`   | `boolean`                                                                          | General    |
+| `confirmDirtyClose`  | `boolean`                                                                          | General    |
+| `editorWordWrap`     | `boolean`                                                                          | Editor     |
+| `codeLineNumbers`    | `boolean`                                                                          | Editor     |
+| `autoSaveMode`       | `'off' \| 'blur' \| 'interval'`                                                   | Editor     |
+| `defaultNoteType`    | type id (`string`)                                                                 | Notes      |
+| `noteTypeStripHidden`| `boolean`                                                                          | Notes      |
+| `noteTypeStripExclude`| `string[]`                                                                        | Notes      |
+| `noteTypeOrder`      | `string[]`                                                                         | Notes      |
+| `ghToken`            | `string` (OAuth token; cleared via Reset)                                          | GitHub     |
+| `codeExportGradient` | `'none' \| 'sunset' \| 'ocean' \| 'lavender' \| 'forest' \| 'slate' \| 'midnight'`| Export     |
+| `exportUniqueId`     | `boolean`                                                                          | Export     |
+| `defaultExportFolder`| `string` (path)                                                                    | Export     |
+
+Other persisted keys touched implicitly by the page (not exposed as a control,
+but reset by **Advanced → Reset all settings**): `splitRatio`, `lastFolder`,
+`recentFiles`, `pinnedFolders`, `workspaces`, `activeWorkspace`,
+`outlineHidden`, `warehouseOnboardingDismissed`, `tabSplitActive`,
+`tabSplitRatio`, `tabActiveStripId`.
+
+## Row pattern
 
 Every settings group uses the row pattern from
 `/Users/fadymondy/Sites/orchestra-agents/apps/components/settings/src/SettingsForm/SettingField.tsx`:
@@ -123,7 +165,7 @@ Every settings group uses the row pattern from
 The helper `makeGroup(title, description?)` builds the card; `makeRow({ label,
 description?, inline? }, control)` builds the row. `inline: true` switches the
 row to a single-line layout (label/desc on the left, control on the right) for
-toggle-style controls (used today by **General → Reset all settings**).
+toggle-style controls.
 
 ## Accessibility
 
@@ -140,22 +182,24 @@ toggle-style controls (used today by **General → Reset all settings**).
 
 Below 720 px, the body switches to a stacked layout: the rail collapses into
 a horizontal tab strip pinned to the top of the body, scrolling horizontally
-when there isn't room. The rail header (title + subtitle) hides at this size
-to maximize the strip width.
+when there isn't room.
 
 ## Files
 
-- `apps/electron/renderer/index.html` — `#settings-page` shell + topbar +
-  rail / main split
+- `apps/electron/renderer/index.html` — `#settings-page` shell.
 - `apps/electron/renderer/renderer.ts` — `wireSettingsPanel()`, all
-  `render*Section()` helpers, `makeGroup`, `makeRow`,
-  `resolveModeFromTheme`, `modeChoiceToTheme`, the theme grid, and the
-  Cmd/Ctrl+, + Esc handlers
+  `render*Section()` helpers, `makeGroup`, `makeRow`, `applySettings()`,
+  `autoSaveActiveTab()`, `setupAutoSaveInterval()`, `defaultExportName()`.
 - `apps/electron/renderer/renderer.css` — `.mid-settings-page`,
   `.mid-settings-nav`, `.mid-settings-group`, `.mid-setting-row`,
-  `.mid-mode-pills`, `.mid-theme-grid`, `.mid-theme-card`, `.mid-kv-row`
-- `packages/core/src/themes/themes.ts` — the 25-theme palette consumed by
-  the picker
+  `.mid-mode-pills`, `.mid-theme-grid`, `.mid-theme-card`, `.mid-kv-row`.
+- `apps/electron/preload.ts` — `AppState` interface, IPC bridge surface
+  (`openUserDataFolder`, `pickFolder`).
+- `apps/electron/main.ts` — `mid:patch-app-state` (generic JSON-blob writer),
+  `mid:open-user-data-folder`, `mid:pick-folder`.
+- `apps/electron/db.ts` — SQLite `app_state` key/JSON store backing every
+  setting key in this page.
+- `packages/core/src/themes/themes.ts` — the 25-theme palette.
 
 ## Reference
 

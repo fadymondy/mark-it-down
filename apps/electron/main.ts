@@ -984,6 +984,33 @@ ipcMain.handle('mid:open-external', async (_e, url: string) => {
   await shell.openExternal(url);
 });
 
+// #315 — Settings → Advanced → Open user data folder. Reveals the directory in
+// the OS file manager (Finder on macOS, Explorer on Windows, default file
+// manager on Linux). Uses `shell.openPath` against the directory itself so the
+// user lands inside the folder rather than highlighting it in the parent.
+ipcMain.handle('mid:open-user-data-folder', async () => {
+  try {
+    const dir = app.getPath('userData');
+    const err = await shell.openPath(dir);
+    if (err) return { ok: false, error: err };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
+// #315 — Settings → Export → Default export folder. Generic folder picker;
+// pre-fills the dialog at `initial` when supplied so re-picking near the
+// existing choice is one click away.
+ipcMain.handle('mid:pick-folder', async (_e, initial?: string) => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    ...(initial ? { defaultPath: initial } : {}),
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return { folderPath: result.filePaths[0] };
+});
+
 ipcMain.handle('mid:update-status', async () => updateState);
 ipcMain.handle('mid:update-check-now', async () => {
   if (isDev) return { skipped: true, reason: 'dev mode — skip update check' };
@@ -1104,6 +1131,18 @@ interface AppState {
    * repo button context menu. See #236.
    */
   warehouseOnboardingDismissed?: string[];
+  // #315 — settings-page-driven preferences. All of these are JSON-blob
+  // values stored via `setSetting` and round-trip through `writeAppState`'s
+  // generic `rest` branch — no schema migrations required.
+  defaultMode?: 'view' | 'split' | 'edit';
+  reopenLastFolder?: boolean;
+  confirmDirtyClose?: boolean;
+  editorWordWrap?: boolean;
+  codeLineNumbers?: boolean;
+  autoSaveMode?: 'off' | 'blur' | 'interval';
+  defaultNoteType?: string;
+  exportUniqueId?: boolean;
+  defaultExportFolder?: string;
 }
 
 function resolveMCPServerScript(): string {

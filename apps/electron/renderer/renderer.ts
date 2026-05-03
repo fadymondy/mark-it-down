@@ -34,6 +34,8 @@ const CODE_EXPORT_GRADIENTS: Record<CodeExportGradient, string | null> = {
   midnight: 'linear-gradient(135deg, #232526 0%, #414345 100%)',
 };
 
+type AutoSaveMode = 'off' | 'blur' | 'interval';
+
 interface AppState {
   lastFolder?: string;
   splitRatio?: number;
@@ -56,6 +58,17 @@ interface AppState {
   /** #302 — per-user ordering of strip entries; ids missing from this list
    * append in registry order. */
   noteTypeOrder?: string[];
+  // #315 — settings page wiring (every section persists through here).
+  defaultMode?: Mode;
+  reopenLastFolder?: boolean;
+  confirmDirtyClose?: boolean;
+  editorWordWrap?: boolean;
+  codeLineNumbers?: boolean;
+  autoSaveMode?: AutoSaveMode;
+  defaultNoteType?: string;
+  exportUniqueId?: boolean;
+  defaultExportFolder?: string;
+  ghToken?: string;
   /** #309 — split-screen tab manager state. `tabSplitActive` is true when the
    * editor area is showing two columns; `tabSplitRatio` is the left column's
    * share (0.15-0.85); `tabActiveStripId` (0|1) is the column the user was
@@ -86,6 +99,17 @@ const DEFAULT_SETTINGS = {
   theme: 'auto' as ThemeChoice,
   previewMaxWidth: 760,
   codeExportGradient: 'sunset' as CodeExportGradient,
+  // #315 — every section's defaults live here so `Reset to defaults` and the
+  // initial Settings render share a single source of truth.
+  defaultMode: 'view' as Mode,
+  reopenLastFolder: true,
+  confirmDirtyClose: true,
+  editorWordWrap: true,
+  codeLineNumbers: true,
+  autoSaveMode: 'off' as AutoSaveMode,
+  defaultNoteType: 'note',
+  exportUniqueId: true,
+  defaultExportFolder: '' as string,
 };
 
 const FONT_STACKS: Record<FontFamilyChoice, string> = {
@@ -156,6 +180,9 @@ interface Mid {
   saveFileDialog(defaultName: string, content: string): Promise<string | null>;
   getAppInfo(): Promise<{ version: string; platform: string; isDark: boolean; userData: string; documents: string }>;
   openExternal(url: string): Promise<void>;
+  // #315 — Settings → Advanced + Settings → Export.
+  openUserDataFolder(): Promise<{ ok: boolean; error?: string }>;
+  pickFolder(initial?: string): Promise<{ folderPath: string } | null>;
   onThemeChanged(cb: (isDark: boolean) => void): () => void;
   onMenuOpen(cb: () => void): () => void;
   onMenuOpenFolder(cb: () => void): () => void;
@@ -365,6 +392,13 @@ function openTab(filePath: string, content: string): FileTab {
 function closeTabAt(idx: number): void {
   if (idx < 0 || idx >= tabs.length) return;
   const closed = tabs[idx];
+  // #315 — confirm-before-close-dirty toggle. The synchronous prompt path is
+  // intentional so we keep the existing closure-bound callsites working
+  // without churning every callback into async. Cancelled close is a no-op.
+  if (closed.dirty && settings.confirmDirtyClose) {
+    const proceed = window.confirm(`"${closed.path.split('/').pop() ?? closed.path}" has unsaved changes. Close without saving?`);
+    if (!proceed) return;
+  }
   recentlyClosedPaths.push(closed.path);
   if (recentlyClosedPaths.length > 20) recentlyClosedPaths.shift();
   const wasActiveStrip = closed.stripId === activeStripId;
@@ -886,6 +920,16 @@ function applySettings(): void {
   root.style.setProperty('--mid-font-sans', FONT_STACKS[settings.fontFamily]);
   root.style.setProperty('--mid-font-size-reading', `${settings.fontSize}px`);
   root.style.setProperty('--mid-preview-max-width', `${settings.previewMaxWidth}px`);
+  // #315 — word-wrap is applied via a body class so the existing
+  // `.mid-edit textarea, .mid-split-editor` selectors can flip white-space.
+  document.body.classList.toggle('editor-nowrap', !settings.editorWordWrap);
+  // Live-update any currently mounted editor textarea(s) so toggling word-wrap
+  // from Settings flips the active document immediately, not on next render.
+  document.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(ta => {
+    ta.wrap = settings.editorWordWrap ? 'soft' : 'off';
+    ta.style.whiteSpace = settings.editorWordWrap ? '' : 'pre';
+    ta.style.overflowX = settings.editorWordWrap ? '' : 'auto';
+  });
   applyResolvedTheme();
 }
 
@@ -1602,7 +1646,10 @@ function attachCodeBlockToolbar(scope: HTMLElement): void {
     chrome.appendChild(header);
     chrome.appendChild(pre);
 
-    addLineNumbers(pre, code);
+    // #315 — gate line numbers on the Settings toggle. The per-block context
+    // menu still allows ad-hoc overrides via `with-lines` class — this is just
+    // the default for newly rendered blocks.
+    if (settings.codeLineNumbers) addLineNumbers(pre, code);
 
     const onMenu = (e: MouseEvent): void => {
       e.preventDefault();
@@ -2966,6 +3013,19 @@ function buildEditor(): HTMLTextAreaElement {
   const ta = document.createElement('textarea');
   ta.value = currentText;
   ta.spellcheck = false;
+  // #315 — word-wrap toggle. `wrap="off"` keeps long lines on one row +
+  // exposes a horizontal scrollbar; `applySettings()` mirrors the current
+  // value into already-mounted textareas when the user flips it live.
+  ta.wrap = settings.editorWordWrap ? 'soft' : 'off';
+  if (!settings.editorWordWrap) {
+    ta.style.whiteSpace = 'pre';
+    ta.style.overflowX = 'auto';
+  }
+  // #315 — Auto-save on blur. The `interval` mode is wired by a setInterval
+  // started in the global hydration block (see `setupAutoSaveInterval`).
+  if (settings.autoSaveMode === 'blur') {
+    ta.addEventListener('blur', () => { void autoSaveActiveTab(); });
+  }
   ta.addEventListener('input', () => {
     currentText = ta.value;
     updateWordCount();
@@ -3960,18 +4020,63 @@ async function saveFile(): Promise<void> {
   }
 }
 
+/**
+ * #315 — Quiet variant of `saveFile` used by the auto-save modes (on blur,
+ * every 5s). Skips the flash + the "Save As…" dialog so background saves
+ * don't pop modals; if there's no `currentPath` (untitled buffer), we just
+ * leave it dirty until the user explicitly saves.
+ */
+async function autoSaveActiveTab(): Promise<void> {
+  const t = activeTab();
+  if (!t || !t.dirty || !currentPath) return;
+  try {
+    await window.mid.writeFile(currentPath, currentText);
+    t.text = currentText;
+    t.dirty = false;
+    renderTabstrip();
+    updateSaveIndicator(true);
+  } catch (err) {
+    console.warn('[mid] auto-save failed:', (err as Error).message);
+  }
+}
+
+/** #315 — Interval auto-save (5s). Only one timer ever exists; switching
+ *  modes from Settings cancels the prior timer before scheduling the next. */
+let autoSaveTimer: number | null = null;
+function setupAutoSaveInterval(): void {
+  if (autoSaveTimer !== null) {
+    window.clearInterval(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+  if (settings.autoSaveMode === 'interval') {
+    autoSaveTimer = window.setInterval(() => { void autoSaveActiveTab(); }, 5000);
+  }
+}
+
 function shortExportId(): string {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 8);
 }
 
 function uniqueExportName(base: string, ext: string): string {
   const safe = base.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9-_.]/g, '_') || 'export';
+  // #315 — Settings → Export → Add unique id suffix. Off → reuse the source
+  // basename verbatim (the OS save dialog still warns on overwrite).
+  if (!settings.exportUniqueId) return `${safe}.${ext}`;
   return `${safe}--${shortExportId()}.${ext}`;
 }
 
 function defaultExportName(ext: string): string {
   const base = currentPath ? currentPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? 'document' : 'document';
-  return uniqueExportName(base, ext);
+  const filename = uniqueExportName(base, ext);
+  // #315 — Settings → Export → Default export folder. When set, prepend it
+  // so Electron's `showSaveDialog` opens to that directory by default. The
+  // user can still override per-export from the dialog itself.
+  const folder = settings.defaultExportFolder?.trim();
+  if (folder) {
+    const sep = folder.endsWith('/') ? '' : '/';
+    return `${folder}${sep}${filename}`;
+  }
+  return filename;
 }
 
 async function exportAs(format: ExportFormat): Promise<void> {
@@ -5497,9 +5602,13 @@ async function promptCreateNote(): Promise<void> {
   // #255 — first ask for the type via the chooser modal. Cancelling the
   // modal defaults to the plain `note` type so users who don't care about
   // typing don't get an extra prompt; cancelling the title prompt aborts.
+  // #315 — when the user "Just a note"s the chooser, fall back to their
+  // configured default note type instead of always picking the built-in
+  // `note`. Unknown ids degrade gracefully back to `DEFAULT_TYPE_ID`.
   const chosen = await openNoteTypeChooserModal();
   if (chosen === undefined) return; // user dismissed via Esc — abort entirely
-  const type = chosen ?? getNoteType(DEFAULT_TYPE_ID);
+  const fallbackId = settings.defaultNoteType || DEFAULT_TYPE_ID;
+  const type = chosen ?? getNoteType(fallbackId);
   const title = await midPrompt(`New ${type.label.toLowerCase()}`, 'Title', '');
   if (!title) return;
   const { entry, fullPath } = await window.mid.notesCreate(currentFolder, title, type.id);
@@ -5919,27 +6028,60 @@ function makeRow(opts: RowOpts, control: HTMLElement): HTMLElement {
 /* ── General ──────────────────────────────────────────────── */
 function renderGeneralSection(
   main: HTMLElement,
-  _persist: (p: Partial<typeof settings>) => void,
-  rerender: () => void,
+  persist: (p: Partial<typeof settings>) => void,
+  _rerender: () => void,
 ): void {
   const wrap = document.createElement('div');
   wrap.className = 'mid-settings-form';
-  const intro = makeGroup('General', 'Common workspace preferences. Reset to defaults if anything feels off.');
-  const resetBtn = document.createElement('button');
-  resetBtn.type = 'button';
-  resetBtn.className = 'mid-btn';
-  resetBtn.textContent = 'Reset to defaults';
-  resetBtn.addEventListener('click', () => {
-    Object.assign(settings, DEFAULT_SETTINGS);
-    applySettings();
-    void window.mid.patchAppState({ ...DEFAULT_SETTINGS });
-    rerender();
-  });
-  intro.body.appendChild(makeRow(
-    { label: 'Reset all settings', description: 'Restore defaults for theme, fonts, preview width, and code-export gradient.', inline: true },
-    resetBtn,
+
+  // Group 1 — Default mode on launch. Three pills (View / Split / Edit). The
+  // setting is honored when a new window opens against an empty workspace; it
+  // doesn't override per-tab restored state.
+  const launchGroup = makeGroup('Launch', 'Defaults applied when the app starts.');
+  const modePills = document.createElement('div');
+  modePills.className = 'mid-mode-pills';
+  for (const m of ['view', 'split', 'edit'] as const) {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'mid-mode-pill' + (settings.defaultMode === m ? ' is-active' : '');
+    pill.dataset.mode = m;
+    const icon = m === 'view' ? 'show' : m === 'split' ? 'image' : 'edit';
+    pill.innerHTML = `<span class="mid-mode-pill__icon">${iconHTML(icon as IconName)}</span><span>${m === 'view' ? 'View' : m === 'split' ? 'Split' : 'Edit'}</span>`;
+    pill.addEventListener('click', () => {
+      persist({ defaultMode: m });
+      modePills.querySelectorAll<HTMLButtonElement>('.mid-mode-pill').forEach(p => p.classList.toggle('is-active', p.dataset.mode === m));
+    });
+    modePills.appendChild(pill);
+  }
+  launchGroup.body.appendChild(makeRow(
+    { label: 'Default mode on launch', description: 'Which editor layout to show when you start a new session.' },
+    modePills,
   ));
-  wrap.appendChild(intro.card);
+
+  const reopenToggle = document.createElement('input');
+  reopenToggle.type = 'checkbox';
+  reopenToggle.className = 'mid-settings-control mid-settings-checkbox';
+  reopenToggle.checked = settings.reopenLastFolder;
+  reopenToggle.addEventListener('change', () => persist({ reopenLastFolder: reopenToggle.checked }));
+  launchGroup.body.appendChild(makeRow(
+    { label: 'Open last folder on launch', description: 'When off, every cold start lands on the welcome screen even if a folder was loaded last session.', inline: true },
+    reopenToggle,
+  ));
+  wrap.appendChild(launchGroup.card);
+
+  // Group 2 — Window behavior.
+  const windowGroup = makeGroup('Window', 'Behavior across the editor and tab strip.');
+  const dirtyToggle = document.createElement('input');
+  dirtyToggle.type = 'checkbox';
+  dirtyToggle.className = 'mid-settings-control mid-settings-checkbox';
+  dirtyToggle.checked = settings.confirmDirtyClose;
+  dirtyToggle.addEventListener('change', () => persist({ confirmDirtyClose: dirtyToggle.checked }));
+  windowGroup.body.appendChild(makeRow(
+    { label: 'Confirm before closing dirty tabs', description: 'Prompt when closing a tab with unsaved changes. Off skips the prompt — closes silently.', inline: true },
+    dirtyToggle,
+  ));
+  wrap.appendChild(windowGroup.card);
+
   main.appendChild(wrap);
 }
 
@@ -6111,11 +6253,73 @@ function renderAppearanceSection(main: HTMLElement, persist: (p: Partial<typeof 
 function renderEditorSection(main: HTMLElement): void {
   const wrap = document.createElement('div');
   wrap.className = 'mid-settings-form';
+
+  // #315 — Editor section uses `persistAndApply` rather than the page-level
+  // `persist` because changes here (word-wrap, line numbers, auto-save) all
+  // need an `applySettings()` + sometimes a re-render to take effect on the
+  // currently mounted editor instance, not just at next mount.
+  const persistAndApply = (patch: Partial<typeof settings>): void => {
+    Object.assign(settings, patch);
+    applySettings();
+    void window.mid.patchAppState(patch);
+  };
+
   const grp = makeGroup('Editor', 'Editing behavior in the split and edit panes.');
-  const note = document.createElement('p');
-  note.className = 'mid-settings-empty';
-  note.textContent = 'Editor preferences will land here as they ship. The current build uses sensible defaults: autosave on file open, soft wrap, and system tab width.';
-  grp.body.appendChild(note);
+
+  const wrapToggle = document.createElement('input');
+  wrapToggle.type = 'checkbox';
+  wrapToggle.className = 'mid-settings-control mid-settings-checkbox';
+  wrapToggle.checked = settings.editorWordWrap;
+  wrapToggle.addEventListener('change', () => persistAndApply({ editorWordWrap: wrapToggle.checked }));
+  grp.body.appendChild(makeRow(
+    { label: 'Word wrap', description: 'Soft-wrap long lines in the editor textarea. Off shows a horizontal scrollbar instead.', inline: true },
+    wrapToggle,
+  ));
+
+  const lineNumsToggle = document.createElement('input');
+  lineNumsToggle.type = 'checkbox';
+  lineNumsToggle.className = 'mid-settings-control mid-settings-checkbox';
+  lineNumsToggle.checked = settings.codeLineNumbers;
+  lineNumsToggle.addEventListener('change', () => {
+    persistAndApply({ codeLineNumbers: lineNumsToggle.checked });
+    // Re-render the active document so the new preference takes effect on
+    // every code block — the gutter is added at render time, not via CSS.
+    if (currentMode === 'view') renderView();
+    else if (currentMode === 'split') renderSplit();
+  });
+  grp.body.appendChild(makeRow(
+    { label: 'Show line numbers in code blocks', description: 'Adds a left-side gutter to every fenced code block in the rendered preview.', inline: true },
+    lineNumsToggle,
+  ));
+
+  const autoSavePills = document.createElement('div');
+  autoSavePills.className = 'mid-mode-pills';
+  for (const m of ['off', 'blur', 'interval'] as const) {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'mid-mode-pill' + (settings.autoSaveMode === m ? ' is-active' : '');
+    pill.dataset.mode = m;
+    const label = m === 'off' ? 'Off' : m === 'blur' ? 'On blur' : 'Every 5s';
+    pill.innerHTML = `<span>${label}</span>`;
+    pill.addEventListener('click', () => {
+      persistAndApply({ autoSaveMode: m });
+      autoSavePills.querySelectorAll<HTMLButtonElement>('.mid-mode-pill').forEach(p => p.classList.toggle('is-active', p.dataset.mode === m));
+      // Restart the interval timer when switching modes so we don't keep an
+      // orphaned ticker running, and a new "interval" mode kicks in instantly.
+      setupAutoSaveInterval();
+      // For the blur mode we'd need a fresh editor mount to attach the
+      // listener — easiest is to re-render the current view so `buildEditor`
+      // wires the listener with the new setting in scope.
+      if (currentMode === 'edit') renderEdit();
+      else if (currentMode === 'split') renderSplit();
+    });
+    autoSavePills.appendChild(pill);
+  }
+  grp.body.appendChild(makeRow(
+    { label: 'Auto-save', description: 'Off — manual Cmd/Ctrl+S only. On blur — save when the editor loses focus. Every 5s — periodic background save.' },
+    autoSavePills,
+  ));
+
   wrap.appendChild(grp.card);
   main.appendChild(wrap);
 }
@@ -6136,6 +6340,35 @@ function renderEditorSection(main: HTMLElement): void {
 function renderNotesSection(main: HTMLElement): void {
   const wrap = document.createElement('div');
   wrap.className = 'mid-settings-form';
+
+  // ─── Group 0: Default note type (#315) ────────────────────────────────────
+  // Picks which type gets pre-selected in the create-note chooser when the
+  // user clicks "Just a note" / dismisses the chooser. Kept first so it sits
+  // at the top of the section above the registry editor.
+  const defaultGroup = makeGroup('Default type', 'Used when creating a new note without explicitly choosing a type.');
+  const defaultSel = document.createElement('select');
+  defaultSel.className = 'mid-settings-control';
+  const refreshDefaultOptions = (): void => {
+    defaultSel.replaceChildren();
+    for (const t of listNoteTypes()) {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.label;
+      defaultSel.appendChild(opt);
+    }
+    const known = listNoteTypes().some(t => t.id === settings.defaultNoteType);
+    defaultSel.value = known ? settings.defaultNoteType : DEFAULT_TYPE_ID;
+  };
+  refreshDefaultOptions();
+  defaultSel.addEventListener('change', () => {
+    settings.defaultNoteType = defaultSel.value;
+    void window.mid.patchAppState({ defaultNoteType: defaultSel.value });
+  });
+  defaultGroup.body.appendChild(makeRow(
+    { label: 'Default note type', description: 'New notes start with this type unless the user picks another from the chooser.' },
+    defaultSel,
+  ));
+  wrap.appendChild(defaultGroup.card);
 
   // ─── Group 1: Note types ──────────────────────────────────────────────────
   const typesGroup = makeGroup('Note types', 'Built-in types are locked; user types can be edited or deleted. New types appear in the create-note chooser, filter strip, and the per-row Change Type menu.');
@@ -6320,6 +6553,9 @@ function renderNotesSection(main: HTMLElement): void {
     renderTypesList();
     renderStripPrefs();
     renderNoteTypesStrip();
+    // #315 — keep the default-type dropdown in sync so a deleted type can't
+    // linger as the default selection.
+    refreshDefaultOptions();
   }
 
   void refreshNoteTypesUI();
@@ -6515,13 +6751,54 @@ function labelledInput(label: string, placeholder: string, initial: string, read
 function renderGitHubSection(main: HTMLElement): void {
   const wrap = document.createElement('div');
   wrap.className = 'mid-settings-form';
-  const grp = makeGroup('GitHub', 'Connection status for the gh CLI integration.');
+
+  // Group 1 — active warehouse (#315). Read-only display of the
+  // workspace-level warehouse plus a button to re-enter the onboarding flow
+  // so the user can swap repos without leaving Settings.
+  const whGroup = makeGroup('Active warehouse', 'The repo (or local folder) this workspace pushes notes into. Re-onboard to switch.');
+  const whInfo = document.createElement('div');
+  whInfo.className = 'mid-kv-block';
+  whInfo.textContent = currentFolder ? 'Loading warehouse…' : 'Open a folder to configure a warehouse.';
+  whGroup.body.appendChild(whInfo);
+
+  const changeBtn = document.createElement('button');
+  changeBtn.type = 'button';
+  changeBtn.className = 'mid-btn mid-btn--primary';
+  changeBtn.innerHTML = `${iconHTML('github', 'mid-icon--sm')}<span>Change warehouse…</span>`;
+  changeBtn.disabled = !currentFolder;
+  changeBtn.addEventListener('click', () => { void openWarehouseOnboarding(true); });
+  whGroup.body.appendChild(makeRow(
+    { label: 'Switch warehouse', description: 'Opens the same flow as first-launch onboarding so you can pick a different repo or local folder.', inline: true },
+    changeBtn,
+  ));
+  wrap.appendChild(whGroup.card);
+
+  if (currentFolder) {
+    void window.mid.warehousesList(currentFolder).then(list => {
+      if (list.length === 0) {
+        whInfo.innerHTML = '<div class="mid-kv-row"><span>Status</span><code>No warehouse configured</code></div>';
+        return;
+      }
+      const active = list[0];
+      const repo = active.repo ?? '(local)';
+      const branch = active.branch ?? 'main';
+      const subdir = active.subdir ?? '';
+      whInfo.innerHTML = `
+        <div class="mid-kv-row"><span>Name</span><code>${escapeHTML(active.name)}</code></div>
+        <div class="mid-kv-row"><span>Repo</span><code>${escapeHTML(repo)}</code></div>
+        <div class="mid-kv-row"><span>Branch</span><code>${escapeHTML(branch)}</code></div>
+        ${subdir ? `<div class="mid-kv-row"><span>Subdir</span><code>${escapeHTML(subdir)}</code></div>` : ''}
+      `;
+    }).catch(() => { whInfo.textContent = 'Failed to read warehouse config.'; });
+  }
+
+  // Group 2 — gh CLI connection (kept from the v0.2.6 placeholder).
+  const grp = makeGroup('gh CLI', 'Connection status for the gh CLI integration.');
   const status = document.createElement('p');
   status.className = 'mid-settings-empty';
   status.textContent = 'Checking gh authentication…';
   grp.body.appendChild(status);
   wrap.appendChild(grp.card);
-  main.appendChild(wrap);
   void window.mid.ghAuthStatus().then((r) => {
     status.textContent = r.authenticated
       ? 'Signed in via gh CLI. Repo connection and sync are managed from the status bar.'
@@ -6529,13 +6806,39 @@ function renderGitHubSection(main: HTMLElement): void {
   }).catch(() => {
     status.textContent = 'gh CLI not detected. Install GitHub CLI to enable repo sync.';
   });
+
+  // Group 3 — token reset (#315). The device-flow fallback writes a token
+  // into `app_state.ghToken`; this clears it so the next sync forces a
+  // fresh login.
+  const tokenGroup = makeGroup('Authentication', 'Stored device-flow token used as a fallback when the gh CLI is missing.');
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'mid-btn';
+  resetBtn.innerHTML = `${iconHTML('lock', 'mid-icon--sm')}<span>Reset GitHub token</span>`;
+  resetBtn.addEventListener('click', async () => {
+    const ok = await midConfirm('Reset GitHub token?', 'Clears the stored OAuth token. The next push will prompt you to re-authenticate via the device-flow modal.');
+    if (!ok) return;
+    // Empty string clears the slot via `setSetting` (kept simple — undefined
+    // would round-trip back as null and confuse the readers).
+    await window.mid.patchAppState({ ghToken: '' });
+    flashStatus('GitHub token cleared');
+  });
+  tokenGroup.body.appendChild(makeRow(
+    { label: 'Reset GitHub token', description: 'Clears the stored device-flow OAuth token. Re-authenticate next time you push.', inline: true },
+    resetBtn,
+  ));
+  wrap.appendChild(tokenGroup.card);
+
+  main.appendChild(wrap);
 }
 
 /* ── Export ────────────────────────────────────────────── */
 function renderExportSection(main: HTMLElement, persist: (p: Partial<typeof settings>) => void): void {
   const wrap = document.createElement('div');
   wrap.className = 'mid-settings-form';
-  const grp = makeGroup('Export', 'Defaults for the PNG / PDF export pipeline.');
+
+  // Group 1 — code export gradient (kept from #232/#234).
+  const grp = makeGroup('Code blocks', 'Backdrop used when exporting a single code block as PNG.');
   const codeBgSel = document.createElement('select');
   codeBgSel.className = 'mid-settings-control';
   for (const [v, l] of [
@@ -6555,10 +6858,58 @@ function renderExportSection(main: HTMLElement, persist: (p: Partial<typeof sett
   codeBgSel.value = settings.codeExportGradient;
   codeBgSel.addEventListener('change', () => persist({ codeExportGradient: codeBgSel.value as CodeExportGradient }));
   grp.body.appendChild(makeRow(
-    { label: 'Code export background', description: 'Backdrop gradient used when exporting a code block as PNG.' },
+    { label: 'Code export background', description: 'Gradient applied to the code-block PNG export. None = transparent backdrop.' },
     codeBgSel,
   ));
   wrap.appendChild(grp.card);
+
+  // Group 2 — filename / location (#315).
+  const fileGroup = makeGroup('Files', 'Defaults applied to every export action.');
+  const uniqIdToggle = document.createElement('input');
+  uniqIdToggle.type = 'checkbox';
+  uniqIdToggle.className = 'mid-settings-control mid-settings-checkbox';
+  uniqIdToggle.checked = settings.exportUniqueId;
+  uniqIdToggle.addEventListener('change', () => persist({ exportUniqueId: uniqIdToggle.checked }));
+  fileGroup.body.appendChild(makeRow(
+    { label: 'Add unique id suffix', description: 'Appends an 8-char id to every exported filename (e.g. `notes--ab12cd34.md`) so successive exports never overwrite each other.', inline: true },
+    uniqIdToggle,
+  ));
+
+  const folderRow = document.createElement('div');
+  folderRow.className = 'mid-range-row';
+  const folderInput = document.createElement('input');
+  folderInput.type = 'text';
+  folderInput.className = 'mid-settings-control';
+  folderInput.placeholder = '~/Downloads (system default)';
+  folderInput.value = settings.defaultExportFolder;
+  folderInput.readOnly = true;
+  folderInput.style.flex = '1';
+  const pickBtn = document.createElement('button');
+  pickBtn.type = 'button';
+  pickBtn.className = 'mid-btn';
+  pickBtn.innerHTML = `${iconHTML('folder', 'mid-icon--sm')}<span>Choose…</span>`;
+  pickBtn.addEventListener('click', async () => {
+    const result = await window.mid.pickFolder(settings.defaultExportFolder || undefined);
+    if (!result) return;
+    folderInput.value = result.folderPath;
+    persist({ defaultExportFolder: result.folderPath });
+    flashStatus('Default export folder updated');
+  });
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'mid-btn';
+  clearBtn.textContent = 'Clear';
+  clearBtn.addEventListener('click', () => {
+    folderInput.value = '';
+    persist({ defaultExportFolder: '' });
+  });
+  folderRow.append(folderInput, pickBtn, clearBtn);
+  fileGroup.body.appendChild(makeRow(
+    { label: 'Default export folder', description: 'Where Save As / Export dialogs open by default. Empty = the OS default (Downloads on macOS).' },
+    folderRow,
+  ));
+  wrap.appendChild(fileGroup.card);
+
   main.appendChild(wrap);
 }
 
@@ -6566,13 +6917,69 @@ function renderExportSection(main: HTMLElement, persist: (p: Partial<typeof sett
 function renderAdvancedSection(main: HTMLElement): void {
   const wrap = document.createElement('div');
   wrap.className = 'mid-settings-form';
-  const grp = makeGroup('Advanced', 'Diagnostics for power users.');
+
+  // Group 1 — diagnostics (kept from prior shipping).
+  const grp = makeGroup('Diagnostics', 'Build / install paths exposed for support tickets.');
   const info = document.createElement('div');
   info.className = 'mid-kv-block';
   info.textContent = 'Loading app info…';
   grp.body.appendChild(info);
+
+  const openUserDataBtn = document.createElement('button');
+  openUserDataBtn.type = 'button';
+  openUserDataBtn.className = 'mid-btn';
+  openUserDataBtn.innerHTML = `${iconHTML('folder', 'mid-icon--sm')}<span>Open user data folder</span>`;
+  openUserDataBtn.addEventListener('click', async () => {
+    const r = await window.mid.openUserDataFolder();
+    if (!r.ok) flashStatus(`Failed to open folder${r.error ? `: ${r.error}` : ''}`);
+  });
+  grp.body.appendChild(makeRow(
+    { label: 'Open user data folder', description: 'Reveals the directory where Mark It Down stores its SQLite database, notes cache, and settings.', inline: true },
+    openUserDataBtn,
+  ));
   wrap.appendChild(grp.card);
+
+  // Group 2 — actions (#315).
+  const actionGroup = makeGroup('Actions', 'Destructive — re-run the onboarding flow or wipe every persisted preference.');
+  const reonboardBtn = document.createElement('button');
+  reonboardBtn.type = 'button';
+  reonboardBtn.className = 'mid-btn';
+  reonboardBtn.innerHTML = `${iconHTML('github', 'mid-icon--sm')}<span>Re-open onboarding</span>`;
+  reonboardBtn.disabled = !currentFolder;
+  reonboardBtn.addEventListener('click', () => { void openWarehouseOnboarding(true); });
+  actionGroup.body.appendChild(makeRow(
+    { label: 'Re-open warehouse onboarding', description: 'Restart the first-run flow even when a warehouse already exists. Useful for swapping repos or re-doing device-flow auth.', inline: true },
+    reonboardBtn,
+  ));
+
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'mid-btn';
+  resetBtn.textContent = 'Reset all settings';
+  resetBtn.addEventListener('click', async () => {
+    const ok = await midConfirm('Reset all settings?', 'Restores defaults for theme, fonts, layout, editor, notes, and export. Does NOT delete your notes or warehouse config.');
+    if (!ok) return;
+    Object.assign(settings, DEFAULT_SETTINGS);
+    applySettings();
+    setupAutoSaveInterval();
+    void window.mid.patchAppState({ ...DEFAULT_SETTINGS });
+    flashStatus('Settings reset to defaults');
+    // Re-render the Advanced section so any toggles bound to settings refresh.
+    const settingsMain = document.getElementById('settings-main');
+    if (settingsMain) {
+      settingsMain.replaceChildren();
+      renderAdvancedSection(settingsMain);
+      hydrateIconButtons(settingsMain);
+    }
+  });
+  actionGroup.body.appendChild(makeRow(
+    { label: 'Reset all settings', description: 'Wipe every preference back to factory defaults. Notes, warehouses, and tabs are preserved.', inline: true },
+    resetBtn,
+  ));
+  wrap.appendChild(actionGroup.card);
+
   main.appendChild(wrap);
+
   void window.mid.getAppInfo().then(i => {
     info.innerHTML = `
       <div class="mid-kv-row"><span>Version</span><code>${escapeHTML(i.version)}</code></div>
@@ -6614,6 +7021,24 @@ void window.mid.readAppState().then(async state => {
   if (state.codeExportGradient && state.codeExportGradient in CODE_EXPORT_GRADIENTS) {
     settings.codeExportGradient = state.codeExportGradient as CodeExportGradient;
   }
+  // #315 — hydrate the new settings page fields. Each is gated on type so a
+  // malformed/stale row in `app_state` falls back to its default rather than
+  // poisoning the live config.
+  if (state.defaultMode === 'view' || state.defaultMode === 'split' || state.defaultMode === 'edit') {
+    settings.defaultMode = state.defaultMode;
+  }
+  if (typeof state.reopenLastFolder === 'boolean') settings.reopenLastFolder = state.reopenLastFolder;
+  if (typeof state.confirmDirtyClose === 'boolean') settings.confirmDirtyClose = state.confirmDirtyClose;
+  if (typeof state.editorWordWrap === 'boolean') settings.editorWordWrap = state.editorWordWrap;
+  if (typeof state.codeLineNumbers === 'boolean') settings.codeLineNumbers = state.codeLineNumbers;
+  if (state.autoSaveMode === 'off' || state.autoSaveMode === 'blur' || state.autoSaveMode === 'interval') {
+    settings.autoSaveMode = state.autoSaveMode;
+  }
+  if (typeof state.defaultNoteType === 'string' && state.defaultNoteType.length > 0) {
+    settings.defaultNoteType = state.defaultNoteType;
+  }
+  if (typeof state.exportUniqueId === 'boolean') settings.exportUniqueId = state.exportUniqueId;
+  if (typeof state.defaultExportFolder === 'string') settings.defaultExportFolder = state.defaultExportFolder;
   if (Array.isArray(state.pinnedFolders)) {
     pinnedFolders = state.pinnedFolders;
     renderActivityPinned();
@@ -6652,10 +7077,16 @@ void window.mid.readAppState().then(async state => {
     void window.mid.patchAppState({ workspaces });
   }
   applySettings();
+  // #315 — Settings → Editor → Auto-save mode. Kick off the interval timer
+  // (no-op when the user picked off / blur).
+  setupAutoSaveInterval();
   // Fade out the launch loader once initial state is hydrated.
   document.getElementById('mid-loader')?.classList.add('is-fading');
   setTimeout(() => document.getElementById('mid-loader')?.remove(), 500);
-  if (state.lastFolder) {
+  // #315 — Reopen last folder on launch toggle. Default true preserves the
+  // existing v0.1+ behavior; turning it off makes the app cold-start to the
+  // welcome screen even when SQLite remembers a previous folder.
+  if (state.lastFolder && settings.reopenLastFolder) {
     try {
       const tree = await window.mid.listFolderMd(state.lastFolder);
       applyFolder(state.lastFolder, tree);
@@ -6663,6 +7094,10 @@ void window.mid.readAppState().then(async state => {
       // folder gone — silently ignore
     }
   }
+  // #315 — Default mode on launch. We only honour the saved choice when no
+  // tab is hydrated yet (a fresh blank window); the per-tab restore later
+  // overrides this when there's an actual document to display.
+  currentMode = settings.defaultMode;
   setMode(currentMode);
   // #287 — restore the open-tabs strip from SQLite. Done after the folder
   // applies so the tree's active-row highlight has a chance to attach.
