@@ -3459,6 +3459,11 @@ async function openWarehouseOnboarding(force = false, blocking = false): Promise
   // a warehouse is persisted (github or local).
   skipBtn.hidden = blocking;
   closeBtn.hidden = blocking;
+  // #325 — flip the body into onboarding-page mode so every other surface
+  // (titlebar / activity bar / sidebar / editor / status bar) is hidden and
+  // the dialog stretches to fill the entire viewport. The class is removed
+  // in closeOnboarding().
+  if (blocking) document.body.classList.add('is-onboarding-page');
 
   const state: OnboardingState = {
     step: 'gh',
@@ -3491,6 +3496,7 @@ async function openWarehouseOnboarding(force = false, blocking = false): Promise
     nextBtn.removeEventListener('click', onNext);
     dlg.removeEventListener('cancel', onCancel);
     if (dlg.open) dlg.close();
+    document.body.classList.remove('is-onboarding-page'); // #325
     onboardingActive = false;
   };
 

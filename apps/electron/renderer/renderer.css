@@ -2856,6 +2856,71 @@ body.settings-open .mid-statusbar { visibility: hidden; }
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
 }
+
+/* === Onboarding-as-PAGE mode (#325) ===================================
+ * When the app boots without a configured warehouse, onboarding is the
+ * ONLY thing the user can interact with. The dialog stretches to cover
+ * the whole viewport and every other surface (title bar, activity bar,
+ * sidebar, file tree, editor, status bar) is hidden.
+ */
+body.is-onboarding-page > .mid-titlebar,
+body.is-onboarding-page > .mid-shell,
+body.is-onboarding-page > .mid-statusbar,
+body.is-onboarding-page > #mid-loader,
+body.is-onboarding-page > #mid-spotlight,
+body.is-onboarding-page > #mid-pin-editor,
+body.is-onboarding-page > #mid-mermaid-editor,
+body.is-onboarding-page > #mid-dialog,
+body.is-onboarding-page > #mid-conflict-banner {
+  display: none !important;
+}
+body.is-onboarding-page {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: var(--mid-bg);
+}
+body.is-onboarding-page #mid-warehouse-onboarding {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--mid-bg);
+}
+body.is-onboarding-page #mid-warehouse-onboarding::backdrop {
+  background: var(--mid-bg);
+  backdrop-filter: none;
+}
+body.is-onboarding-page #mid-warehouse-onboarding .mid-onboarding-frame {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Within page mode, give the body more breathing room and keep the title bar
+ * row spacious — this is the user's first impression. */
+body.is-onboarding-page .mid-onboarding-header {
+  padding: var(--mid-space-6) var(--mid-space-8);
+}
+body.is-onboarding-page .mid-onboarding-title {
+  font-size: var(--mid-font-size-xl, 22px);
+}
+body.is-onboarding-page .mid-onboarding-body {
+  padding: var(--mid-space-8) var(--mid-space-8);
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+body.is-onboarding-page .mid-onboarding-footer {
+  padding: var(--mid-space-4) var(--mid-space-8);
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
 .mid-onboarding-frame {
   background: var(--mid-bg);
   border: 1px solid var(--mid-border);
