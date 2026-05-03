@@ -3240,3 +3240,25 @@ body.settings-open .mid-statusbar { visibility: hidden; }
 }
 .mid-tab__close:hover { background: var(--mid-surface-hover); color: var(--mid-fg); opacity: 1; }
 .mid-tab.is-active .mid-tab__close { opacity: 1; }
+
+/* Tab manager: window detach (#308).
+ *
+ * `.mid-detach-edge` is an overlay rectangle pinned to the entire content
+ * area; it lights up while a tab is being dragged outside the window's
+ * bounds, telegraphing that releasing here will spawn a fresh BrowserWindow.
+ * The overlay is `pointer-events: none` so it never interferes with the
+ * native HTML5 DnD gesture.
+ */
+.mid-detach-edge {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9000;
+  border: 2px dashed transparent;
+  border-radius: 6px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.mid-detach-edge.is-active {
+  border-color: var(--mid-accent, var(--mid-link));
+  background: color-mix(in srgb, var(--mid-accent, var(--mid-link)) 6%, transparent);
+}
