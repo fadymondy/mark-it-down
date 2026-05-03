@@ -4,6 +4,29 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.7] — 2026-05-03
+
+### Fixed — Settings page is no longer a placeholder (#315)
+
+Every section now wires to real, persisted settings:
+
+- **General** — default mode on launch (View / Split / Edit), open last folder on launch, confirm before closing dirty tabs.
+- **Appearance** — font family, font size (12–22 slider), preview max-width (600–1100 slider). Theme picker + light/dark mode pills already worked from #233.
+- **Editor** — word wrap, show line numbers in code blocks, auto-save (Off / on blur / every 5s).
+- **Notes** — default note type for the "+" button. Existing typed-notes config (filter strip, custom types) already shipped in #297/#302.
+- **GitHub** — read-only display of the active warehouse, *Change warehouse…* button (re-opens the onboarding flow with `force=true`), *Reset GitHub token* with confirmation.
+- **Export** — code export gradient picker, "Add unique-id suffix" toggle, default export folder picker.
+- **Advanced** — *Open user data folder* (reveals `<userData>` in Finder/Explorer), *Reset all settings*, *Re-open onboarding*.
+
+Every control persists across restart and applies its effect immediately (no relaunch). Defaults are sensible. Reset clears everything and restores defaults.
+
+### Fixed — Onboarding modal rendered empty + Skip/Back stayed visible in blocking mode
+
+Two compounding bugs caused the onboarding modal to look broken on first launch:
+
+1. `iconHTML('check', …)` threw because the bare `check` glyph wasn't registered (only `check-square`). The thrown error bailed out of the intro page's `body.innerHTML` template literal, leaving the body completely empty. Added the missing icon to the registry.
+2. `.mid-btn { display: inline-flex }` silently overrode the HTML5 `hidden` attribute, so `btn.hidden = true` had no visible effect. Added a global `[hidden] { display: none !important; }` rule.
+
 ## [0.2.6] — 2026-05-03
 
 ### Added — Tab manager: window detach + split-screen (#308, #309)
