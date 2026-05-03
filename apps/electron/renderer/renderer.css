@@ -3262,3 +3262,100 @@ body.settings-open .mid-statusbar { visibility: hidden; }
   border-color: var(--mid-accent, var(--mid-link));
   background: color-mix(in srgb, var(--mid-accent, var(--mid-link)) 6%, transparent);
 }
+
+/* Tab split-screen (#309) — second editor column.
+ *
+ * `.mid-split-root` is the horizontal grid (left-col, divider, right-col) that
+ * replaces a flat `#editor-area` when split mode is on. Each column reuses
+ * the existing `.mid-editor-area` styling via `.mid-editor-column`. The
+ * inactive column shows a static markdown preview with reduced opacity so the
+ * user can tell which column is the live editor at a glance.
+ *
+ * The drop indicator is a thin vertical bar painted over the column's edge
+ * during a tab drag — see `setupSplitEdgeDropDetection` in renderer.ts.
+ */
+.mid-split-root {
+  display: grid;
+  grid-template-columns: 50% 6px 1fr;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+.mid-editor-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+.mid-editor-column:not(.is-active) { opacity: 0.92; }
+.mid-editor-column:not(.is-active)::before {
+  /* Subtle dimming overlay so it's obvious which column is the live editor.
+   * Pointer-events disabled so clicks still reach the column for promotion. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--mid-bg);
+  opacity: 0.06;
+  pointer-events: none;
+  z-index: 0;
+}
+.mid-editor-column.is-active::after {
+  /* Top accent stripe on the active column, matching the active tab's accent. */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--mid-accent, var(--mid-link));
+  pointer-events: none;
+  z-index: 1;
+}
+.mid-split-divider {
+  background: var(--mid-border);
+  cursor: col-resize;
+  user-select: none;
+  position: relative;
+}
+.mid-split-divider:hover { background: var(--mid-link); }
+.mid-split-divider::before {
+  /* Widen the hit-area so users don't have to pixel-perfect the 6px line. */
+  content: '';
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+}
+.mid-inactive-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--mid-bg);
+  position: relative;
+}
+.mid-inactive-preview {
+  padding: var(--mid-space-4);
+}
+.mid-inactive-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--mid-fg-muted);
+  font-style: italic;
+}
+.mid-split-drop-indicator {
+  position: fixed;
+  background: var(--mid-link);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: 0 0 8px var(--mid-link);
+  opacity: 0.85;
+}
+.mid-split-drop-indicator[hidden] { display: none; }

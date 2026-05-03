@@ -1,6 +1,6 @@
 # Desktop tabs
 
-VSCode-style multi-file tab manager for the Electron app (#287, #308).
+VSCode-style multi-file tab manager for the Electron app (#287, #308, #309).
 
 ## What ships in v0.2.5 (MVP, #287)
 
@@ -17,7 +17,7 @@ VSCode-style multi-file tab manager for the Electron app (#287, #308).
 - Tabs persist across restart via the SQLite `open_tabs` table — including which
   tab was active
 
-## What ships next (#308 — window detach)
+## Window detach (#308)
 
 - **Drag a tab outside the window's bounds** → main spawns a fresh
   `BrowserWindow` with that one file pre-loaded as its only tab.
@@ -35,15 +35,42 @@ VSCode-style multi-file tab manager for the Electron app (#287, #308).
 - macOS still skips `app.quit()` when the last window closes — closing the
   detached window doesn't take the origin down.
 
+## Split-screen (#309)
+
+- **Drag a tab onto the left or right ~80px of the editor pane** to split the
+  editor into two columns. A vertical highlight bar (the drop indicator)
+  follows the cursor while the drag is in flight so the drop target is obvious.
+- Each column has its own independent tab strip + active tab + active editor
+  pointer. The active column hosts the live editor (`#root`); the inactive
+  column shows a static markdown preview of its own active tab so both files
+  are visible at a glance.
+- Click anywhere inside a column (or on one of its tabs) to make it the active
+  column — the live editor swaps over and any new tree-opens land there.
+- Drag a tab between columns (drop on the other strip) to rehome it.
+- Drag the divider between columns to resize. The ratio is clamped to
+  `[0.15, 0.85]` and persisted as `tabSplitRatio` in app state so it survives
+  a restart.
+- Closing the last tab in a column collapses the split back to a single
+  column — surviving tabs are rehomed into strip 0 and the second column DOM
+  is torn down.
+- Both columns persist across restart with their own tab list + active tab via
+  the existing `(strip_id, idx, path, active)` schema. The persisted
+  `tabActiveStripId` setting remembers which column was last live.
+
 ## Out of scope (deferred follow-ups)
 
 - **Re-attach** — drag a tab from a detached window back into the main
   window's strip to merge it back. Electron doesn't ship cross-window drag
   out of the box, so this would need a custom `screen.getCursorScreenPoint()`
   poll on `dragend` to find the destination window.
-- **Split-screen** — drop a tab onto the right edge of the strip to create a
-  second column. The model already carries `stripId` so this is a renderer-only
-  change once the drop-target UI lands. Tracked under #309.
+- **Three-or-more columns** — the schema is `strip_id` (any int) but the
+  renderer is hard-coded for 0 | 1. Adding a third column is straightforward
+  but ergonomically debatable on a laptop screen, so it's parked.
+- **Dual live editors** — only the active column has a live `<textarea>`. The
+  inactive column is a read-only preview to avoid duplicating the renderer's
+  ~70 references to `currentText`/`currentPath` and the singletons (mermaid
+  context, outline observer, etc.). Promotion via click is fast enough that
+  the UX feels equivalent.
 
 ## Layout model
 
@@ -69,20 +96,40 @@ holds the strip on top and `<main id="root">` underneath. The strip is
 
 ```ts
 interface FileTab {
-  stripId: number;        // 0 in the MVP. Future split: 0 left, 1 right.
+  stripId: number;        // 0 left, 1 right.
   path: string;           // absolute file path on disk
   text: string;           // current buffer (may differ from disk if dirty)
   dirty: boolean;         // unsaved changes since last load/save
   scrollTop: number;      // last known scroller position; restored on focus
 }
 
-const tabs: FileTab[];
-let activeTabIndex: number;
+const tabs: FileTab[];                    // all tabs, both strips
+let activeTabIndex: number;               // global idx into tabs[] of the active-strip's focused tab
+let inactiveActiveTabIndex: number;       // global idx of the OTHER strip's focused tab, -1 when split off
+let activeStripId: 0 | 1;                 // which strip is "live"
+let splitActive: boolean;                 // true when the editor area is two columns
+let tabSplitRatio: number;                // 0.15-0.85 — left column's grid share
 ```
 
-Strip 0 is the only strip in the MVP. The single strip persists into rows of
-`open_tabs` keyed by `(strip_id, idx)`, so multi-strip is a renderer-only
-expansion that doesn't break the wire format.
+The renderer keeps a single flat `tabs[]` array with `stripId` as the bucket
+key rather than two nested arrays. That keeps cross-strip moves cheap (just
+flip `stripId`) and keeps the persist layer's `(strip_id, idx)` rows simple.
+Within each strip, "idx" is recomputed at persist time as a strip-local
+ordinal — the global order in `tabs[]` doesn't influence the wire format.
+
+When `splitActive` is `false`, only `activeTabIndex` is meaningful.
+`activeStripId` is always 0 in single-column mode.
+
+When `splitActive` is `true`:
+
+- The active strip's tabs render into `#tabstrip` (inside `#editor-area`).
+- The inactive strip's tabs render into `#tabstrip-2` (inside the sibling
+  column under `.mid-split-root`).
+- The DOM identity of `#editor-area` always tracks the live editor —
+  `swapActiveColumn` flips `activeStripId` and the per-strip pointers but does
+  NOT move DOM nodes; both `renderTabstrip()` and `renderInactiveColumn()`
+  re-paint the tabs into their respective strip elements with their swapped
+  roles.
 
 ### Mirror state
 
@@ -103,7 +150,7 @@ Existing render code (`renderView`, `renderEdit`, `renderSplit`,
 ```sql
 CREATE TABLE open_tabs (
   window_id INTEGER NOT NULL DEFAULT 0,  -- #308 — main = 0, detached = 1+
-  strip_id  INTEGER NOT NULL,            -- 0 today; reserved for split (#309)
+  strip_id  INTEGER NOT NULL,            -- 0 left column, 1 right column (#309)
   idx       INTEGER NOT NULL,            -- ordering inside the strip
   path      TEXT    NOT NULL,
   active    INTEGER NOT NULL DEFAULT 0,  -- 1 for the focused tab in its strip
@@ -113,10 +160,10 @@ CREATE INDEX idx_open_tabs_window ON open_tabs(window_id, strip_id, idx);
 ```
 
 The renderer is the source of truth: every meaningful mutation
-(open/close/move/cycle) calls `schedulePersistTabs()`, which debounces a 200ms
-snapshot and writes the entire set via `mid:tabs-replace`. We wipe-and-replace
-*for that window only* because the row count is small (typically <30 per
-window) and the transaction keeps the swap atomic.
+(open/close/move/cycle/split/swap) calls `schedulePersistTabs()`, which
+debounces a 200ms snapshot and writes the entire set via `mid:tabs-replace`.
+We wipe-and-replace *for that window only* because the row count is small
+(typically <30 per window) and the transaction keeps the swap atomic.
 
 The `window_id` scope is derived from the IPC sender on the main side, not
 trusted from the renderer payload. That keeps a misbehaving renderer from
@@ -127,9 +174,30 @@ and the column was added with a `DEFAULT 0` migration so existing installs
 just work). Detached windows allocate the smallest free slot ≥ 1; closing
 one releases its rows so the slot can be reused.
 
+The `active` column is set per strip — both the active and inactive strips
+remember which of their tabs is focused, so a column swap or restart restores
+each side's last selection independently.
+
 On startup the renderer calls `mid:tabs-list`, reads each file from disk, and
-silently drops any path that no longer exists. The next persist tick collapses
-the table back to the live set, so a deleted file naturally cleans itself up.
+silently drops any path that no longer exists. If the loaded rows include
+both `strip_id = 0` and `strip_id = 1` entries, `hydrateTabs` automatically
+re-enables split mode and re-creates the column-2 DOM. The next persist tick
+collapses the table back to the live set, so a deleted file naturally cleans
+itself up.
+
+### Companion settings (split-screen)
+
+The split layout's view-state is stored alongside the tab table as JSON-blob
+settings:
+
+| Key                  | Type       | Notes                                       |
+|----------------------|------------|---------------------------------------------|
+| `tabSplitActive`     | `boolean`  | True when split mode is on (advisory; the table is the real source)|
+| `tabSplitRatio`      | `number`   | Left column's grid share, clamped 0.15-0.85 |
+| `tabActiveStripId`   | `0 \| 1`   | Which column was last "live" before the close|
+
+These are best-effort: if the settings disagree with the `open_tabs` rows
+(e.g. `tabSplitActive=true` but only strip 0 has rows), the rows win.
 
 ## IPC contract
 
@@ -234,17 +302,69 @@ match it against `BrowserWindow.getBounds()` to find the destination, then
 emit a custom IPC `mid:tabs-attach` to that window's renderer. Filed for a
 later iteration when the demand is real.
 
-## Future: split-screen (deferred)
+## Split-screen mechanics (#309)
 
-When a tab is dropped onto the right edge of the existing strip, the renderer
-should:
+### Drag detection
 
-1. Allocate `stripId = 1`
-2. Move the dropped tab into strip 1 (re-index, mark active)
-3. Re-render `.mid-editor-area` as a horizontal `display: flex; row` of two
-   columns, each with its own strip + `#root`-equivalent
+A document-level `dragover` listener inspects the cursor position whenever
+data of MIME type `application/x-mid-tab` is being dragged. If the cursor sits
+within `SPLIT_EDGE_THRESHOLD_PX` (80) of any editor column's left or right
+edge, a fixed-positioned `<div class="mid-split-drop-indicator">` is shown
+along that edge. The strip's per-tab `dragover` handler calls
+`stopPropagation` to silence the global listener while hovering over a tab
+(otherwise both an intra-strip reorder indicator and the edge indicator would
+fight to render).
 
-The CSS already accommodates a column-flex container. The bigger lift is
-splitting the renderer code into a `TabStrip` class so two instances can
-coexist and the active-strip routing can drive `currentText`/`currentPath`
-correctly. The wire format (`(strip_id, idx, path, active)`) is unchanged.
+### Drop routing
+
+The same listener handles `drop`. The code path forks on `splitActive`:
+
+- **Single-column mode**: any edge drop calls `enableSplit(globalFromIdx)`,
+  which (a) builds the second column DOM via `enableSplitDOM()`, (b) reassigns
+  the dragged tab's `stripId` to `1`, and (c) flips `inactiveActiveTabIndex`
+  to point at the moved tab. The source strip's `activeTabIndex` snaps back
+  to `lastIndexInStrip(activeStripId)` so the live editor still has a focused
+  tab.
+- **Split mode**: edge drop calls `moveTabToStrip(globalFromIdx, _, targetStripId)`
+  where the target strip is derived from which physical column was hovered
+  (`#editor-area` always hosts the active strip; the sibling column hosts the
+  inactive strip). If the move empties the source strip, `collapseSplitAfterClose`
+  rehomes everything back into strip 0 and tears down the second column.
+
+### Layout DOM
+
+```
+.mid-split-root           (display: grid; grid-template-columns: <ratio>% 6px 1fr)
+├─ #editor-area           (the live column — moved here from <body>'s layout grid)
+│   ├─ #tabstrip           ← active strip's tabs
+│   └─ <main id="root">    ← live <textarea> / preview / mermaid view
+├─ .mid-split-divider     (col-resize cursor; drag updates tabSplitRatio)
+└─ .mid-editor-column     (the read-only column)
+    ├─ #tabstrip-2         ← inactive strip's tabs
+    └─ #root-2             ← static markdown preview (.mid-inactive-preview)
+```
+
+`#editor-area` is *moved* (not cloned) into the wrapper. `enableSplitDOM`
+stashes its original parent + nextSibling so `disableSplitDOM` can put it
+back. That keeps every existing `getElementById('root')` /
+`getElementById('tabstrip')` reference happy with zero churn.
+
+### Promotion (clicking inside an inactive column)
+
+A document-level `click` listener checks `target.closest('.mid-editor-column')`.
+If the closest column is NOT `#editor-area` (i.e. the user clicked the
+inactive sibling), it calls `swapActiveColumn()`. Tab buttons handle their own
+swap inside their per-tab click listener so the swap+focus combo lands as a
+single render. The divider and tab-close buttons short-circuit the listener
+to avoid spurious swaps.
+
+### Edge cases handled
+
+- Closing the last tab in either column collapses the split.
+- Dropping the only tab of a strip onto its own edge is a no-op
+  (`enableSplit` early-returns when `sourceStripCount <= 1`).
+- The recently-closed stack is global — `Cmd+Shift+T` after closing a
+  strip-1 tab resurrects it into the currently active strip, which is the
+  intended VSCode parity (re-attach behaviour is a future enhancement).
+- Persistence captures both strips simultaneously; resyncing on hydrate
+  refuses to enable split if only one strip has rows (graceful downgrade).
