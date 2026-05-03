@@ -154,9 +154,18 @@ interface Mid {
   onMenuOpenFolder(cb: () => void): () => void;
   onMenuSave(cb: () => void): () => void;
   onMenuExport(cb: (format: 'md' | 'html' | 'pdf' | 'png' | 'txt' | 'docx' | 'docx-gdocs') => void): () => void;
-  // Tab persistence (#287)
-  tabsList(): Promise<{ strip_id: number; idx: number; path: string; active: number }[]>;
-  tabsReplace(rows: { strip_id: number; idx: number; path: string; active: number }[]): Promise<boolean>;
+  // Tab persistence (#287, #308). Wire format adds `window_id` so detached
+  // windows can persist independently; the renderer never sets it (main
+  // derives the scope from the IPC sender) but it surfaces in `tabsList`
+  // results for diagnostics.
+  tabsList(): Promise<{ window_id: number; strip_id: number; idx: number; path: string; active: number }[]>;
+  tabsReplace(rows: { window_id?: number; strip_id: number; idx: number; path: string; active: number }[]): Promise<boolean>;
+  // #308 — request main to spawn a new BrowserWindow with `path` as its only
+  // tab. Returns the new window's id (Electron BrowserWindow.id, not our
+  // persistence slot — the renderer doesn't need to know the slot).
+  tabsDetach(payload: { path: string; bounds?: { x?: number; y?: number } }): Promise<{ ok: boolean; windowId?: number; error?: string }>;
+  /** #308 — current window's persistence slot id (0 for main, 1+ for detached). */
+  getWindowId(): Promise<number>;
 }
 declare const window: Window & { mid: Mid };
 
@@ -6447,6 +6456,11 @@ void window.mid.readAppState().then(async state => {
   // #287 — restore the open-tabs strip from SQLite. Done after the folder
   // applies so the tree's active-row highlight has a chance to attach.
   await hydrateTabs();
+  // #308 — if this window was launched with a `detachedPath` URL hash and no
+  // persisted tabs hydrated, seed the strip with that single file so the new
+  // detached window opens directly to its source tab. Defined at the bottom
+  // of the file so the bottom block (tab-detach module) owns its lifecycle.
+  await maybeSeedFromDetachHash();
   // #303 — if the launched workspace has no warehouse, force-open the
   // onboarding modal regardless of the dismissed list. The dismissed list
   // only suppresses *during* a session (re-triggers from the welcome CTA,
@@ -6644,3 +6658,205 @@ interface ImportersMenuBridge {
   onMenuImport(cb: () => void): () => void;
 }
 ((window.mid as unknown as ImportersMenuBridge)).onMenuImport(() => void openImportersChooser());
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab manager: window detach (#308)
+//
+// When a tab is dragged outside the window's bounds and dropped onto the OS
+// desktop (or another monitor), we ask main to spawn a fresh BrowserWindow
+// with that one file pre-loaded, then close the source tab in this window.
+// Each window owns its own SQLite slot for `open_tabs` (window-scoped by the
+// IPC sender, see main.ts), so the detached window persists independently
+// and a relaunch re-spawns it with its strip intact.
+//
+// All wiring lives at the bottom of renderer.ts so #309's split-screen patch
+// (concurrent track) doesn't conflict with the existing tab-manager block at
+// the top of the file. Detection uses a document-level `dragend` listener
+// rather than touching the per-tab handlers in renderTabstrip().
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DetachBridge {
+  tabsDetach(payload: { path: string; bounds?: { x?: number; y?: number } }): Promise<{ ok: boolean; windowId?: number; error?: string }>;
+  getWindowId(): Promise<number>;
+}
+
+const detachBridge = window.mid as unknown as DetachBridge;
+
+/** During a tab drag, we capture the dragged tab's index + path so the
+ * dragend handler at the document level knows which row to detach if the
+ * drop lands outside the window. The per-tab dragstart handler in
+ * renderTabstrip() already sets the dataTransfer payload; we mirror it here
+ * because dataTransfer.getData() is empty during dragend in many browsers. */
+let detachPendingIdx: number | null = null;
+let detachPendingPath: string | null = null;
+
+/** Edge indicator that flashes along the active border to show the user that
+ * dropping outside will spawn a new window. The element is created lazily on
+ * first drag and reused thereafter; it lives in <body> so it overlays
+ * everything including the tabstrip. */
+let detachEdgeIndicator: HTMLDivElement | null = null;
+
+function ensureDetachEdgeIndicator(): HTMLDivElement {
+  if (detachEdgeIndicator) return detachEdgeIndicator;
+  const el = document.createElement('div');
+  el.className = 'mid-detach-edge';
+  el.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(el);
+  detachEdgeIndicator = el;
+  return el;
+}
+
+function showDetachEdge(visible: boolean): void {
+  const el = ensureDetachEdgeIndicator();
+  el.classList.toggle('is-active', visible);
+}
+
+function pointIsOutsideWindow(clientX: number, clientY: number): boolean {
+  // The renderer window's content area is `[0, innerWidth) x [0, innerHeight)`.
+  // Some browsers report `0/0` for `dragend` when the drop happens on the OS
+  // desktop or another window — treat that as outside. Otherwise check the
+  // bounds with a small slack so a near-miss (browser rounding) still counts.
+  if (clientX === 0 && clientY === 0) return true;
+  const slack = 4;
+  return (
+    clientX < -slack ||
+    clientY < -slack ||
+    clientX > window.innerWidth + slack ||
+    clientY > window.innerHeight + slack
+  );
+}
+
+/** Like `closeTabAt` but for the detach flow: don't push onto the
+ * recently-closed stack (the tab moved, it didn't close), and don't trigger
+ * the welcome state if it was the last tab — the operating system already
+ * shows the new window so the user doesn't need a fresh welcome screen. */
+function closeTabForDetach(idx: number): void {
+  if (idx < 0 || idx >= tabs.length) return;
+  tabs.splice(idx, 1);
+  if (tabs.length === 0) {
+    activeTabIndex = -1;
+    syncMirrorFromActiveTab();
+    if (currentMode === 'view') renderView();
+    else if (currentMode === 'edit') renderEdit();
+    else renderSplit();
+    renderTabstrip();
+    schedulePersistTabs();
+    return;
+  }
+  if (idx < activeTabIndex) {
+    activeTabIndex--;
+  } else if (idx === activeTabIndex) {
+    if (activeTabIndex >= tabs.length) activeTabIndex = tabs.length - 1;
+  }
+  syncMirrorFromActiveTab();
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  highlightActiveTreeItem();
+  updateWordCount();
+  updateSaveIndicator(true);
+  restoreScrollPosition();
+  renderTabstrip();
+  schedulePersistTabs();
+}
+
+document.addEventListener('dragstart', (ev) => {
+  // Only react if the drag started on a tab. We read dataset rather than
+  // the dataTransfer payload because the per-tab handler already populated
+  // both — and dataset is observable here without depending on the order
+  // event handlers run.
+  const target = ev.target as HTMLElement | null;
+  const tabEl = target?.closest?.('.mid-tab') as HTMLElement | null;
+  if (!tabEl) {
+    detachPendingIdx = null;
+    detachPendingPath = null;
+    return;
+  }
+  const idx = parseInt(tabEl.dataset.tabIndex ?? '', 10);
+  if (Number.isNaN(idx)) return;
+  detachPendingIdx = idx;
+  detachPendingPath = tabEl.dataset.tabPath ?? null;
+}, true);
+
+document.addEventListener('dragover', (ev) => {
+  if (detachPendingIdx == null) return;
+  // Only flash the edge once the cursor is near or past the window border —
+  // inside-strip reorders shouldn't show the detach affordance.
+  showDetachEdge(pointIsOutsideWindow(ev.clientX, ev.clientY));
+});
+
+document.addEventListener('dragend', async (ev) => {
+  // Always clear the indicator: a drop inside the strip ended the drag.
+  showDetachEdge(false);
+  const idx = detachPendingIdx;
+  const path = detachPendingPath;
+  detachPendingIdx = null;
+  detachPendingPath = null;
+  if (idx == null || !path) return;
+  if (!pointIsOutsideWindow(ev.clientX, ev.clientY)) return;
+  // Re-find the index by path because the strip may have re-rendered
+  // mid-drag (e.g. another async event) and shifted indices.
+  const liveIdx = findTabIndex(path);
+  if (liveIdx === -1) return;
+  // Detaching a sole-tab IS allowed — the origin window simply ends up with
+  // an empty strip (welcome state). The new window owns that file. The user
+  // can close either side independently.
+  // The ScreenX/ScreenY positions hint at where the user dropped, so the new
+  // window can pop near the cursor. We pass them as bounds for the new
+  // BrowserWindow — main clamps to the screen.
+  const bounds: { x?: number; y?: number } = {};
+  if (typeof ev.screenX === 'number' && ev.screenX > 0) bounds.x = Math.round(ev.screenX - 360);
+  if (typeof ev.screenY === 'number' && ev.screenY > 0) bounds.y = Math.round(ev.screenY - 80);
+  try {
+    const result = await detachBridge.tabsDetach({ path, bounds });
+    if (!result.ok) {
+      flashStatus(`Detach failed: ${result.error ?? 'unknown'}`);
+      return;
+    }
+    // Close the source tab without pushing onto recently-closed (the file
+    // didn't close — it moved windows).
+    closeTabForDetach(liveIdx);
+  } catch (err) {
+    flashStatus(`Detach failed: ${(err as Error).message}`);
+  }
+});
+
+/** Boot-time hash check for windows spawned by `mid:tabs-detach`. The new
+ * window's URL hash carries `detachedPath=<encoded>`. If we find one *and*
+ * the persisted strip for this slot is empty, seed the strip with that one
+ * file. (Re-spawned detached windows skip this branch because their strip
+ * hydrates from SQLite first.)
+ *
+ * Hash is consumed (cleared) after seeding so a refresh doesn't re-add a
+ * duplicate tab on top of the now-persisted strip. */
+async function maybeSeedFromDetachHash(): Promise<void> {
+  const raw = window.location.hash;
+  if (!raw) return;
+  const params = new URLSearchParams(raw.startsWith('#') ? raw.slice(1) : raw);
+  const detachedPath = params.get('detachedPath');
+  if (!detachedPath) return;
+  // Clear the hash so a renderer reload doesn't re-seed the same tab on top
+  // of the persisted strip. We use replaceState to avoid a navigation event.
+  try { history.replaceState(null, '', window.location.pathname); } catch { /* fine */ }
+  // If the strip already hydrated rows from SQLite (e.g. a re-spawned
+  // detached window picking up its persisted strip), respect that: the
+  // detachedPath was a one-shot from the original spawn and shouldn't fight
+  // the user's saved layout.
+  if (tabs.length > 0) return;
+  try {
+    const content = await window.mid.readFile(detachedPath);
+    loadFileContent(detachedPath, content);
+  } catch (err) {
+    console.warn('[mid] detached-path seed failed:', err);
+    flashStatus(`Could not open ${detachedPath.split('/').pop() ?? detachedPath}`);
+  }
+}
+
+// Surface the persistence slot id in the document title for diagnostics. The
+// main window keeps "Mark It Down" while detached windows append a small
+// suffix so the user can tell them apart in window managers.
+void detachBridge.getWindowId().then((slot) => {
+  if (slot && slot > 0) {
+    document.title = `Mark It Down — Window ${slot}`;
+  }
+}).catch(() => undefined);

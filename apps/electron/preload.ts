@@ -68,10 +68,22 @@ contextBridge.exposeInMainWorld('mid', {
   recordExport: (row: { id: string; sourcePath?: string; format: string; filePath: string }): Promise<void> =>
     ipcRenderer.invoke('mid:record-export', row),
   // Tab persistence (#287) — renderer owns layout, main is a dumb store.
-  tabsList: (): Promise<{ strip_id: number; idx: number; path: string; active: number }[]> =>
+  // The window scope (window_id) is derived from the IPC sender on the main
+  // side (#308), so renderers don't pass it explicitly — keeps the wire
+  // format identical to the v0.2.5 single-window contract.
+  tabsList: (): Promise<{ window_id: number; strip_id: number; idx: number; path: string; active: number }[]> =>
     ipcRenderer.invoke('mid:tabs-list'),
-  tabsReplace: (rows: { strip_id: number; idx: number; path: string; active: number }[]): Promise<boolean> =>
+  tabsReplace: (rows: { window_id?: number; strip_id: number; idx: number; path: string; active: number }[]): Promise<boolean> =>
     ipcRenderer.invoke('mid:tabs-replace', rows),
+  // #308 — Detach a tab into its own BrowserWindow. The new window opens with
+  // the file pre-loaded as its only tab; the origin renderer is responsible
+  // for closing the source tab from its own strip.
+  tabsDetach: (payload: { path: string; bounds?: { x?: number; y?: number } }): Promise<{ ok: boolean; windowId?: number; error?: string }> =>
+    ipcRenderer.invoke('mid:tabs-detach', payload),
+  /** #308 — current window's persistence slot id. 0 for the main window,
+   * 1+ for detached windows. The renderer uses this purely for diagnostics
+   * (e.g. document title suffix); persistence is scoped automatically. */
+  getWindowId: (): Promise<number> => ipcRenderer.invoke('mid:get-window-id'),
   listExportHistory: (limit?: number): Promise<{ id: string; source_path: string; format: string; file_path: string; exported_at: number }[]> =>
     ipcRenderer.invoke('mid:list-export-history', limit),
   notesList: (workspace: string): Promise<NoteEntry[]> =>

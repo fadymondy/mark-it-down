@@ -134,11 +134,12 @@ function applySchema(d: Database.Database): void {
       exported_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS open_tabs (
+      window_id INTEGER NOT NULL DEFAULT 0,
       strip_id INTEGER NOT NULL,
       idx INTEGER NOT NULL,
       path TEXT NOT NULL,
       active INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (strip_id, idx)
+      PRIMARY KEY (window_id, strip_id, idx)
     );
     CREATE TABLE IF NOT EXISTS note_types (
       id TEXT PRIMARY KEY,
@@ -152,13 +153,25 @@ function applySchema(d: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_recent_files_opened ON recent_files(opened_at DESC);
     CREATE INDEX IF NOT EXISTS idx_export_history_exported ON export_history(exported_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_open_tabs_strip ON open_tabs(strip_id, idx);
+    CREATE INDEX IF NOT EXISTS idx_open_tabs_window ON open_tabs(window_id, strip_id, idx);
   `);
+  // #308 — additive migration for installs that pre-date the multi-window
+  // tab manager. We add `window_id` if missing and default existing rows to 0
+  // (the main window's bucket) so the strip rehydrates the same as before.
+  // ALTER TABLE ADD COLUMN is safe to run repeatedly because we guard via the
+  // pragma list — SQLite has no IF NOT EXISTS for columns.
+  const cols = d.prepare('PRAGMA table_info(open_tabs)').all() as { name: string }[];
+  if (!cols.some(c => c.name === 'window_id')) {
+    d.exec(`ALTER TABLE open_tabs ADD COLUMN window_id INTEGER NOT NULL DEFAULT 0;`);
+  }
 }
 
-/* ── open tabs (#287) ───────────────────────────────────── */
+/* ── open tabs (#287, #308) ─────────────────────────────── */
 
 export interface OpenTabRow {
+  /** #308 — window scope. The main window persists under id 0; detached
+   * windows persist under their own slot id (allocated by main process). */
+  window_id: number;
   strip_id: number;
   idx: number;
   path: string;
@@ -166,28 +179,52 @@ export interface OpenTabRow {
 }
 
 /**
- * Returns persisted tabs ordered by (strip_id, idx) so the renderer can rebuild
- * the strip layout deterministically across restarts.
+ * Returns persisted tabs for a single window scope, ordered by (strip_id, idx).
+ * #308 — every window owns its own row bucket so detached windows can persist
+ * their own strip without trampling the main window's rows.
  */
-export function listOpenTabs(): OpenTabRow[] {
+export function listOpenTabs(windowId: number = 0): OpenTabRow[] {
   return getDB()
-    .prepare('SELECT strip_id, idx, path, active FROM open_tabs ORDER BY strip_id ASC, idx ASC')
-    .all() as OpenTabRow[];
+    .prepare('SELECT window_id, strip_id, idx, path, active FROM open_tabs WHERE window_id = ? ORDER BY strip_id ASC, idx ASC')
+    .all(windowId) as OpenTabRow[];
 }
 
 /**
- * Atomically replace the entire persisted tab set. The renderer is the source
- * of truth for layout — we wipe and rewrite rather than diff because the table
- * is small (typically <30 rows) and the transaction keeps the swap consistent.
+ * Returns every persisted window-id with at least one tab row. Useful at
+ * launch when the main process decides which detached windows to re-spawn.
  */
-export function replaceOpenTabs(rows: OpenTabRow[]): void {
+export function listOpenTabWindowIds(): number[] {
+  const rows = getDB()
+    .prepare('SELECT DISTINCT window_id FROM open_tabs ORDER BY window_id ASC')
+    .all() as { window_id: number }[];
+  return rows.map(r => r.window_id);
+}
+
+/**
+ * Atomically replace the persisted tab set for a single window. The renderer
+ * is the source of truth for layout — we wipe + rewrite *only the rows for
+ * this window* rather than the whole table, so a snapshot from window A never
+ * deletes window B's rows.
+ */
+export function replaceOpenTabs(windowId: number, rows: OpenTabRow[]): void {
   const d = getDB();
   const tx = d.transaction((all: OpenTabRow[]) => {
-    d.prepare('DELETE FROM open_tabs').run();
-    const stmt = d.prepare('INSERT INTO open_tabs(strip_id, idx, path, active) VALUES(?, ?, ?, ?)');
-    for (const r of all) stmt.run(r.strip_id, r.idx, r.path, r.active ? 1 : 0);
+    d.prepare('DELETE FROM open_tabs WHERE window_id = ?').run(windowId);
+    const stmt = d.prepare('INSERT INTO open_tabs(window_id, strip_id, idx, path, active) VALUES(?, ?, ?, ?, ?)');
+    for (const r of all) stmt.run(windowId, r.strip_id, r.idx, r.path, r.active ? 1 : 0);
   });
   tx(rows);
+}
+
+/**
+ * Drop every row for `windowId`. Called when a detached window closes so its
+ * slot can be reused by a future detach. The main window (id 0) is never
+ * cleared by this path — closing it shuts the app down on non-mac platforms
+ * and we want the strip to rehydrate on next launch.
+ */
+export function clearOpenTabsForWindow(windowId: number): void {
+  if (windowId === 0) return;
+  getDB().prepare('DELETE FROM open_tabs WHERE window_id = ?').run(windowId);
 }
 
 /* ── note types (#297) ─────────────────────────────────── */

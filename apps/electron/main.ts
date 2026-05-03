@@ -20,7 +20,9 @@ import {
   recordExport,
   listExportHistory,
   listOpenTabs,
+  listOpenTabWindowIds,
   replaceOpenTabs,
+  clearOpenTabsForWindow,
   type OpenTabRow,
   listNoteTypeRows,
   upsertNoteTypeRow,
@@ -45,6 +47,46 @@ let mcpProcess: ChildProcess | null = null;
 type MCPStatus = 'stopped' | 'running' | 'error';
 let mcpStatus: MCPStatus = 'stopped';
 let mcpLastError: string | null = null;
+
+/**
+ * #308 — multi-window registry. Every BrowserWindow this process owns has a
+ * stable, monotonically-allocated `windowSlotId` we use as the SQLite scope
+ * for `open_tabs`. The main window always claims slot 0 (its strip predates
+ * the multi-window era and existing rows live under window_id = 0). Detached
+ * windows allocate the smallest free slot ≥ 1, so closing + re-detaching
+ * reuses ids and the table stays compact.
+ *
+ * We key by `webContents.id` because that's what arrives on the IPC event
+ * sender — translating it to the slot id keeps the wire format clean (the
+ * renderer never has to know its slot, it just calls tabsList/Replace).
+ */
+const windowSlotByWebContentsId = new Map<number, number>();
+const windowsBySlotId = new Map<number, BrowserWindow>();
+
+function nextFreeSlotId(): number {
+  let candidate = 1;
+  while (windowsBySlotId.has(candidate)) candidate += 1;
+  return candidate;
+}
+
+function trackWindow(win: BrowserWindow, slotId: number): void {
+  windowSlotByWebContentsId.set(win.webContents.id, slotId);
+  windowsBySlotId.set(slotId, win);
+  win.on('closed', () => {
+    windowSlotByWebContentsId.delete(win.webContents.id);
+    windowsBySlotId.delete(slotId);
+    // Detached windows release their persisted strip on close. Re-opening
+    // the app should not re-spawn the detached window with stale rows; the
+    // user is closing the window, so the intent is "drop these tabs".
+    if (slotId !== 0) {
+      try { clearOpenTabsForWindow(slotId); } catch { /* ignore */ }
+    }
+  });
+}
+
+function slotIdForSender(sender: Electron.WebContents): number {
+  return windowSlotByWebContentsId.get(sender.id) ?? 0;
+}
 
 /**
  * Resolve a path relative to the repo root for both dev and packaged builds.
@@ -83,11 +125,36 @@ function resolveAppIcon(): string | undefined {
   return undefined;
 }
 
-async function createWindow(): Promise<void> {
+/**
+ * Build the renderer index path once — both the main window and any detached
+ * windows reuse it. Centralised because the path is identical and we want a
+ * single source of truth.
+ */
+function rendererIndexPath(): string {
+  return path.join(__dirname, 'renderer', 'index.html');
+}
+
+interface CreateWindowOptions {
+  /** #308 — when set, the new window opens with this single file pre-loaded
+   * as its only tab. Passed via the file URL hash so the sandboxed renderer
+   * can read it from `window.location` without an extra IPC round-trip. */
+  detachedPath?: string;
+  /** #308 — explicit slot id for re-spawning a detached window with its
+   * persisted strip on app launch. When omitted we treat this as the main
+   * window (slot 0) or allocate a fresh slot for an interactive detach. */
+  slotId?: number;
+  /** Optional bounds for detached windows so they pop near the cursor. */
+  bounds?: { x?: number; y?: number; width?: number; height?: number };
+}
+
+async function createWindow(opts: CreateWindowOptions = {}): Promise<BrowserWindow> {
   const iconPath = resolveAppIcon();
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
+  const isDetached = opts.detachedPath != null || (opts.slotId != null && opts.slotId !== 0);
+  const win = new BrowserWindow({
+    width: opts.bounds?.width ?? (isDetached ? 720 : 1280),
+    height: opts.bounds?.height ?? (isDetached ? 600 : 820),
+    x: opts.bounds?.x,
+    y: opts.bounds?.y,
     minWidth: 720,
     minHeight: 480,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d1117' : '#ffffff',
@@ -101,20 +168,42 @@ async function createWindow(): Promise<void> {
     },
   });
 
-  await mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // The first window we create is the "main" one. Subsequent windows are
+  // detached. We register the slot mapping *before* loadFile so the renderer's
+  // first IPC (tabsList) sees the correct scope.
+  let slotId: number;
+  if (opts.slotId != null) {
+    slotId = opts.slotId;
+  } else if (!mainWindow) {
+    slotId = 0;
+    mainWindow = win;
+  } else {
+    slotId = nextFreeSlotId();
+  }
+  trackWindow(win, slotId);
+
+  // Pass the detached path via URL hash. Hash survives loadFile, isn't part of
+  // the file:// path so CSP stays happy, and the renderer reads it from
+  // `window.location.hash` on boot.
+  const hashParts: string[] = [];
+  if (opts.detachedPath) hashParts.push(`detachedPath=${encodeURIComponent(opts.detachedPath)}`);
+  const loadOpts = hashParts.length ? { hash: hashParts.join('&') } : undefined;
+  await win.loadFile(rendererIndexPath(), loadOpts);
 
   if (isDev) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    win.webContents.openDevTools({ mode: 'detach' });
   }
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
   });
+
+  return win;
 }
 
 app.whenReady().then(async () => {
@@ -141,6 +230,17 @@ app.whenReady().then(async () => {
   buildTray();
   startMCP();
   void initImporters();
+  // #308 — re-spawn any persisted detached windows. Each non-zero window slot
+  // means the user had a detached window open last session; we open one
+  // BrowserWindow per slot so the strip rehydrates the same as before.
+  try {
+    for (const slot of listOpenTabWindowIds()) {
+      if (slot === 0) continue;
+      void createWindow({ slotId: slot });
+    }
+  } catch (err) {
+    console.warn('[mid] detached-window re-spawn failed:', err);
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
@@ -767,20 +867,60 @@ ipcMain.handle('mid:list-export-history', async (_e, limit?: number) => {
 });
 
 /**
- * Open-tabs persistence (#287). The renderer owns the in-memory model and
- * snapshots the whole set on every meaningful mutation; we wipe-and-replace
- * because the row count is small and the transaction keeps it atomic.
+ * Open-tabs persistence (#287, #308). The renderer owns the in-memory model
+ * and snapshots its strip on every meaningful mutation. We wipe-and-replace
+ * the rows for that window only — atomicity comes from the SQLite transaction.
+ *
+ * The window-id scope is derived from the IPC sender's webContents, *not*
+ * trusted from the renderer payload. That keeps a misbehaving renderer from
+ * trampling another window's persisted rows.
  */
-ipcMain.handle('mid:tabs-list', async () => {
-  try { return listOpenTabs(); }
+ipcMain.handle('mid:tabs-list', async (e) => {
+  const slot = slotIdForSender(e.sender);
+  try { return listOpenTabs(slot); }
   catch { return []; }
 });
 
-ipcMain.handle('mid:tabs-replace', async (_e, rows: OpenTabRow[]) => {
+ipcMain.handle('mid:tabs-replace', async (e, rows: OpenTabRow[]) => {
   if (!Array.isArray(rows)) return false;
-  try { replaceOpenTabs(rows); return true; }
+  const slot = slotIdForSender(e.sender);
+  try { replaceOpenTabs(slot, rows); return true; }
   catch (err) { console.warn('[mid] tabs-replace failed:', (err as Error).message); return false; }
 });
+
+/**
+ * #308 — Detach a tab into its own BrowserWindow.
+ *
+ * The renderer calls this when the user drags a tab outside the window's
+ * bounds. We spawn a fresh BrowserWindow with the path passed via URL hash;
+ * the new renderer reads the hash on boot and seeds its strip with that one
+ * file. The origin renderer is responsible for closing the source tab — we
+ * don't reach across into its strip from main because the renderer already
+ * owns the open-tabs model and any side-channel mutation would race with its
+ * persist debounce.
+ */
+ipcMain.handle('mid:tabs-detach', async (_e, payload: { path: string; bounds?: { x?: number; y?: number } }) => {
+  if (!payload || typeof payload.path !== 'string' || !payload.path) {
+    return { ok: false, error: 'detach payload missing path' };
+  }
+  try {
+    const win = await createWindow({
+      detachedPath: payload.path,
+      bounds: { width: 900, height: 700, x: payload.bounds?.x, y: payload.bounds?.y },
+    });
+    return { ok: true, windowId: win.id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
+/**
+ * #308 — Tell the renderer which window slot it belongs to. The renderer
+ * uses this to namespace any per-window UI state (e.g. document title) — it
+ * does NOT need to pass the slot back to tabs-list/replace because main
+ * derives the scope from the IPC sender directly.
+ */
+ipcMain.handle('mid:get-window-id', async (e) => slotIdForSender(e.sender));
 
 ipcMain.handle('mid:save-as', async (_e, defaultName: string, content: string | ArrayBuffer, filters: Electron.FileFilter[]) => {
   const result = await dialog.showSaveDialog({ defaultPath: defaultName, filters });
@@ -853,8 +993,10 @@ ipcMain.handle('mid:update-quit-and-install', async () => {
 });
 
 nativeTheme.on('updated', () => {
-  if (mainWindow) {
-    mainWindow.webContents.send('mid:theme-changed', nativeTheme.shouldUseDarkColors);
+  // #308 — broadcast theme to every window (main + detached) so a system
+  // mode flip propagates to all open editors.
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('mid:theme-changed', nativeTheme.shouldUseDarkColors);
   }
 });
 
@@ -924,8 +1066,10 @@ function setupAutoUpdate(): void {
 }
 
 function broadcastUpdateState(): void {
-  if (mainWindow) {
-    mainWindow.webContents.send('mid:update-state', updateState);
+  // #308 — every window listens for update-state; broadcast so detached
+  // windows can also surface the update banner.
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('mid:update-state', updateState);
   }
   // Reflect the change in the tray menu so "Check for Updates…" → "Downloading…"
   // → "Restart and install vX.Y.Z" all without the user re-opening the menu.
