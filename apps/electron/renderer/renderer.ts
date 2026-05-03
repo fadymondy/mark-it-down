@@ -56,6 +56,13 @@ interface AppState {
   /** #302 — per-user ordering of strip entries; ids missing from this list
    * append in registry order. */
   noteTypeOrder?: string[];
+  /** #309 — split-screen tab manager state. `tabSplitActive` is true when the
+   * editor area is showing two columns; `tabSplitRatio` is the left column's
+   * share (0.15-0.85); `tabActiveStripId` (0|1) is the column the user was
+   * last focused on so a restart restores their active editor correctly. */
+  tabSplitActive?: boolean;
+  tabSplitRatio?: number;
+  tabActiveStripId?: 0 | 1;
 }
 
 interface PinnedFolder {
@@ -266,6 +273,21 @@ interface FileTab {
 
 const tabs: FileTab[] = [];
 let activeTabIndex = -1;
+/** #309 — split-screen mode. `activeStripId` is the strip the user is focused on
+ * (0 left, 1 right). `splitActive` is true when both strips have at least one
+ * tab and the editor area is rendering as two columns. The inactive strip's
+ * own active-tab pointer survives column swaps via `inactiveActiveTabIndex`.
+ * See split-screen module at the bottom of this file for the full mechanics. */
+let activeStripId: 0 | 1 = 0;
+let splitActive = false;
+let inactiveActiveTabIndex = -1;
+/** #309 — left-column ratio of the editor area (0.15-0.85). Persisted as
+ * `tabSplitRatio` in app state so it survives a restart. */
+let tabSplitRatio = 0.5;
+/** #309 — last-focused strip read from app state during startup. `hydrateTabs`
+ * uses this to restore which column is "live" after a relaunch; -1 means
+ * unset (falls back to whichever strip has rows). */
+let appStateTabActiveStripId: 0 | 1 | -1 = -1;
 /** LIFO of recently-closed tab paths for Cmd+Shift+T. Capped at 20 entries. */
 const recentlyClosedPaths: string[] = [];
 let tabsPersistTimer: number | null = null;
@@ -274,7 +296,10 @@ let tabsPersistTimer: number | null = null;
 let tabsHydrating = false;
 
 function findTabIndex(filePath: string): number {
-  return tabs.findIndex(t => t.path === filePath);
+  // #309 — search within the active strip only. If the same path is open in the
+  // other strip, we still let the user open another instance in the active
+  // strip (that's intentional — split-screen viewing the same file is valid).
+  return tabs.findIndex(t => t.path === filePath && t.stripId === activeStripId);
 }
 
 function activeTab(): FileTab | null {
@@ -325,22 +350,52 @@ function openTab(filePath: string, content: string): FileTab {
     if (!t.dirty) t.text = content;
     return t;
   }
-  const tab: FileTab = { stripId: 0, path: filePath, text: content, dirty: false, scrollTop: 0 };
+  // #309 — new tabs land in the currently active strip, not unconditionally
+  // strip 0. When split is inactive `activeStripId` is always 0.
+  const tab: FileTab = { stripId: activeStripId, path: filePath, text: content, dirty: false, scrollTop: 0 };
   tabs.push(tab);
   activeTabIndex = tabs.length - 1;
   return tab;
 }
 
 /** Close the tab at `idx`. Adjusts `activeTabIndex` and pushes the path onto
- * the recently-closed stack so Cmd+Shift+T can resurrect it. */
+ * the recently-closed stack so Cmd+Shift+T can resurrect it.
+ * #309 — strip-aware: if the closed tab is in the inactive strip, the active
+ * strip's editor stays put. Empty-strip detection collapses the split. */
 function closeTabAt(idx: number): void {
   if (idx < 0 || idx >= tabs.length) return;
   const closed = tabs[idx];
   recentlyClosedPaths.push(closed.path);
   if (recentlyClosedPaths.length > 20) recentlyClosedPaths.shift();
+  const wasActiveStrip = closed.stripId === activeStripId;
   tabs.splice(idx, 1);
+  // Adjust both per-strip active pointers across the splice.
+  if (idx < activeTabIndex) activeTabIndex--;
+  else if (idx === activeTabIndex) {
+    // Active tab closed — keep visual position by holding `activeTabIndex`,
+    // but it may now point past the end or to a tab in the OTHER strip. We
+    // resolve below by snapping to the nearest tab in the active strip.
+  }
+  if (idx < inactiveActiveTabIndex) inactiveActiveTabIndex--;
+  else if (idx === inactiveActiveTabIndex) {
+    inactiveActiveTabIndex = -1; // resolved below
+  }
+  // Check whether either strip emptied out.
+  const activeStripEmpty = !tabs.some(t => t.stripId === activeStripId);
+  const inactiveStripId = activeStripId === 0 ? 1 : 0;
+  const inactiveStripEmpty = !tabs.some(t => t.stripId === inactiveStripId);
+
+  if (splitActive && (activeStripEmpty || inactiveStripEmpty)) {
+    // Collapse the split: rehome any surviving tabs into strip 0 and clear the
+    // second column. The remaining active-tab pointer survives the rehome.
+    collapseSplitAfterClose(wasActiveStrip);
+    // collapseSplitAfterClose handles the re-render and persist.
+    return;
+  }
+
   if (tabs.length === 0) {
     activeTabIndex = -1;
+    inactiveActiveTabIndex = -1;
     syncMirrorFromActiveTab();
     if (currentMode === 'view') renderView();
     else if (currentMode === 'edit') renderEdit();
@@ -349,11 +404,17 @@ function closeTabAt(idx: number): void {
     schedulePersistTabs();
     return;
   }
-  // Keep the same visual position when the active tab closes; clamp at end.
-  if (idx < activeTabIndex) {
-    activeTabIndex--;
-  } else if (idx === activeTabIndex) {
-    if (activeTabIndex >= tabs.length) activeTabIndex = tabs.length - 1;
+
+  // Re-resolve active pointers within their strip if they fell off the end.
+  if (wasActiveStrip) {
+    if (activeTabIndex >= tabs.length || tabs[activeTabIndex]?.stripId !== activeStripId) {
+      activeTabIndex = lastIndexInStrip(activeStripId);
+    }
+  }
+  if (!wasActiveStrip) {
+    if (inactiveActiveTabIndex < 0 || tabs[inactiveActiveTabIndex]?.stripId !== inactiveStripId) {
+      inactiveActiveTabIndex = lastIndexInStrip(inactiveStripId);
+    }
   }
   syncMirrorFromActiveTab();
   // Re-render the editor area against the new active tab.
@@ -365,16 +426,33 @@ function closeTabAt(idx: number): void {
   updateSaveIndicator(true);
   restoreScrollPosition();
   renderTabstrip();
+  if (splitActive) renderInactiveColumn();
   schedulePersistTabs();
 }
 
-/** Cycle to next/previous tab. `delta` is +1 or -1. Wraps around. */
+/** #309 — return the highest global index of any tab in `stripId`, or -1 if
+ * the strip is empty. Used to snap the active pointer back into bounds after a
+ * close shrinks its strip. */
+function lastIndexInStrip(stripId: number): number {
+  for (let i = tabs.length - 1; i >= 0; i--) if (tabs[i].stripId === stripId) return i;
+  return -1;
+}
+
+/** Cycle to next/previous tab. `delta` is +1 or -1. Wraps around.
+ * #309 — cycling stays within the active strip; the inactive strip is unchanged. */
 function cycleTab(delta: number): void {
   if (tabs.length === 0) return;
+  const stripIndices = tabs.map((t, i) => ({ t, i })).filter(x => x.t.stripId === activeStripId).map(x => x.i);
+  if (stripIndices.length === 0) return;
+  const localPos = stripIndices.indexOf(activeTabIndex);
+  if (localPos === -1) {
+    focusTabAt(stripIndices[0]);
+    return;
+  }
   syncActiveTabFromMirror();
   captureScrollPosition();
-  const next = ((activeTabIndex + delta) % tabs.length + tabs.length) % tabs.length;
-  focusTabAt(next);
+  const nextLocal = ((localPos + delta) % stripIndices.length + stripIndices.length) % stripIndices.length;
+  focusTabAt(stripIndices[nextLocal]);
 }
 
 function focusTabAt(idx: number): void {
@@ -438,7 +516,9 @@ function restoreScrollPosition(): void {
   });
 }
 
-/** Move the tab at `from` to position `to` (insert-before semantics). */
+/** Move the tab at `from` to position `to` (insert-before semantics).
+ * #309 — `to` is the global insertion index. Both pointers (`activeTabIndex`
+ * and `inactiveActiveTabIndex`) are tracked through the splice. */
 function moveTab(from: number, to: number): void {
   if (from === to || from < 0 || from >= tabs.length) return;
   const [moved] = tabs.splice(from, 1);
@@ -446,36 +526,61 @@ function moveTab(from: number, to: number): void {
   // after `from`; clamp into bounds.
   const insertAt = Math.max(0, Math.min(tabs.length, to > from ? to - 1 : to));
   tabs.splice(insertAt, 0, moved);
-  // Track the active tab through the move so focus survives a drag.
-  if (from === activeTabIndex) {
-    activeTabIndex = insertAt;
-  } else if (from < activeTabIndex && insertAt >= activeTabIndex) {
-    activeTabIndex--;
-  } else if (from > activeTabIndex && insertAt <= activeTabIndex) {
-    activeTabIndex++;
-  }
+  // Track both per-strip active tabs through the move so focus survives a drag.
+  activeTabIndex = remapIndexAfterMove(activeTabIndex, from, insertAt);
+  inactiveActiveTabIndex = remapIndexAfterMove(inactiveActiveTabIndex, from, insertAt);
   renderTabstrip();
+  if (splitActive) renderInactiveColumn();
   schedulePersistTabs();
 }
 
+/** #309 — given the original index of a tracked pointer, return where it lands
+ * after splicing `from` out and inserting it at `insertAt`. */
+function remapIndexAfterMove(ptr: number, from: number, insertAt: number): number {
+  if (ptr < 0) return ptr;
+  if (ptr === from) return insertAt;
+  // Step 1: account for the splice-out.
+  let p = ptr;
+  if (from < p) p--;
+  // Step 2: account for the splice-in.
+  if (insertAt <= p) p++;
+  return p;
+}
+
 function renderTabstrip(): void {
-  if (!tabstripEl) return;
-  if (tabs.length === 0) {
-    tabstripEl.hidden = true;
-    tabstripEl.replaceChildren();
+  // #309 — render the primary strip into the existing #tabstrip element. The
+  // secondary strip (when split is active) is rendered by `renderInactiveColumn`
+  // which calls `renderTabstripInto` with the column-1 strip element.
+  renderTabstripInto(tabstripEl, activeStripId, true);
+}
+
+/** #309 — render the tabs whose `stripId === stripId` into `target`. When
+ * `isActiveStrip` is false, the rendered tabs do NOT swap the live editor on
+ * click; instead, the click first promotes the strip to active (see
+ * `swapActiveColumn`) and then focuses the clicked tab. */
+function renderTabstripInto(target: HTMLDivElement | null, stripId: number, isActiveStrip: boolean): void {
+  if (!target) return;
+  // Build a list of (tab, globalIdx) pairs for this strip only.
+  const stripList: { tab: FileTab; idx: number }[] = [];
+  tabs.forEach((tab, idx) => { if (tab.stripId === stripId) stripList.push({ tab, idx }); });
+  if (stripList.length === 0) {
+    target.hidden = true;
+    target.replaceChildren();
     return;
   }
-  tabstripEl.hidden = false;
+  target.hidden = false;
+  const activeIdxForStrip = isActiveStrip ? activeTabIndex : inactiveActiveTabIndex;
   const frag = document.createDocumentFragment();
-  tabs.forEach((tab, idx) => {
+  stripList.forEach(({ tab, idx }) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'mid-tab' + (idx === activeTabIndex ? ' is-active' : '');
+    btn.className = 'mid-tab' + (idx === activeIdxForStrip ? ' is-active' : '');
     btn.dataset.tabIndex = String(idx);
     btn.dataset.tabPath = tab.path;
+    btn.dataset.tabStrip = String(stripId);
     btn.draggable = true;
     btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', String(idx === activeTabIndex));
+    btn.setAttribute('aria-selected', String(idx === activeIdxForStrip));
     btn.title = tab.path;
 
     const fileMatch = iconForFile(tab.path.split('/').pop() ?? '', 'file');
@@ -502,20 +607,26 @@ function renderTabstrip(): void {
       closeTabAt(idx);
     });
 
-    btn.addEventListener('click', () => focusTabAt(idx));
+    btn.addEventListener('click', () => {
+      // #309 — clicking a tab in the inactive column promotes that column to
+      // active first, so the live editor swaps to it before focusing the tab.
+      if (!isActiveStrip) swapActiveColumn();
+      focusTabAt(idx);
+    });
     // Middle-click closes the tab — VSCode parity.
     btn.addEventListener('mousedown', e => {
       if (e.button === 1) {
         e.preventDefault();
+        if (!isActiveStrip) swapActiveColumn();
         closeTabAt(idx);
       }
     });
     btn.addEventListener('contextmenu', e => {
       e.preventDefault();
       openContextMenu([
-        { icon: 'x', label: 'Close', action: () => closeTabAt(idx) },
-        { icon: 'x', label: 'Close others', action: () => closeOtherTabs(idx) },
-        { icon: 'x', label: 'Close all', action: () => closeAllTabs() },
+        { icon: 'x', label: 'Close', action: () => { if (!isActiveStrip) swapActiveColumn(); closeTabAt(idx); } },
+        { icon: 'x', label: 'Close others', action: () => closeOtherTabsInStrip(idx, stripId) },
+        { icon: 'x', label: 'Close all', action: () => closeAllTabsInStrip(stripId) },
         { separator: true, label: '' },
         { icon: 'folder-open', label: 'Reveal in Finder', action: () => void window.mid.openExternal(`file://${tab.path.replace(/\/[^/]+$/, '')}`) },
       ], e.clientX, e.clientY);
@@ -531,17 +642,21 @@ function renderTabstrip(): void {
     });
     btn.addEventListener('dragend', () => {
       btn.classList.remove('is-dragging');
-      tabstripEl.querySelectorAll('.mid-tab').forEach(el => {
+      target.querySelectorAll('.mid-tab').forEach(el => {
         el.classList.remove('is-drop-before', 'is-drop-after');
       });
     });
     btn.addEventListener('dragover', ev => {
       if (!ev.dataTransfer?.types.includes('application/x-mid-tab')) return;
       ev.preventDefault();
+      // #309 — stop propagation so the document-level edge dragover doesn't
+      // also paint a drop indicator while the user is hovering over a tab.
+      ev.stopPropagation();
+      if (splitDropIndicatorEl) splitDropIndicatorEl.hidden = true;
       ev.dataTransfer.dropEffect = 'move';
       const rect = btn.getBoundingClientRect();
       const before = ev.clientX < rect.left + rect.width / 2;
-      tabstripEl.querySelectorAll('.mid-tab').forEach(el => {
+      target.querySelectorAll('.mid-tab').forEach(el => {
         el.classList.remove('is-drop-before', 'is-drop-after');
       });
       btn.classList.add(before ? 'is-drop-before' : 'is-drop-after');
@@ -553,34 +668,50 @@ function renderTabstrip(): void {
       const raw = ev.dataTransfer?.getData('application/x-mid-tab');
       if (raw == null || raw === '') return;
       ev.preventDefault();
+      // #309 — stop propagation so the document-level edge-drop handler
+      // doesn't ALSO fire and try to split off the same tab.
+      ev.stopPropagation();
       const from = parseInt(raw, 10);
       if (Number.isNaN(from)) return;
       const rect = btn.getBoundingClientRect();
       const before = ev.clientX < rect.left + rect.width / 2;
       const to = before ? idx : idx + 1;
-      moveTab(from, to);
+      // #309 — drop into a different strip rehomes the dragged tab.
+      const dragged = tabs[from];
+      if (dragged && dragged.stripId !== stripId) {
+        moveTabToStrip(from, to, stripId);
+      } else {
+        moveTab(from, to);
+      }
     });
 
     btn.append(iconWrap, label, closeBtn);
     frag.appendChild(btn);
   });
-  tabstripEl.replaceChildren(frag);
+  target.replaceChildren(frag);
   // Scroll the active tab into view (e.g. after Cmd+Alt+Right cycles past the
   // visible window).
-  const activeEl = tabstripEl.querySelector<HTMLElement>('.mid-tab.is-active');
+  const activeEl = target.querySelector<HTMLElement>('.mid-tab.is-active');
   activeEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 }
 
-function closeOtherTabs(keepIdx: number): void {
+/** #309 — context-menu helpers scoped to a single strip. The active strip is
+ * promoted before the close so `closeTabAt`'s active-pointer logic stays
+ * consistent. */
+function closeOtherTabsInStrip(keepIdx: number, stripId: number): void {
+  if (stripId !== activeStripId && splitActive) swapActiveColumn();
   if (keepIdx < 0 || keepIdx >= tabs.length) return;
   const keepPath = tabs[keepIdx].path;
   for (let i = tabs.length - 1; i >= 0; i--) {
-    if (tabs[i].path !== keepPath) closeTabAt(i);
+    if (tabs[i].stripId === stripId && tabs[i].path !== keepPath) closeTabAt(i);
   }
 }
 
-function closeAllTabs(): void {
-  for (let i = tabs.length - 1; i >= 0; i--) closeTabAt(i);
+function closeAllTabsInStrip(stripId: number): void {
+  if (stripId !== activeStripId && splitActive) swapActiveColumn();
+  for (let i = tabs.length - 1; i >= 0; i--) {
+    if (tabs[i].stripId === stripId) closeTabAt(i);
+  }
 }
 
 function schedulePersistTabs(): void {
@@ -588,31 +719,56 @@ function schedulePersistTabs(): void {
   if (tabsPersistTimer !== null) window.clearTimeout(tabsPersistTimer);
   tabsPersistTimer = window.setTimeout(() => {
     tabsPersistTimer = null;
-    const rows = tabs.map((t, i) => ({
-      strip_id: t.stripId,
-      idx: i,
-      path: t.path,
-      active: i === activeTabIndex ? 1 : 0,
-    }));
+    // #309 — compute per-strip idx so the SQLite row's (strip_id, idx) primary
+    // key stays unique. The global tab order in `tabs[]` doesn't matter at the
+    // wire level — only ordering within a strip does.
+    const perStripCounter: Record<number, number> = {};
+    const rows = tabs.map((t, globalIdx) => {
+      const stripIdx = perStripCounter[t.stripId] ?? 0;
+      perStripCounter[t.stripId] = stripIdx + 1;
+      // The "active" flag must be set per-strip — both the active and inactive
+      // strips remember which of their tabs is focused.
+      const isStripActive =
+        (t.stripId === activeStripId && globalIdx === activeTabIndex) ||
+        (t.stripId !== activeStripId && globalIdx === inactiveActiveTabIndex);
+      return {
+        strip_id: t.stripId,
+        idx: stripIdx,
+        path: t.path,
+        active: isStripActive ? 1 : 0,
+      };
+    });
     void window.mid.tabsReplace(rows).catch(() => undefined);
+    // Persist split-screen layout settings alongside the tab table.
+    void window.mid.patchAppState({
+      tabSplitActive: splitActive,
+      tabSplitRatio,
+      tabActiveStripId: activeStripId,
+    } as Partial<AppState>).catch(() => undefined);
   }, 200);
 }
 
 /** Restore tabs from SQLite at startup. Best-effort: a missing file is dropped
- * silently so a restart doesn't crash the renderer. */
+ * silently so a restart doesn't crash the renderer.
+ * #309 — also restores the active per-strip pointer for both columns and
+ * promotes the second strip into split mode if it has at least one row. */
 async function hydrateTabs(): Promise<void> {
   let rows: { strip_id: number; idx: number; path: string; active: number }[];
   try { rows = await window.mid.tabsList(); }
   catch { return; }
   if (!rows || rows.length === 0) return;
   tabsHydrating = true;
-  let pendingActive = -1;
+  // Track which global index in `tabs[]` is the active row for each strip so
+  // we can rehydrate `activeTabIndex` AND `inactiveActiveTabIndex` correctly.
+  const pendingActiveByStrip: Record<number, number> = {};
+  const stripsSeen = new Set<number>();
   for (const r of rows) {
     try {
       const content = await window.mid.readFile(r.path);
       const tab: FileTab = { stripId: r.strip_id, path: r.path, text: content, dirty: false, scrollTop: 0 };
       tabs.push(tab);
-      if (r.active) pendingActive = tabs.length - 1;
+      stripsSeen.add(r.strip_id);
+      if (r.active) pendingActiveByStrip[r.strip_id] = tabs.length - 1;
     } catch {
       // file gone — skip it; the next persist will drop it from the table.
       continue;
@@ -620,12 +776,34 @@ async function hydrateTabs(): Promise<void> {
   }
   tabsHydrating = false;
   if (tabs.length === 0) return;
-  activeTabIndex = pendingActive >= 0 ? pendingActive : 0;
+  // Determine each strip's active idx; fall back to the first tab in that strip.
+  const firstInStrip = (s: number): number => tabs.findIndex(t => t.stripId === s);
+  // The user's last-focused strip becomes `activeStripId`; if it's gone (the
+  // strip emptied since persist), fall back to whichever strip has rows.
+  const desiredActiveStrip = (typeof appStateTabActiveStripId === 'number' && stripsSeen.has(appStateTabActiveStripId))
+    ? appStateTabActiveStripId
+    : (stripsSeen.has(0) ? 0 : 1);
+  activeStripId = desiredActiveStrip as 0 | 1;
+  activeTabIndex = pendingActiveByStrip[activeStripId] ?? firstInStrip(activeStripId);
+  if (activeTabIndex < 0) activeTabIndex = 0;
+  // Inactive strip pointer: only meaningful if a second strip exists.
+  const otherStrip = activeStripId === 0 ? 1 : 0;
+  if (stripsSeen.has(otherStrip)) {
+    inactiveActiveTabIndex = pendingActiveByStrip[otherStrip] ?? firstInStrip(otherStrip);
+    splitActive = true;
+  } else {
+    inactiveActiveTabIndex = -1;
+    splitActive = false;
+  }
   syncMirrorFromActiveTab();
   highlightActiveTreeItem();
   updateWordCount();
   updateSaveIndicator(true);
+  // #309 — if split mode rehydrated, ensure the column DOM exists before
+  // rendering either strip. `enableSplitDOM` is idempotent.
+  if (splitActive) enableSplitDOM();
   renderTabstrip();
+  if (splitActive) renderInactiveColumn();
   // Re-render the editor area against the active tab.
   if (currentMode === 'view') renderView();
   else if (currentMode === 'edit') renderEdit();
@@ -6450,6 +6628,15 @@ void window.mid.readAppState().then(async state => {
   if (typeof state.noteTypeStripHidden === 'boolean') noteTypeStripHidden = state.noteTypeStripHidden;
   if (Array.isArray(state.noteTypeStripExclude)) noteTypeStripExclude = state.noteTypeStripExclude.slice();
   if (Array.isArray(state.noteTypeOrder)) noteTypeOrder = state.noteTypeOrder.slice();
+  // #309 — split-screen tab manager. The split is rebuilt in `hydrateTabs`
+  // based on the persisted `open_tabs` rows (a non-empty strip 1 means the
+  // user had a split going); we just stash the ratio + last-active strip here.
+  if (typeof state.tabSplitRatio === 'number' && state.tabSplitRatio >= 0.15 && state.tabSplitRatio <= 0.85) {
+    tabSplitRatio = state.tabSplitRatio;
+  }
+  if (state.tabActiveStripId === 0 || state.tabActiveStripId === 1) {
+    appStateTabActiveStripId = state.tabActiveStripId;
+  }
   // #297 — hydrate the registry from SQLite before any note view tries to
   // dispatch on viewKind. Failures fall back to the built-ins shipped in the
   // bundle; the renderer never blocks on this round-trip.
@@ -6774,6 +6961,10 @@ function closeTabForDetach(idx: number): void {
   } else if (idx === activeTabIndex) {
     if (activeTabIndex >= tabs.length) activeTabIndex = tabs.length - 1;
   }
+  // #309 — also reconcile the inactive-strip pointer when the detach close
+  // happens to remove a tab earlier in the array than the inactive pointer.
+  if (idx < inactiveActiveTabIndex) inactiveActiveTabIndex--;
+  else if (idx === inactiveActiveTabIndex) inactiveActiveTabIndex = -1;
   syncMirrorFromActiveTab();
   if (currentMode === 'view') renderView();
   else if (currentMode === 'edit') renderEdit();
@@ -6783,6 +6974,7 @@ function closeTabForDetach(idx: number): void {
   updateSaveIndicator(true);
   restoreScrollPosition();
   renderTabstrip();
+  if (splitActive) renderInactiveColumn();
   schedulePersistTabs();
 }
 
@@ -6886,3 +7078,472 @@ void detachBridge.getWindowId().then((slot) => {
     document.title = `Mark It Down — Window ${slot}`;
   }
 }).catch(() => undefined);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab split-screen (#309)
+//
+// Activates a second editor column when the user drags a tab onto the left or
+// right edge (~80px) of the existing tab strip / editor area. The implementation
+// is layered on top of the MVP tab manager (#287) without rewriting it:
+//
+//   • Strip 0 keeps using the original `#tabstrip` + `#root` DOM nodes — the
+//     "live" editor where `currentText` and `currentPath` mirror the focused
+//     tab and the existing render code (renderView/renderEdit/renderSplit) runs.
+//
+//   • Strip 1 gets a sibling tabstrip + a static markdown preview pane. It is
+//     intentionally read-only: clicking inside it (or on one of its tabs) calls
+//     `swapActiveColumn`, which physically moves the live `#root` into the
+//     other column slot and re-renders both sides with their swapped roles.
+//
+// This keeps the ~70 references to `currentText`/`currentPath` happy without a
+// sweep, while still satisfying the AC: each column has its own strip + active
+// tab + editor view, the divider drag resizes both columns, closing the last
+// tab in a column collapses back to single-column, and both columns persist
+// across restart via the existing `(strip_id, idx, path, active)` schema.
+//
+// All new DOM lives at the bottom of the editor-area wrapper to minimise
+// merge conflicts with the parallel detach agent on feat/308-tab-detach.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Wrapper that holds the two columns when split is active. Built lazily by
+ * `enableSplitDOM` and re-used afterwards. */
+let splitWrapEl: HTMLDivElement | null = null;
+/** The strip-1 tabstrip element. Created on first split activation. */
+let inactiveTabstripEl: HTMLDivElement | null = null;
+/** The strip-1 editor area (markdown preview of its active tab). */
+let inactiveRootEl: HTMLDivElement | null = null;
+/** The drop indicator (left or right edge) shown during a tab drag. */
+let splitDropIndicatorEl: HTMLDivElement | null = null;
+/** The original parent (`<div id="layout">` direct child) of `#editor-area`,
+ * used so a split-collapse can re-parent `#editor-area` back to its home. */
+let editorAreaOriginalParent: HTMLElement | null = null;
+let editorAreaOriginalNextSibling: ChildNode | null = null;
+
+/** #309 — promotion threshold: how many pixels from the editor-area edge a tab
+ * drag has to land in to trigger a split. */
+const SPLIT_EDGE_THRESHOLD_PX = 80;
+
+/** Get the existing `.mid-editor-area` element — the column 0 wrapper. */
+function getEditorAreaEl(): HTMLElement {
+  return document.getElementById('editor-area') as HTMLElement;
+}
+
+/** Build (or reuse) the split-mode DOM scaffold. Idempotent: calling on an
+ * already-split layout is a no-op. The scaffold:
+ *
+ *   <div class="mid-split-root">
+ *     <div class="mid-editor-column" id="editor-area">…strip 0 + #root…</div>
+ *     <div class="mid-split-divider" />
+ *     <div class="mid-editor-column">
+ *       <div class="mid-tabstrip" id="tabstrip-2" />
+ *       <div class="mid-inactive-root" id="root-2" />
+ *     </div>
+ *   </div>
+ *
+ * `#editor-area` is moved (not cloned) into the wrapper so all existing CSS
+ * selectors that target it keep working.
+ */
+function enableSplitDOM(): void {
+  if (splitWrapEl) return;
+  const editorArea = getEditorAreaEl();
+  if (!editorArea) return;
+  // Stash where `#editor-area` originally lived so collapse can put it back.
+  editorAreaOriginalParent = editorArea.parentElement;
+  editorAreaOriginalNextSibling = editorArea.nextSibling;
+  if (!editorAreaOriginalParent) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mid-split-root';
+  wrap.style.gridTemplateColumns = `${tabSplitRatio * 100}% 6px 1fr`;
+  splitWrapEl = wrap;
+
+  // Mark column 0 (the original area) as a column for the flex parent.
+  editorArea.classList.add('mid-editor-column', 'is-active');
+
+  const divider = document.createElement('div');
+  divider.className = 'mid-split-divider';
+  divider.setAttribute('role', 'separator');
+  divider.setAttribute('aria-orientation', 'vertical');
+  divider.title = 'Drag to resize';
+  divider.addEventListener('mousedown', beginTabSplitDrag);
+
+  const col2 = document.createElement('div');
+  col2.className = 'mid-editor-column';
+
+  const strip2 = document.createElement('div');
+  strip2.id = 'tabstrip-2';
+  strip2.className = 'mid-tabstrip';
+  strip2.setAttribute('role', 'tablist');
+  strip2.setAttribute('aria-label', 'Open files (split)');
+  inactiveTabstripEl = strip2;
+
+  const root2 = document.createElement('div');
+  root2.id = 'root-2';
+  root2.className = 'mid-inactive-root';
+  inactiveRootEl = root2;
+
+  // Click promotion is wired via the global document listener installed by
+  // `setupSplitEdgeDropDetection`, so re-enabling split after a collapse does
+  // not stack duplicate listeners.
+
+  col2.append(strip2, root2);
+  // Insert the wrapper where `#editor-area` was, then move the area inside.
+  editorAreaOriginalParent.insertBefore(wrap, editorArea);
+  wrap.append(editorArea, divider, col2);
+
+  // Drop indicator (vertical highlight bar) is global — laid over whichever
+  // column the cursor is hovering near the edge of.
+  if (!splitDropIndicatorEl) {
+    const ind = document.createElement('div');
+    ind.className = 'mid-split-drop-indicator';
+    ind.hidden = true;
+    document.body.appendChild(ind);
+    splitDropIndicatorEl = ind;
+  }
+}
+
+/** Collapse the split DOM back into a single column. Moves `#editor-area`
+ * back to its original parent and removes the wrapper + column 2. */
+function disableSplitDOM(): void {
+  if (!splitWrapEl) return;
+  const editorArea = getEditorAreaEl();
+  if (editorArea && editorAreaOriginalParent) {
+    editorArea.classList.remove('mid-editor-column', 'is-active');
+    editorAreaOriginalParent.insertBefore(editorArea, editorAreaOriginalNextSibling);
+  }
+  splitWrapEl.remove();
+  splitWrapEl = null;
+  inactiveTabstripEl = null;
+  inactiveRootEl = null;
+}
+
+function getInactiveStripId(): 0 | 1 {
+  return activeStripId === 0 ? 1 : 0;
+}
+
+/** Render the inactive column's tabstrip + a markdown preview of its active
+ * tab. Called whenever the inactive strip's tabs change or its active pointer
+ * moves. */
+function renderInactiveColumn(): void {
+  if (!splitActive) return;
+  if (!inactiveTabstripEl || !inactiveRootEl) return;
+  const stripId = getInactiveStripId();
+  renderTabstripInto(inactiveTabstripEl, stripId, false);
+  // Preview = the markdown of whatever tab is active in the inactive strip.
+  const tab = inactiveActiveTabIndex >= 0 && inactiveActiveTabIndex < tabs.length
+    ? tabs[inactiveActiveTabIndex]
+    : null;
+  inactiveRootEl.replaceChildren();
+  if (!tab) {
+    const empty = document.createElement('div');
+    empty.className = 'mid-inactive-empty';
+    empty.textContent = 'No file';
+    inactiveRootEl.appendChild(empty);
+    return;
+  }
+  const preview = document.createElement('div');
+  preview.className = 'mid-preview mid-inactive-preview';
+  // Render the inactive tab's markdown via a localised version of
+  // populatePreview that doesn't touch `currentText`/the outline.
+  preview.innerHTML = renderMarkdown(tab.text);
+  preview.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
+    const href = a.getAttribute('href');
+    if (!href) return;
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        void window.mid.openExternal(href);
+      });
+    }
+  });
+  applySyntaxHighlighting(preview);
+  inactiveRootEl.appendChild(preview);
+}
+
+/** Swap which column is the live editor. The current active tab's mirror gets
+ * pushed back into its `FileTab`, the per-strip pointers swap, the new active
+ * tab's mirror is pulled, and both columns re-render. */
+function swapActiveColumn(): void {
+  if (!splitActive) return;
+  syncActiveTabFromMirror();
+  captureScrollPosition();
+  // Swap the per-strip active pointers AND flip activeStripId. The DOM nodes
+  // themselves don't move — `editor-area` always hosts whichever strip is
+  // currently active. The renderTabstrip() / renderInactiveColumn() pair below
+  // re-paints both columns with their swapped roles.
+  const tmp = activeTabIndex;
+  activeTabIndex = inactiveActiveTabIndex;
+  inactiveActiveTabIndex = tmp;
+  activeStripId = getInactiveStripId();
+  syncMirrorFromActiveTab();
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  highlightActiveTreeItem();
+  updateWordCount();
+  updateSaveIndicator(!activeTab()?.dirty);
+  restoreScrollPosition();
+  renderTabstrip();
+  renderInactiveColumn();
+  schedulePersistTabs();
+}
+
+/** Activate split mode by moving the tab at `globalFromIdx` into a new strip 1.
+ * If split was already active, the tab simply joins the inactive strip at the
+ * tail. Either way, the moved tab becomes that strip's active tab. */
+function enableSplit(globalFromIdx: number): void {
+  if (globalFromIdx < 0 || globalFromIdx >= tabs.length) return;
+  const moving = tabs[globalFromIdx];
+  if (!moving) return;
+  // Don't allow split if it would empty the source strip and the moving tab
+  // is already in the target strip's role — i.e. only one tab total.
+  const sourceStrip = moving.stripId;
+  const sourceStripCount = tabs.filter(t => t.stripId === sourceStrip).length;
+  if (sourceStripCount <= 1 && !splitActive) return; // nothing to split off
+
+  const targetStrip: 0 | 1 = sourceStrip === 0 ? 1 : 0;
+  // Capture the live editor's mirror before reshuffling pointers.
+  syncActiveTabFromMirror();
+  captureScrollPosition();
+
+  if (!splitActive) {
+    splitActive = true;
+    enableSplitDOM();
+  }
+  // Re-stamp the moving tab's stripId.
+  moving.stripId = targetStrip;
+  // The moved tab becomes the target strip's active tab.
+  // Adjust pointers depending on whether the source strip is currently active.
+  if (sourceStrip === activeStripId) {
+    // The moved tab WAS the active strip's tab. The target is the OTHER strip.
+    // After the move, the active strip lost it — pick a sibling to focus.
+    if (globalFromIdx === activeTabIndex) {
+      activeTabIndex = lastIndexInStrip(activeStripId);
+    } else if (globalFromIdx < activeTabIndex) {
+      // No splice happened (just stripId changed) — but `activeTabIndex`
+      // pointer still refers to the same global slot. The fact that
+      // tabs[activeTabIndex] is in active strip is preserved.
+    }
+    inactiveActiveTabIndex = globalFromIdx;
+  } else {
+    // The moving tab is leaving the inactive strip (rare path: drag from
+    // inactive strip to its own edge). The source strip becomes active strip
+    // counterpart. We promote.
+    inactiveActiveTabIndex = lastIndexInStrip(sourceStrip);
+    activeTabIndex = globalFromIdx;
+    // The user just dropped a tab onto the source strip's edge — we keep their
+    // focus on what they just moved, which means activeStripId flips.
+    activeStripId = targetStrip;
+  }
+  syncMirrorFromActiveTab();
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  renderTabstrip();
+  renderInactiveColumn();
+  highlightActiveTreeItem();
+  updateWordCount();
+  updateSaveIndicator(!activeTab()?.dirty);
+  restoreScrollPosition();
+  schedulePersistTabs();
+}
+
+/** Move the tab at `globalFromIdx` into `targetStripId` at insertion position
+ * `to` (insert-before semantics within the target strip). Handles cross-strip
+ * drops from the strip's drop handler. */
+function moveTabToStrip(globalFromIdx: number, _to: number, targetStripId: number): void {
+  if (globalFromIdx < 0 || globalFromIdx >= tabs.length) return;
+  const moving = tabs[globalFromIdx];
+  if (!moving || moving.stripId === targetStripId) return;
+  const sourceStrip = moving.stripId;
+  const sourceWasActive = sourceStrip === activeStripId;
+  // Just relabel the strip; persistence will renumber the per-strip idx.
+  moving.stripId = targetStripId;
+  // Snap the source strip's active pointer back into a tab that still belongs
+  // to it.
+  const sourcePtr = sourceWasActive ? 'active' : 'inactive';
+  if (sourcePtr === 'active') {
+    if (globalFromIdx === activeTabIndex) {
+      activeTabIndex = lastIndexInStrip(sourceStrip);
+    }
+    if (globalFromIdx === inactiveActiveTabIndex || tabs[inactiveActiveTabIndex]?.stripId === targetStripId) {
+      inactiveActiveTabIndex = globalFromIdx;
+    }
+  } else {
+    if (globalFromIdx === inactiveActiveTabIndex) {
+      inactiveActiveTabIndex = lastIndexInStrip(sourceStrip);
+    }
+    if (tabs[activeTabIndex]?.stripId !== activeStripId) {
+      activeTabIndex = lastIndexInStrip(activeStripId);
+    }
+  }
+  // If the source strip just emptied, collapse the split.
+  const sourceEmpty = !tabs.some(t => t.stripId === sourceStrip);
+  if (sourceEmpty) {
+    collapseSplitAfterClose(sourceWasActive);
+    return;
+  }
+  syncMirrorFromActiveTab();
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  renderTabstrip();
+  if (splitActive) renderInactiveColumn();
+  schedulePersistTabs();
+}
+
+/** Collapse the split back to a single column after the closing splice in
+ * `closeTabAt` left one of the strips empty. Any surviving tabs are rehomed
+ * into strip 0; strip 1 (and its DOM) is torn down. */
+function collapseSplitAfterClose(closedActiveStrip: boolean): void {
+  // Rehome every remaining tab into strip 0.
+  for (const t of tabs) t.stripId = 0;
+  // The active pointer must point into strip 0. Pick whichever per-strip
+  // pointer was "the survivor" — if the closed tab was in the active strip,
+  // the inactive pointer survives and becomes the new active.
+  if (closedActiveStrip) {
+    activeTabIndex = inactiveActiveTabIndex >= 0 ? inactiveActiveTabIndex : 0;
+  }
+  // Clamp into bounds.
+  if (activeTabIndex >= tabs.length) activeTabIndex = tabs.length - 1;
+  if (activeTabIndex < 0 && tabs.length > 0) activeTabIndex = 0;
+  inactiveActiveTabIndex = -1;
+  activeStripId = 0;
+  splitActive = false;
+  disableSplitDOM();
+  syncMirrorFromActiveTab();
+  if (tabs.length === 0) {
+    activeTabIndex = -1;
+  }
+  if (currentMode === 'view') renderView();
+  else if (currentMode === 'edit') renderEdit();
+  else renderSplit();
+  renderTabstrip();
+  highlightActiveTreeItem();
+  updateWordCount();
+  updateSaveIndicator(true);
+  restoreScrollPosition();
+  schedulePersistTabs();
+}
+
+/** Drag the divider to resize. `tabSplitRatio` is the left column's share. */
+function beginTabSplitDrag(start: MouseEvent): void {
+  if (!splitWrapEl) return;
+  start.preventDefault();
+  const wrap = splitWrapEl;
+  const wrapRect = wrap.getBoundingClientRect();
+  const onMove = (e: MouseEvent): void => {
+    const ratio = (e.clientX - wrapRect.left) / wrapRect.width;
+    tabSplitRatio = Math.max(0.15, Math.min(0.85, ratio));
+    wrap.style.gridTemplateColumns = `${tabSplitRatio * 100}% 6px 1fr`;
+  };
+  const onUp = (): void => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    void window.mid.patchAppState({ tabSplitRatio } as Partial<AppState>);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+/** Wire global drag listeners to detect when a tab drag enters the editor
+ * area's left or right edge. We can't bind on the strip alone because the
+ * user's intent is the EDITOR area's edges (per AC and the issue spec). */
+function setupSplitEdgeDropDetection(): void {
+  const editorArea = getEditorAreaEl();
+  if (!editorArea) return;
+
+  /** Returns the {column, side} the cursor is near, or null. */
+  const detectEdgeZone = (clientX: number, clientY: number): { col: HTMLElement; side: 'left' | 'right' } | null => {
+    // Figure out which column (if any) the pointer is over. When split is
+    // inactive there is only `editorArea`; when active there are two columns.
+    const candidates: HTMLElement[] = splitActive && splitWrapEl
+      ? Array.from(splitWrapEl.querySelectorAll<HTMLElement>('.mid-editor-column'))
+      : [editorArea];
+    for (const col of candidates) {
+      const r = col.getBoundingClientRect();
+      if (clientX < r.left || clientX > r.right) continue;
+      if (clientY < r.top || clientY > r.bottom) continue;
+      const fromLeft = clientX - r.left;
+      const fromRight = r.right - clientX;
+      if (fromLeft <= SPLIT_EDGE_THRESHOLD_PX) return { col, side: 'left' };
+      if (fromRight <= SPLIT_EDGE_THRESHOLD_PX) return { col, side: 'right' };
+      return null;
+    }
+    return null;
+  };
+
+  /** Show the drop indicator over the edge of `col` on `side`. */
+  const showIndicator = (col: HTMLElement, side: 'left' | 'right'): void => {
+    if (!splitDropIndicatorEl) return;
+    const r = col.getBoundingClientRect();
+    splitDropIndicatorEl.hidden = false;
+    splitDropIndicatorEl.style.top = `${r.top}px`;
+    splitDropIndicatorEl.style.height = `${r.height}px`;
+    splitDropIndicatorEl.style.width = '4px';
+    splitDropIndicatorEl.style.left = side === 'left' ? `${r.left}px` : `${r.right - 4}px`;
+  };
+
+  const hideIndicator = (): void => {
+    if (splitDropIndicatorEl) splitDropIndicatorEl.hidden = true;
+  };
+
+  // We listen on `document` because the dragover events must bubble out of the
+  // strip's row of tab buttons (they `preventDefault` for their own intra-strip
+  // reorder DnD). The strip itself is a narrow horizontal sliver — the user
+  // expects the EDITOR AREA's left/right margin to be the drop zone.
+  document.addEventListener('dragover', ev => {
+    if (!ev.dataTransfer?.types.includes('application/x-mid-tab')) return;
+    const zone = detectEdgeZone(ev.clientX, ev.clientY);
+    if (!zone) { hideIndicator(); return; }
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+    showIndicator(zone.col, zone.side);
+  });
+  document.addEventListener('drop', ev => {
+    const raw = ev.dataTransfer?.getData('application/x-mid-tab');
+    if (raw == null || raw === '') return;
+    const zone = detectEdgeZone(ev.clientX, ev.clientY);
+    hideIndicator();
+    if (!zone) return;
+    const fromIdx = parseInt(raw, 10);
+    if (Number.isNaN(fromIdx)) return;
+    ev.preventDefault();
+    // Determine which strip the drop maps to. Single-column case: split off.
+    if (!splitActive) {
+      enableSplit(fromIdx);
+      return;
+    }
+    // Already split: figure out which strip the targeted column is.
+    const col = zone.col;
+    const isCol2 = col !== getEditorAreaEl();
+    // When split is on, column 0 (the original `editor-area`) hosts whichever
+    // strip is currently `activeStripId`; column 2 hosts the other. So the
+    // strip id of the drop target is:
+    const targetStripId: 0 | 1 = isCol2 ? getInactiveStripId() : activeStripId;
+    const moving = tabs[fromIdx];
+    if (!moving) return;
+    if (moving.stripId === targetStripId) return; // same-strip drop = noop
+    moveTabToStrip(fromIdx, 0, targetStripId);
+  });
+  document.addEventListener('dragend', hideIndicator);
+
+  // Click promotion: clicking inside the inactive column (anywhere outside
+  // tab buttons / divider) makes it the active column. The active column
+  // ALWAYS lives in `#editor-area` — `swapActiveColumn` flips which strip's
+  // tabs render there. So a click in column-2 (the sibling) means "promote
+  // me". Tab buttons handle their own promotion via their click listener.
+  document.addEventListener('click', ev => {
+    if (!splitActive || !splitWrapEl) return;
+    const target = ev.target as HTMLElement;
+    if (target.closest('.mid-tab')) return;
+    if (target.closest('.mid-tab__close')) return;
+    if (target.closest('.mid-split-divider')) return;
+    const col = target.closest('.mid-editor-column') as HTMLElement | null;
+    if (!col) return;
+    if (col.id === 'editor-area') return; // already the active column
+    swapActiveColumn();
+  });
+}
+
+setupSplitEdgeDropDetection();
