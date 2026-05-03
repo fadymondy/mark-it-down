@@ -3194,7 +3194,7 @@ async function dismissOnboardingForCurrentWorkspace(): Promise<void> {
   await window.mid.patchAppState({ warehouseOnboardingDismissed: [...prev, wsId] });
 }
 
-async function openWarehouseOnboarding(force = false): Promise<void> {
+async function openWarehouseOnboarding(force = false, blocking = false): Promise<void> {
   if (!currentFolder) {
     flashStatus('Open a folder before configuring a warehouse');
     return;
@@ -3216,6 +3216,11 @@ async function openWarehouseOnboarding(force = false): Promise<void> {
   const closeBtn = document.getElementById('mid-onboarding-close') as HTMLButtonElement;
   const backBtn = document.getElementById('mid-onboarding-back') as HTMLButtonElement;
   const nextBtn = document.getElementById('mid-onboarding-next') as HTMLButtonElement;
+  // #314 — when launched as blocking middleware (no warehouse yet), the user
+  // cannot dismiss with Skip / X / Esc / backdrop. The flow only ends when
+  // a warehouse is persisted (github or local).
+  skipBtn.hidden = blocking;
+  closeBtn.hidden = blocking;
 
   const state: OnboardingState = {
     step: 'gh',
@@ -3251,8 +3256,12 @@ async function openWarehouseOnboarding(force = false): Promise<void> {
     onboardingActive = false;
   };
 
-  const onSkip = (): void => closeOnboarding(true);
-  const onCancel = (e: Event): void => { e.preventDefault(); closeOnboarding(true); };
+  const onSkip = (): void => { if (!blocking) closeOnboarding(true); };
+  const onCancel = (e: Event): void => {
+    e.preventDefault();
+    // Esc / backdrop is honored as Skip ONLY when not blocking.
+    if (!blocking) closeOnboarding(true);
+  };
 
   const renderError = (): string => state.error
     ? `<div class="mid-onboarding-error">${escapeHTML(state.error)}</div>`
@@ -3387,6 +3396,13 @@ async function openWarehouseOnboarding(force = false): Promise<void> {
         <div class="mid-onboarding-list" id="mid-onboarding-repo-list"></div>
         <div class="mid-onboarding-status">${state.repos.length} repo${state.repos.length === 1 ? '' : 's'} loaded</div>
       </div>
+      <div class="mid-onboarding-card">
+        <div class="mid-onboarding-card-title">${iconHTML('folder', 'mid-icon--sm')} Or use a local folder</div>
+        <p class="mid-onboarding-card-hint">No GitHub. Notes sync to a folder you pick — works for users who only want local backup or use a different sync mechanism (iCloud / Dropbox / Syncthing).</p>
+        <div class="mid-onboarding-actions">
+          <button class="mid-btn" data-onboarding-action="pick-local">${iconHTML('folder', 'mid-icon--sm')} Pick a folder…</button>
+        </div>
+      </div>
       ${renderError()}
     `;
     const slugInput = body.querySelector<HTMLInputElement>('#mid-onboarding-create-slug');
@@ -3437,6 +3453,14 @@ async function openWarehouseOnboarding(force = false): Promise<void> {
       const m = /github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?\/?$/.exec(url);
       const finalSlug = m ? m[1] : slugRaw;
       await persistAndConnect(finalSlug);
+    });
+    body.querySelector<HTMLButtonElement>('[data-onboarding-action="pick-local"]')?.addEventListener('click', async () => {
+      // #314 — local-folder warehouse. Persisted with `repo: 'local:<path>'`
+      // so the rest of the system can detect non-GitHub warehouses by prefix
+      // and skip remote-only operations (push / pull / device-flow).
+      const picked = await window.mid.openFolderDialog();
+      if (!picked) return;
+      await persistAndConnect(`local:${picked.folderPath}`);
     });
     nextBtn.onclick = (): void => {
       if (state.selectedRepo) void persistAndConnect(state.selectedRepo);
@@ -6469,7 +6493,9 @@ void window.mid.readAppState().then(async state => {
     try {
       const existing = await window.mid.warehousesList(currentFolder);
       if (existing.length === 0) {
-        await openWarehouseOnboarding(true);
+        // #314 — blocking onboarding: app cannot proceed without a warehouse
+        // (github repo OR local folder). User can change later from settings.
+        await openWarehouseOnboarding(true, /* blocking */ true);
       }
     } catch (err) { console.debug('[mid] launch onboarding gate error:', err); }
   }
