@@ -4,6 +4,22 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.6] — 2026-05-03
+
+### Added — Tab manager: window detach + split-screen (#308, #309)
+
+- **Window detach** (#308) — drag a tab outside the window bounds → it spawns into a new `BrowserWindow` carrying that single file. Origin window loses the tab. Each window persists its own tab list (new `window_id` column on `open_tabs`) and re-spawns on launch. Closing a detached window doesn't take down the origin.
+- **Split-screen** (#309) — drag a tab onto the left or right edge of the editor → editor splits into two independent columns, each with its own tab strip + active tab + editor. Drop indicator (vertical highlight bar) appears during drag. Drag the divider between columns to resize (default 50/50, persists). Closing the last tab in a column collapses back to single-column. New file opens go to the active column.
+
+### Fixed — Blocking onboarding + local-folder warehouse (#314)
+
+- **Onboarding is now blocking middleware on launch.** When the workspace has no warehouse, the app cannot proceed until the user picks one. Skip / X / Esc / backdrop-click are all disabled in blocking mode. User can still re-trigger from settings later.
+- **New "Use a local folder" option in step 3** alongside existing-repo / new-repo. Picks any local folder via the OS dialog and persists the warehouse with `repo: 'local:<path>'`. `repo-connect` detects the prefix and skips every git remote step — local-only warehouses don't require the workspace to be a git repo at all.
+
+### Fixed — MCP server status sync (#316)
+
+- MCP startup now re-evaluates child health 500ms after fork and rebuilds the tray menu, so an early crash flips to 'error' instead of staying stuck on 'running'. The forked child's stderr is surfaced in the main-process console + on exit, and the alive PID is logged on success — packaged-build failures are now visible in DevTools / `electron … --enable-logging`.
+
 ## [0.2.5] — 2026-05-03
 
 ### Added — Tab manager MVP (#287)
