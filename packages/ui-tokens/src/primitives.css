@@ -16,6 +16,11 @@ body {
 }
 button { font-family: inherit; }
 
+/* HTML5 `hidden` attribute should suppress display globally — `.mid-btn` and
+ * other primitives below override `display`, which silently nullifies the
+ * `hidden` attribute. This rule wins via specificity boost. */
+[hidden] { display: none !important; }
+
 .mid-btn {
   display: inline-flex;
   align-items: center;
