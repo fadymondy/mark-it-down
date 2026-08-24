@@ -16,6 +16,8 @@ const Dashboard = lazyRouteComponent(() => import("./routes/dashboard"), "Dashbo
 const AdminHome = lazyRouteComponent(() => import("./routes/admin"), "AdminHome");
 const AdminResource = lazyRouteComponent(() => import("./routes/admin-resource"), "AdminResource");
 const Profile = lazyRouteComponent(() => import("./routes/profile"), "Profile");
+const Notes = lazyRouteComponent(() => import("./routes/notes"), "Notes");
+const Shared = lazyRouteComponent(() => import("./routes/shared"), "Shared");
 
 const rootRoute = createRootRoute({ component: () => (<Providers><Outlet /></Providers>) });
 
@@ -28,6 +30,8 @@ const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", com
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: "/login", component: Login, beforeLoad: redirectIfAuthed });
 const registerRoute = createRoute({ getParentRoute: () => rootRoute, path: "/register", component: Register, beforeLoad: redirectIfAuthed });
 const resetRoute = createRoute({ getParentRoute: () => rootRoute, path: "/reset", component: Reset });
+// Public share links — no auth, indexable.
+const sharedRoute = createRoute({ getParentRoute: () => rootRoute, path: "/s/$slug", component: Shared });
 
 // Protected shell. The guard runs in beforeLoad — BEFORE the layout/children render —
 // so unauthenticated visitors are redirected to /login without the private page ever
@@ -44,13 +48,14 @@ const appRoute = createRoute({
   },
 });
 const dashboardRoute = createRoute({ getParentRoute: () => appRoute, path: "/dashboard", component: Dashboard });
+const notesRoute = createRoute({ getParentRoute: () => appRoute, path: "/notes", component: Notes });
 const adminRoute = createRoute({ getParentRoute: () => appRoute, path: "/admin", component: AdminHome });
 const resourceRoute = createRoute({ getParentRoute: () => appRoute, path: "/admin/$resource", component: AdminResource });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: "/profile", component: Profile });
 
 const routeTree = rootRoute.addChildren([
-  indexRoute, loginRoute, registerRoute, resetRoute,
-  appRoute.addChildren([dashboardRoute, adminRoute, resourceRoute, profileRoute]),
+  indexRoute, loginRoute, registerRoute, resetRoute, sharedRoute,
+  appRoute.addChildren([dashboardRoute, notesRoute, adminRoute, resourceRoute, profileRoute]),
 ]);
 
 export const router = createRouter({

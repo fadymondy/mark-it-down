@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 @import "@togo-framework/ui/styles.css";
 @source "../node_modules/@togo-framework/ui/dist";
 @custom-variant dark (&:where(.dark, .dark *));

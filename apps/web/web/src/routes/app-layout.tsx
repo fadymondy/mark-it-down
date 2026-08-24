@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useRouterState, Link } from "@tanstack/react-router";
-import { LayoutGrid, Table2, User, LogOut, Layers, ChevronDown } from "lucide-react";
+import { LayoutGrid, Table2, User, LogOut, ChevronDown, NotebookPen } from "lucide-react";
 import {
   SidebarProvider, Sidebar, SidebarHeader, SidebarContent,
   SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
@@ -12,6 +12,7 @@ import { auth, sessionMe, clearSession, type Me } from "../lib/auth";
 import { metaResources, adminList, type ResourceMeta } from "../lib/admin";
 import { ToastProvider } from "../components/admin/toast";
 import { API, APP_NAME } from "../lib/api";
+import { MarkItDownMark } from "../lib/brand";
 
 /** Group a flat resource list by the optional `group` field.
  * Resources with no group fall into the "Resources" default. */
@@ -62,7 +63,7 @@ export function AppLayout() {
       <Sidebar collapsible="icon" side={ar ? "right" : "left"}>
         <SidebarHeader>
           <Link to="/dashboard" className="flex items-center gap-2 px-2 py-1.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Layers className="h-4 w-4" /></span>
+            <MarkItDownMark size={32} className="shrink-0 rounded-lg" />
             <span className="truncate font-semibold group-data-[collapsible=icon]:hidden">{APP_NAME}</span>
           </Link>
         </SidebarHeader>
@@ -73,6 +74,11 @@ export function AppLayout() {
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={pathname === "/dashboard"} tooltip={ar_label("Dashboard", "لوحة التحكم", ar)} onClick={() => go("/dashboard")}>
                   <LayoutGrid className="h-4 w-4" /><span>{ar_label("Dashboard", "لوحة التحكم", ar)}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={pathname === "/notes"} tooltip={ar_label("Notes", "الملاحظات", ar)} onClick={() => go("/notes")}>
+                  <NotebookPen className="h-4 w-4" /><span>{ar_label("Notes", "الملاحظات", ar)}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
