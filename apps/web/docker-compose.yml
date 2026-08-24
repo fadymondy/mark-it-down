@@ -1,0 +1,3 @@
+# SQLite needs no services — the database is an embedded file (see DATABASE_URL).
+# To use a docker-backed database, recreate with:
+#   togo new web --db postgres|togo-postgres|supabase|mysql|mongodb
