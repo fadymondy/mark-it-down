@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mark It Down</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="brand-header">
+    <span class="brand-glyph" aria-hidden="true">#</span>
+    <h1>Mark It Down</h1>
+  </header>
+
+  <main>
+    <div id="setup" class="setup" hidden>
+      <p>Connect the extension to your Mark It Down warehouse to start capturing notes.</p>
+      <p><a id="setup-link" href="#">Open settings</a> and enter your server URL and access token.</p>
+    </div>
+
+    <div id="capture">
+      <label for="note-title">Title</label>
+      <input id="note-title" type="text" placeholder="Note title" autocomplete="off" />
+
+      <label for="note-body">Body</label>
+      <textarea id="note-body" rows="6" placeholder="Markdown…"></textarea>
+
+      <label for="note-category">Category</label>
+      <input id="note-category" type="text" placeholder="Optional category" autocomplete="off" />
+
+      <button id="save" class="primary">Save note</button>
+      <p id="status" class="status" role="status"></p>
+    </div>
+
+    <div id="recent">
+      <h2>Recent notes</h2>
+      <ul id="recent-list" class="recent-list"></ul>
+    </div>
+  </main>
+
+  <footer>
+    <a id="open-settings" href="#">Settings</a>
+    <a id="open-warehouse" href="#" hidden>Open warehouse</a>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

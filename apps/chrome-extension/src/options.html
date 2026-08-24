@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mark It Down — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <header class="brand-header">
+    <span class="brand-glyph" aria-hidden="true">#</span>
+    <h1>Mark It Down settings</h1>
+  </header>
+
+  <main>
+    <section>
+      <h2>Warehouse</h2>
+
+      <label for="server-url">Server URL</label>
+      <input id="server-url" type="text" placeholder="https://notes.example.com" autocomplete="off" spellcheck="false" />
+
+      <label for="token">Personal access token</label>
+      <input id="token" type="password" placeholder="togo_pat_…" autocomplete="off" spellcheck="false" />
+
+      <label for="theme">Theme</label>
+      <select id="theme"></select>
+
+      <div class="actions">
+        <button id="save" class="primary">Save</button>
+        <button id="test">Test connection</button>
+      </div>
+      <p id="save-status" class="status" role="status"></p>
+      <p id="test-status" class="status" role="status"></p>
+    </section>
+
+    <section class="about">
+      <h2>About</h2>
+      <p>Installed version: <span id="about-current"></span></p>
+      <p id="about-latest" class="status"></p>
+      <p><a id="about-update-link" href="#" target="_blank" rel="noreferrer" hidden>Get update</a></p>
+    </section>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>
