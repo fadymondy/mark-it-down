@@ -117,15 +117,24 @@ compiles them in place, so there is still no workspace tooling to maintain.
 
 ## Deploying the web app (markitdown.fadymondy.com)
 
-The web service is exposed exactly like the other ToGo services on this host
-(cabrain, healthdebug): a container on the shared `stack_stacknet` network,
-with Nginx Proxy Manager routing the hostname to it by container name and
-Cloudflare terminating TLS.
+The web service is published exactly like the other ToGo services on this host
+(cabrain, circlexo, health…): a container on the WSL stack, exposed through a
+reverse-SSH tunnel to the Proxmox edge, where Nginx Proxy Manager routes the
+hostname and Cloudflare fronts it.
 
 ```
-Cloudflare (proxied DNS, TLS) → home WAN :80/:443 → netsh portproxy → WSL (Ubuntu-24.04)
-  → NPM (`npm` container) → http://markitdown:8080 (this app, on stack_stacknet)
+Cloudflare (explicit proxied A record → 45.129.183.99; the *.fadymondy.com wildcard
+  points at a dead IP, so an unlisted subdomain returns 522)
+  → NPM on Proxmox LXC 100 (https://npm.3x1.io, host "markitdown.fadymondy.com",
+    Cloudflare Origin cert, SSL forced) → http://10.10.10.1:4572
+  → reverse SSH tunnel from the Windows box (Scheduled Task `markitdown-tunnel`,
+    E:SitesToGo.setupmarkitdown-tunnel.ps1: -R 10.10.10.1:4572 → 127.0.0.1:9320)
+  → WSL container `markitdown` (published 127.0.0.1:9320 → :8080)
 ```
+
+The *local* WSL NPM (18080/18443/8181) and Windows Firewall are not in this path:
+WSL containers cannot reach Windows-side listeners, so the app runs in WSL and the
+tunnel picks it up from the published loopback port.
 
 1. **Build the artifacts on the host** (no network needed inside the image):
    ```bash
@@ -133,19 +142,20 @@ Cloudflare (proxied DNS, TLS) → home WAN :80/:443 → netsh portproxy → WSL 
    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o bin/web-linux ./cmd/api
    (cd web && VITE_API_ORIGIN= VITE_APP_NAME="Mark It Down" npx vite build)
    ```
-2. **Build + run the container** from the WSL stack dir `~/services/markitdown/`
-   (`docker-compose.yml` there builds from `/mnt/e/Sites/mark-it-down/apps/web`,
-   joins `stack_stacknet`, mounts `markitdown_data` for the SQLite file and
-   `markitdown_storage`, and reads `AUTH_SECRET` from its private `.env`):
+2. **Build + run the container** from the WSL dir `~/services/markitdown/`
+   (`docker-compose.yml` builds from `/mnt/e/Sites/mark-it-down/apps/web`, joins
+   `stack_stacknet`, publishes `127.0.0.1:9320`, mounts `markitdown_data` for the
+   SQLite file and `markitdown_storage`, and reads `AUTH_SECRET` from its private `.env`):
    ```bash
-   cd ~/services/markitdown && docker compose build && docker compose up -d
-   docker run --rm --network stack_stacknet alpine:3.20 wget -qO- http://markitdown:8080/api/health
+   cd ~/services/markitdown && docker compose up -d --build
+   curl -s http://127.0.0.1:9320/api/health     # from Windows or WSL
    ```
-3. **NPM proxy host** (admin action, same as cabrain's `DEPLOY.md` §3): domain
-   `markitdown.fadymondy.com` → scheme `http`, forward host `markitdown`, port
-   `8080`, no certificate (Cloudflare terminates TLS), websockets on. The DNS
-   record already exists in Cloudflare (proxied).
-4. **Redeploy** = rebuild the two artifacts, then `docker compose up -d --build`.
+3. **Tunnel** — the `markitdown-tunnel` Scheduled Task (logon trigger) keeps the
+   `-R 10.10.10.1:4572:127.0.0.1:9320` forward alive; log in `.setup/markitdown-tunnel.log`.
+4. **NPM + DNS** (one-time, done): NPM proxy host id 24 → `http://10.10.10.1:4572`,
+   Cloudflare A record `markitdown` → `45.129.183.99` (proxied). Credentials live in
+   the cabrain `togo` brain's secrets vault.
+5. **Redeploy** = rebuild the two artifacts, then `docker compose up -d --build`.
 
 Production env set in the image: `APP_ENV=production`, `ADDR=:8080`,
 `WEB_DIST=/app/web/dist`, SQLite at `/app/data/togo.db`; the compose adds
