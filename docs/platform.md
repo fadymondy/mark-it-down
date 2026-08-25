@@ -114,3 +114,40 @@ mark-it-down/
 
 `packages/*` stay source-only on purpose — each app's bundler (tsc/esbuild/vite)
 compiles them in place, so there is still no workspace tooling to maintain.
+
+## Deploying the web app (markitdown.fadymondy.com)
+
+The web service is exposed exactly like the other ToGo services on this host
+(cabrain, healthdebug): a container on the shared `stack_stacknet` network,
+with Nginx Proxy Manager routing the hostname to it by container name and
+Cloudflare terminating TLS.
+
+```
+Cloudflare (proxied DNS, TLS) → home WAN :80/:443 → netsh portproxy → WSL (Ubuntu-24.04)
+  → NPM (`npm` container) → http://markitdown:8080 (this app, on stack_stacknet)
+```
+
+1. **Build the artifacts on the host** (no network needed inside the image):
+   ```bash
+   cd apps/web
+   GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o bin/web-linux ./cmd/api
+   (cd web && VITE_API_ORIGIN= VITE_APP_NAME="Mark It Down" npx vite build)
+   ```
+2. **Build + run the container** from the WSL stack dir `~/services/markitdown/`
+   (`docker-compose.yml` there builds from `/mnt/e/Sites/mark-it-down/apps/web`,
+   joins `stack_stacknet`, mounts `markitdown_data` for the SQLite file and
+   `markitdown_storage`, and reads `AUTH_SECRET` from its private `.env`):
+   ```bash
+   cd ~/services/markitdown && docker compose build && docker compose up -d
+   docker run --rm --network stack_stacknet alpine:3.20 wget -qO- http://markitdown:8080/api/health
+   ```
+3. **NPM proxy host** (admin action, same as cabrain's `DEPLOY.md` §3): domain
+   `markitdown.fadymondy.com` → scheme `http`, forward host `markitdown`, port
+   `8080`, no certificate (Cloudflare terminates TLS), websockets on. The DNS
+   record already exists in Cloudflare (proxied).
+4. **Redeploy** = rebuild the two artifacts, then `docker compose up -d --build`.
+
+Production env set in the image: `APP_ENV=production`, `ADDR=:8080`,
+`WEB_DIST=/app/web/dist`, SQLite at `/app/data/togo.db`; the compose adds
+`COOKIE_SECURE=1`, `MAIL_DRIVER=log` (switch to SMTP via `MAIL_*` for real
+password-reset emails) and `UPDATES_REPO`.
