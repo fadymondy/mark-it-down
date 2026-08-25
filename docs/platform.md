@@ -161,3 +161,17 @@ Production env set in the image: `APP_ENV=production`, `ADDR=:8080`,
 `WEB_DIST=/app/web/dist`, SQLite at `/app/data/togo.db`; the compose adds
 `COOKIE_SECURE=1`, `MAIL_DRIVER=log` (switch to SMTP via `MAIL_*` for real
 password-reset emails) and `UPDATES_REPO`.
+
+### Migrations and the developer login on the public host
+
+- The container entrypoint (`apps/web/start.sh`) runs `cmd/migrate` (applies the
+  idempotent `internal/db/schema/*.sql`) against the mounted SQLite volume before
+  starting the API — a fresh volume is usable on first boot, and redeploys are safe.
+- The public container runs with `APP_ENV=staging` (not `production`) so the
+  `auth-dev` plugin mounts its one-click **Login as developer** button. Because that
+  route hands out an *admin* session for `DEV_LOGIN_EMAIL` with no credentials,
+  `internal/server/devlogin.go` only lets it through when the Cloudflare-reported
+  client IP is inside `DEV_LOGIN_ALLOW_CIDRS` (home WAN + tailnet); any other caller
+  — including requests that reach the container without a Cloudflare/proxy header —
+  gets a 404. Update the CIDR list in `~/services/markitdown/docker-compose.yml`
+  when the home WAN IP changes.

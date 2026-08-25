@@ -4,6 +4,7 @@
 # NO network (no go/npm/apk downloads) — deploys keep working through proxy or
 # CDN outages, and the build is fast even on a 9P-mounted context:
 #   GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o bin/web-linux ./cmd/api
+#   GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o bin/migrate-linux ./cmd/migrate
 #   (cd web && VITE_API_ORIGIN= npm run build)
 #   docker build -t markitdown:latest .
 # The CA bundle + zoneinfo come from the golang image already present locally;
@@ -17,6 +18,9 @@ COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
 RUN adduser -D -u 10001 app && mkdir -p /app/data /app/storage && chown -R app /app
 WORKDIR /app
 COPY --chown=app bin/web-linux /app/web-api
+COPY --chown=app bin/migrate-linux /app/migrate
+COPY --chown=app internal/db/schema /app/internal/db/schema
+COPY --chown=app start.sh /app/start.sh
 COPY --chown=app web/dist /app/web/dist
 COPY --chown=app lang /app/lang
 USER app
@@ -29,4 +33,4 @@ ENV DATABASE_URL="file:/app/data/togo.db?_pragma=foreign_keys(1)&_pragma=busy_ti
 EXPOSE 8080
 VOLUME ["/app/data", "/app/storage"]
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://127.0.0.1:8080/api/health >/dev/null || exit 1
-ENTRYPOINT ["/app/web-api"]
+ENTRYPOINT ["/bin/sh", "/app/start.sh"]

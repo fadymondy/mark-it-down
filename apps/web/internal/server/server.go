@@ -41,7 +41,7 @@ func Boot() *app.App {
 	// note handlers enforce ownership from auth.IdentityFrom themselves. The MCP
 	// connector mounts behind the strict middleware.
 	if authsvc, ok := auth.FromKernel(k); ok {
-		k.UseMiddleware(optionalIdentity(authsvc), mfaSelfGuard)
+		k.UseMiddleware(optionalIdentity(authsvc), mfaSelfGuard, devLoginGuard)
 		mcpsrv.Mount(k, a, authsvc)
 		mountMFALogin(k, authsvc)
 		mountOTPMail(k)

@@ -33,6 +33,6 @@ func optionalIdentity(s *auth.Service) func(http.Handler) http.Handler {
 // discardWriter swallows the strict middleware's 401 body/headers.
 type discardWriter struct{}
 
-func (discardWriter) Header() http.Header       { return http.Header{} }
+func (discardWriter) Header() http.Header         { return http.Header{} }
 func (discardWriter) Write(b []byte) (int, error) { return len(b), nil }
-func (discardWriter) WriteHeader(int)           {}
+func (discardWriter) WriteHeader(int)             {}

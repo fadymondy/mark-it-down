@@ -11,7 +11,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -43,10 +45,10 @@ func ownedNote(ctx context.Context, a *app.App, id string) (*resources.NoteRespo
 		return nil, nil, err
 	}
 	row, err := models.Notes(a).Find(ctx, id)
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, huma.Error500InternalServerError("get failed", err)
 	}
-	if row == nil {
+	if err != nil || row == nil {
 		return nil, nil, huma.Error404NotFound("note not found")
 	}
 	if row.UserID != who.ID && !who.HasRole("admin") {
@@ -298,10 +300,10 @@ func RegisterNoteRoutes(api huma.API, a *app.App) {
 			Where("share_slug", "=", in.Slug).
 			Where("is_public", "=", true).
 			First(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, huma.Error500InternalServerError("lookup failed", err)
 		}
-		if row == nil {
+		if err != nil || row == nil {
 			return nil, huma.Error404NotFound("shared note not found")
 		}
 		out := &struct {
