@@ -1,20 +1,23 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mark It Down — your markdown, everywhere</title>
     <meta name="description" content="A beautiful markdown editor for desktop, VSCode, and Chrome — with a cloud notes warehouse and an MCP connector for AI agents." />
     <link rel="icon" type="image/svg+xml" href="/brand/icon.svg" />
-    <!-- No-flash theme: apply the persisted choice (default dark) before first paint -->
+    <!-- No-flash theme: same rule as the desktop app — "auto" follows the OS, "dark"/"sepia"
+         set the root class, "theme:<id>" is applied by the ThemeProvider once JS runs. -->
     <script>
       (function () {
         try {
-          var k = "togo-theme", t = localStorage.getItem(k);
-          if (!t) { t = "dark"; localStorage.setItem(k, t); }
+          var m = localStorage.getItem("mid-theme") || "auto";
+          var dark = m === "dark" || (m === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
           var d = document.documentElement;
-          d.setAttribute("data-theme", t);
-          d.classList.toggle("dark", t !== "light");
+          if (dark) d.classList.add("dark");
+          if (m === "sepia") d.classList.add("sepia");
+          var l = localStorage.getItem("mid-lang");
+          if (l === "ar") { d.lang = "ar"; d.dir = "rtl"; }
         } catch (e) {}
       })();
     </script>

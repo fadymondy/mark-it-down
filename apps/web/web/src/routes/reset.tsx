@@ -1,34 +1,59 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
-import { AuthCard, AuthErrorAlert, Input, Label, Button, type AuthCardBrand } from "@togo-framework/ui";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { auth } from "../lib/auth";
-import { APP_NAME } from "../lib/api";
+import { Alert, Button, Field, Input } from "../components/ui";
+import { useLang } from "../lib/i18n";
+import { AuthShell } from "./login";
 
-const BRAND: AuthCardBrand = { name: APP_NAME, icon: <ShieldCheck className="h-10 w-10" />, tagline: { en: "Reset your password", ar: "إعادة تعيين كلمة المرور" } };
-
+// Two steps in the desktop "stepper" idiom: request an emailed code, then set a
+// new password with it (POST /api/auth/reset-password, code-verified).
 export function Reset() {
-  const [email, setEmail] = useState(""); const [sent, setSent] = useState(false);
+  const nav = useNavigate();
+  const { t } = useLang();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [email, setEmail] = useState(""); const [code, setCode] = useState(""); const [password, setPassword] = useState("");
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
-  async function submit(e: React.FormEvent) {
+
+  async function request(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setErr("");
-    try { await auth.requestOtp(email, "reset"); setSent(true); }
+    try { await auth.requestOtp(email, "reset"); setStep(2); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
+  async function finish(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setErr("");
+    try { await auth.resetPassword(email, code.trim(), password); nav({ to: "/login" }); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  const steps = (
+    <ul className="mid-steps" style={{ margin: "calc(-1 * var(--mid-space-5)) calc(-1 * var(--mid-space-5)) var(--mid-space-4)" }}>
+      <li className={step === 1 ? "is-active" : "is-done"}>1 · {t("Email", "البريد")}</li>
+      <li className={step === 2 ? "is-active" : ""}>2 · {t("New password", "كلمة مرور جديدة")}</li>
+    </ul>
+  );
+
   return (
-    <AuthCard brand={BRAND} language="en" layout="split">
-      <h1 className="text-2xl font-semibold">Reset password</h1>
-      <p className="mt-1 text-sm text-muted-foreground">We'll email you a reset code</p>
-      {sent ? (
-        <p className="mt-6 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">If an account exists for {email}, a reset code is on its way.</p>
+    <AuthShell title={t("Reset password", "إعادة تعيين كلمة المرور")} subtitle={step === 1 ? t("We'll email you a 6-digit reset code.", "سنرسل رمزًا من 6 أرقام إلى بريدك.") : t(`Enter the code sent to ${email} and choose a new password.`, `أدخل الرمز المرسل إلى ${email} واختر كلمة مرور جديدة.`)}
+      footer={<>
+        <Link to="/login" className="mid-muted" style={{ fontSize: "var(--mid-font-size-sm)" }}>{t("Back to sign in", "العودة لتسجيل الدخول")}</Link>
+        <span className="mid-frame-spacer" />
+        {step === 2 && <Button variant="ghost" onClick={() => { setStep(1); setErr(""); }}>{t("Back", "رجوع")}</Button>}
+        <Button variant="primary" type="submit" form="reset-form" busy={busy} icon={step === 1 ? "chevron-right" : "check"}>{step === 1 ? t("Send code", "إرسال الرمز") : t("Set new password", "حفظ كلمة المرور")}</Button>
+      </>}>
+      {steps}
+      {step === 1 ? (
+        <form id="reset-form" onSubmit={request} className="mid-form">
+          <Alert tone="danger">{err}</Alert>
+          <Field label={t("Email", "البريد الإلكتروني")}><Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></Field>
+        </form>
       ) : (
-        <form onSubmit={submit} className="mt-6 space-y-4">
-          <AuthErrorAlert error={err} />
-          <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
-          <Button type="submit" className="w-full" disabled={busy}>{busy ? "Sending…" : "Send reset code"}</Button>
+        <form id="reset-form" onSubmit={finish} className="mid-form">
+          <Alert tone="danger">{err}</Alert>
+          <Alert tone="info">{t("If an account exists for that email, the code is on its way (valid 10 minutes).", "إذا كان الحساب موجودًا فالرمز في طريقه إليك (صالح 10 دقائق).")}</Alert>
+          <Field label={t("Reset code", "رمز إعادة التعيين")}><Input inputMode="numeric" autoComplete="one-time-code" placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} required autoFocus /></Field>
+          <Field label={t("New password", "كلمة المرور الجديدة")} help={t("At least 8 characters.", "8 أحرف على الأقل.")}><Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} /></Field>
         </form>
       )}
-      <p className="mt-6 text-center text-sm text-muted-foreground"><Link to="/login" className="font-medium text-primary hover:underline">Back to sign in</Link></p>
-    </AuthCard>
+    </AuthShell>
   );
 }

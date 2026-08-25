@@ -1,157 +1,128 @@
 import { useEffect, useState } from "react";
-import { Outlet, useNavigate, useRouterState, Link } from "@tanstack/react-router";
-import { LayoutGrid, Table2, User, LogOut, ChevronDown, NotebookPen } from "lucide-react";
-import {
-  SidebarProvider, Sidebar, SidebarHeader, SidebarContent,
-  SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
-  SidebarInset, SidebarTrigger, Avatar, AvatarFallback,
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
-  StatusBadge, ThemePicker, useT,
-} from "@togo-framework/ui";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { auth, sessionMe, clearSession, type Me } from "../lib/auth";
-import { metaResources, adminList, type ResourceMeta } from "../lib/admin";
-import { ToastProvider } from "../components/admin/toast";
+import { metaResources, type ResourceMeta } from "../lib/admin";
 import { API, APP_NAME } from "../lib/api";
 import { MarkItDownMark } from "../lib/brand";
+import { Button, Icon, Kbd, type IconName } from "../components/ui";
+import { useLang } from "../lib/i18n";
 
-/** Group a flat resource list by the optional `group` field.
- * Resources with no group fall into the "Resources" default. */
-function groupResources(resources: ResourceMeta[]): Map<string, ResourceMeta[]> {
-  const map = new Map<string, ResourceMeta[]>();
-  for (const r of resources) {
-    const g = r.group ?? "Resources";
-    if (!map.has(g)) map.set(g, []);
-    map.get(g)!.push(r);
-  }
-  return map;
-}
-
-const ar_label = (en: string, ar: string, isAr: boolean) => isAr ? ar : en;
-
+// The desktop shell, one-to-one: titlebar (38px) · activity bar (44px) + sidebar
+// (240px) + main · statusbar (24px). Same class names as apps/electron/renderer.
 export function AppLayout() {
   const nav = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { language } = useT();
+  const { t, dir } = useLang();
   const [me, setMe] = useState<Me | null>(null);
   const [resources, setResources] = useState<ResourceMeta[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [live, setLive] = useState(false);
-  const ar = language === "ar";
+  const [sidebar, setSidebar] = useState(true);
 
   useEffect(() => {
-    // Auth is already guaranteed by the route's beforeLoad guard — just read the cached user.
     sessionMe().then(setMe);
-    metaResources().then((rs) => {
-      setResources(rs);
-      // Sidebar count badges — one fetch per resource (best-effort).
-      rs.forEach((r) => adminList(r.table).then((rows) => setCounts((c) => ({ ...c, [r.table]: rows.length }))).catch(() => {}));
-    });
+    metaResources().then(setResources).catch(() => setResources([]));
     const es = new EventSource(`${API}/events`);
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
     return () => es.close();
   }, []);
 
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); nav({ to: "/notes" }); }
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") { e.preventDefault(); nav({ to: "/profile" }); }
+    };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [nav]);
+
+  const isAdmin = !!me?.roles?.includes("admin");
   const initial = (me?.email ?? "?").charAt(0).toUpperCase();
   const go = (to: string) => nav({ to });
-  const grouped = groupResources(resources);
+  const active = (p: string) => pathname === p || pathname.startsWith(p + "/");
+
+  const ACTIVITY: { to: string; icon: IconName; en: string; ar: string; admin?: boolean }[] = [
+    { to: "/notes", icon: "bookmark", en: "Notes", ar: "الملاحظات" },
+    { to: "/dashboard", icon: "columns", en: "Dashboard", ar: "لوحة التحكم" },
+    { to: "/admin", icon: "list-ul", en: "Admin", ar: "الإدارة", admin: true },
+  ];
+
+  const titleFor = () => {
+    if (active("/notes")) return t("Notes warehouse", "مستودع الملاحظات");
+    if (active("/dashboard")) return t("Dashboard", "لوحة التحكم");
+    if (active("/admin")) return t("Admin", "الإدارة");
+    if (active("/profile")) return t("Settings", "الإعدادات");
+    return APP_NAME;
+  };
 
   return (
-    <ToastProvider dir={ar ? "rtl" : "ltr"}>
-    <SidebarProvider dir={ar ? "rtl" : "ltr"}>
-      {/* collapsible="icon" → the SidebarTrigger minimizes the sidebar to icons. */}
-      <Sidebar collapsible="icon" side={ar ? "right" : "left"}>
-        <SidebarHeader>
-          <Link to="/dashboard" className="flex items-center gap-2 px-2 py-1.5">
-            <MarkItDownMark size={32} className="shrink-0 rounded-lg" />
-            <span className="truncate font-semibold group-data-[collapsible=icon]:hidden">{APP_NAME}</span>
-          </Link>
-        </SidebarHeader>
-        <SidebarContent>
-          {/* Core nav — always visible */}
-          <SidebarGroup>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={pathname === "/dashboard"} tooltip={ar_label("Dashboard", "لوحة التحكم", ar)} onClick={() => go("/dashboard")}>
-                  <LayoutGrid className="h-4 w-4" /><span>{ar_label("Dashboard", "لوحة التحكم", ar)}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={pathname === "/notes"} tooltip={ar_label("Notes", "الملاحظات", ar)} onClick={() => go("/notes")}>
-                  <NotebookPen className="h-4 w-4" /><span>{ar_label("Notes", "الملاحظات", ar)}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={pathname === "/admin"} tooltip={ar_label("Admin", "الإدارة", ar)} onClick={() => go("/admin")}>
-                  <Table2 className="h-4 w-4" /><span>{ar_label("Admin", "الإدارة", ar)}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
+    <div className="mid-app" dir={dir}>
+      <header className="mid-titlebar" role="toolbar">
+        <div className="mid-titlebar-left">
+          <Link to="/" className="mid-titlebar-brand" title={APP_NAME}><MarkItDownMark size={20} /></Link>
+          <Button variant="ghost" iconOnly icon="columns" title={t("Toggle sidebar", "إظهار/إخفاء الشريط")} onClick={() => setSidebar((v) => !v)} />
+        </div>
+        <div className="mid-titlebar-center">
+          <button className="mid-titlebar-search" title={t("Search notes (Cmd/Ctrl+K)", "بحث (Cmd/Ctrl+K)")} onClick={() => go("/notes")}>
+            <span className="mid-titlebar-search-icon"><Icon name="search" size="sm" /></span>
+            <span className="mid-filename">{titleFor()}</span>
+            <span className="mid-titlebar-search-kbd"><Kbd>⌘K</Kbd></span>
+          </button>
+        </div>
+        <div className="mid-titlebar-right">
+          <Button variant="ghost" iconOnly icon="cog" title={t("Settings (Cmd/Ctrl+,)", "الإعدادات")} onClick={() => go("/profile")} />
+        </div>
+      </header>
 
-          {/* Resource groups — each `group` value becomes its own sidebar section */}
-          {Array.from(grouped.entries()).map(([groupName, groupResources]) => (
-            <SidebarGroup key={groupName}>
-              <SidebarGroupLabel>{groupName}</SidebarGroupLabel>
-              <SidebarMenu>
-                {groupResources.map((r) => (
-                  <SidebarMenuItem key={r.table}>
-                    <SidebarMenuButton
-                      isActive={pathname === `/admin/${r.table}`}
-                      tooltip={r.name || r.table}
-                      onClick={() => go(`/admin/${r.table}`)}
-                    >
-                      <Table2 className="h-4 w-4" />
-                      <span className="capitalize">{r.name || r.table}</span>
-                      {counts[r.table] !== undefined && (
-                        <span className="ms-auto rounded-full bg-muted px-1.5 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-                          {counts[r.table]}
-                        </span>
-                      )}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroup>
+      <div className={`mid-shell${sidebar ? " has-sidebar" : ""}`}>
+        <nav className="mid-activity-bar" aria-label="Activity bar">
+          {ACTIVITY.filter((a) => !a.admin || isAdmin).map((a) => (
+            <button key={a.to} className={`mid-activity-btn${active(a.to) ? " is-active" : ""}`} title={t(a.en, a.ar)} onClick={() => go(a.to)}>
+              <Icon name={a.icon} />
+            </button>
           ))}
-        </SidebarContent>
-      </Sidebar>
+          <span className="mid-activity-spacer" />
+          <button className={`mid-activity-btn${active("/profile") ? " is-active" : ""}`} title={me?.email ?? ""} onClick={() => go("/profile")}>
+            <span className="mid-activity-avatar">{initial}</span>
+          </button>
+          <button className="mid-activity-btn" title={t("Sign out", "تسجيل الخروج")} onClick={async () => { await auth.logout(); clearSession(); go("/login"); }}>
+            <Icon name="x" />
+          </button>
+        </nav>
 
-      <SidebarInset>
-        <header className="flex h-14 items-center justify-between gap-2 border-b border-border px-4">
-          <div className="flex items-center gap-3">
-            <SidebarTrigger />
-            <StatusBadge tone={live ? "success" : "neutral"}>
-              {live ? ar_label("Realtime connected", "متصل مباشرة", ar) : ar_label("Offline", "غير متصل", ar)}
-            </StatusBadge>
-          </div>
-          <div className="flex items-center gap-1">
-            {/* Theme picker — cycles through all presets (dark, light, purple, rose, emerald, …) */}
-            <ThemePicker size="default" />
+        {sidebar && (
+          <aside className="mid-sidebar">
+            <div className="mid-sidebar-header">
+              <span className="mid-sidebar-title">{APP_NAME}</span>
+              <Button variant="ghost" iconOnly icon="plus" title={t("New note", "ملاحظة جديدة")} onClick={() => nav({ to: "/notes", search: { new: 1 } as any })} />
+            </div>
+            <div className="mid-sidebar-body">
+              <div className="mid-sidebar-section">{t("Workspace", "مساحة العمل")}</div>
+              <button className={`mid-list-row${active("/notes") ? " is-active" : ""}`} onClick={() => go("/notes")}><Icon name="bookmark" />{t("Notes", "الملاحظات")}</button>
+              <button className={`mid-list-row${active("/dashboard") ? " is-active" : ""}`} onClick={() => go("/dashboard")}><Icon name="columns" />{t("Dashboard", "لوحة التحكم")}</button>
+              <button className={`mid-list-row${active("/profile") ? " is-active" : ""}`} onClick={() => go("/profile")}><Icon name="cog" />{t("Settings", "الإعدادات")}</button>
+              {isAdmin && (<>
+                <div className="mid-sidebar-section">{t("Admin", "الإدارة")}</div>
+                <button className={`mid-list-row${pathname === "/admin" ? " is-active" : ""}`} onClick={() => go("/admin")}><Icon name="list-ul" />{t("Users & mail", "المستخدمون والبريد")}</button>
+                {resources.map((r) => (
+                  <button key={r.table} className={`mid-list-row${active(`/admin/${r.table}`) ? " is-active" : ""}`} onClick={() => go(`/admin/${r.table}`)}>
+                    <Icon name="file" /><span className="mid-truncate" style={{ textTransform: "capitalize" }}>{r.name || r.table}</span>
+                  </button>
+                ))}
+              </>)}
+            </div>
+          </aside>
+        )}
 
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-2 rounded-full py-1 pe-3 ps-1 outline-none transition hover:bg-accent">
-                <Avatar className="h-8 w-8"><AvatarFallback>{initial}</AvatarFallback></Avatar>
-                <span className="max-w-[160px] truncate text-sm">{me?.email ?? "…"}</span>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="truncate px-2 py-1.5 text-xs text-muted-foreground">{me?.email ?? ""}</div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => go("/profile")}>
-                  <User className="me-2 h-4 w-4" />{ar_label("Profile", "الملف الشخصي", ar)}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive" onClick={async () => { await auth.logout(); clearSession(); go("/login"); }}>
-                  <LogOut className="me-2 h-4 w-4" />{ar_label("Sign out", "تسجيل الخروج", ar)}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-        <main className="min-w-0 flex-1 overflow-auto"><Outlet /></main>
-      </SidebarInset>
-    </SidebarProvider>
-    </ToastProvider>
+        <main className="mid-main"><Outlet /></main>
+      </div>
+
+      <footer className="mid-statusbar">
+        <span className="mid-status-cell"><span className={`mid-status-dot${live ? "" : " is-off"}`}>●</span>{live ? t("Realtime connected", "متصل مباشرة") : t("Offline", "غير متصل")}</span>
+        <span className="mid-status-spacer" />
+        <span className="mid-status-cell">{me?.email ?? "…"}</span>
+        <button className="mid-status-cell mid-status-cell--button" onClick={() => go("/profile")}><Icon name="cog" size="sm" />{t("Settings", "الإعدادات")}</button>
+      </footer>
+    </div>
   );
 }

@@ -163,3 +163,46 @@ export function inputType(field: ResourceField): string {
   if (/bool/.test(t)) return "checkbox";
   return "text";
 }
+
+// ---- Admin API (/api/admin/*, see internal/admin/admin.go) ----
+
+/** Error from the admin API; `status` lets callers distinguish 401/403 (not an admin) from real failures. */
+export class AdminApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) { super(message); this.name = "AdminApiError"; this.status = status; }
+}
+
+async function adminFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (method !== "GET") { headers["Content-Type"] = "application/json"; headers["X-CSRF-Token"] = await csrf(); }
+  const r = await fetch(`${API}${path}`, {
+    method, credentials: "include", headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new AdminApiError(r.status, d?.error || d?.detail || `${method} ${path} failed (${r.status})`);
+  return d as T;
+}
+
+export interface AdminUser { id: string; email: string; roles: string[]; permissions: string[]; created_at: string }
+
+export const adminUsers = {
+  list: (q?: string) => adminFetch<AdminUser[]>("GET", `/api/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  create: (body: { email: string; password?: string; roles?: string[]; permissions?: string[] }) =>
+    adminFetch<{ user: AdminUser; note: string }>("POST", "/api/admin/users", body),
+  remove: (id: string) => adminFetch<{ deleted: boolean; id: string }>("DELETE", `/api/admin/users/${encodeURIComponent(id)}`),
+  /** Switches the current session cookie to the target user (server-side). */
+  impersonate: (id: string) => adminFetch<{ token: string; identity: AdminUser }>("POST", `/api/admin/users/${encodeURIComponent(id)}/impersonate`),
+  /** With a password: sets it. Without: returns (and emails, if SMTP is set) a sign-in link. */
+  resetPassword: (id: string, password = "") =>
+    adminFetch<{ reset?: boolean; link?: string; emailed?: boolean }>("POST", `/api/admin/users/${encodeURIComponent(id)}/reset-password`, { password }),
+  magicLink: (id: string) => adminFetch<{ link: string; emailed: boolean }>("POST", `/api/admin/users/${encodeURIComponent(id)}/magic-link`),
+};
+
+export interface MailSettings { host: string; port: number; username: string; password: string; from: string; secure: boolean }
+
+export const adminMail = {
+  get: () => adminFetch<MailSettings>("GET", "/api/admin/mail"),
+  put: (cfg: MailSettings) => adminFetch<{ ok: boolean }>("PUT", "/api/admin/mail", cfg),
+  test: (to = "") => adminFetch<{ ok: boolean; error?: string }>("POST", "/api/admin/mail/test", { to }),
+};

@@ -1,37 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Plus, Search, Trash2, Share2, Link2, Eye, Pencil, Save, X, FolderOpen, Tag, Cloud,
-} from "lucide-react";
+import { useSearch } from "@tanstack/react-router";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import {
-  Button, Input, Label, PageHeader, StatusBadge, useT,
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@togo-framework/ui";
 import { notesApi, shareUrl, type Note } from "../lib/notes";
-import { useToast } from "../components/admin/toast";
+import { Button, Icon, Input, Modal, useToast, fmtDate } from "../components/ui";
+import { useLang } from "../lib/i18n";
 
-function renderPreview(md: string): string {
-  return DOMPurify.sanitize(marked.parse(md, { async: false }) as string);
-}
+type Mode = "view" | "split" | "edit";
+const render = (md: string) => DOMPurify.sanitize(marked.parse(md, { async: false }) as string);
 
-const fmtDate = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-
+// Warehouse notes — the desktop layout: notes list in a sidebar pane (type chips
+// + rows), tabstrip over the editor area, and the View / Split / Edit segmented
+// toggle, all with the renderer's class names.
 export function Notes() {
-  const { language } = useT();
-  const ar = language === "ar";
-  const tx = (en: string, a: string) => (ar ? a : en);
+  const { t } = useLang();
   const { toast } = useToast();
-
+  const search = useSearch({ strict: false }) as { new?: number };
   const [notes, setNotes] = useState<Note[]>([]);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [selected, setSelected] = useState<Note | null>(null);
-  const [mode, setMode] = useState<"view" | "edit">("view");
+  const [mode, setMode] = useState<Mode>("view");
   const [draft, setDraft] = useState({ title: "", body: "", category: "", tags: "" });
+  const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Note | null>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   async function refresh(query = q, cat = category) {
     const rows = await notesApi.list({ q: query || undefined, category: cat || undefined }).catch(() => []);
@@ -39,233 +33,145 @@ export function Notes() {
     return rows;
   }
   useEffect(() => { refresh(); }, []);
+  useEffect(() => { if (search?.new) startNew(); }, [search?.new]);
 
-  function onSearch(v: string) {
-    setQ(v);
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => refresh(v, category), 250);
-  }
-
-  const categories = useMemo(
-    () => Array.from(new Set(notes.map((n) => n.category).filter(Boolean))) as string[],
-    [notes],
-  );
+  const categories = useMemo(() => Array.from(new Set(notes.map((n) => n.category).filter(Boolean))) as string[], [notes]);
 
   function open(n: Note) {
-    setSelected(n);
-    setMode("view");
+    setSelected(n); setMode("view"); setDirty(false);
     setDraft({ title: n.title, body: n.body, category: n.category ?? "", tags: n.tags ?? "" });
   }
-
   function startNew() {
-    setSelected(null);
-    setMode("edit");
+    setSelected(null); setMode("edit"); setDirty(true);
     setDraft({ title: "", body: "", category: category || "", tags: "" });
   }
+  function edit<K extends keyof typeof draft>(k: K, v: string) { setDraft((d) => ({ ...d, [k]: v })); setDirty(true); }
 
   async function save() {
-    if (!draft.title.trim()) { toast(tx("Title is required", "العنوان مطلوب"), "error"); return; }
+    if (!draft.title.trim()) { toast(t("Title is required", "العنوان مطلوب"), "error"); return; }
     setBusy(true);
     try {
-      const payload = {
-        title: draft.title.trim(),
-        body: draft.body,
-        category: draft.category.trim() || null,
-        tags: draft.tags.trim() || null,
-      };
+      const payload = { title: draft.title.trim(), body: draft.body, category: draft.category.trim() || null, tags: draft.tags.trim() || null };
       const saved = selected ? await notesApi.update(selected.id, payload) : await notesApi.create(payload);
-      toast(tx("Note saved", "تم الحفظ"), "success");
       const rows = await refresh();
-      open(rows.find((n) => n.id === saved.id) ?? saved);
+      const fresh = rows.find((n) => n.id === saved.id) ?? saved;
+      setSelected(fresh); setDirty(false);
+      toast(t("Saved", "تم الحفظ"));
     } catch (e: any) { toast(e.message, "error"); } finally { setBusy(false); }
   }
-
   async function doDelete(n: Note) {
     setBusy(true);
     try {
-      await notesApi.remove(n.id);
-      toast(tx("Note deleted", "تم الحذف"), "success");
-      setConfirmDelete(null);
-      if (selected?.id === n.id) setSelected(null);
-      await refresh();
+      await notesApi.remove(n.id); setConfirmDelete(null);
+      if (selected?.id === n.id) { setSelected(null); setMode("view"); }
+      await refresh(); toast(t("Note deleted", "تم الحذف"));
     } catch (e: any) { toast(e.message, "error"); } finally { setBusy(false); }
   }
-
   async function toggleShare(n: Note) {
     setBusy(true);
     try {
       const updated = n.is_public ? await notesApi.unshare(n.id) : await notesApi.share(n.id);
-      if (!n.is_public && updated.share_slug) {
-        await navigator.clipboard.writeText(shareUrl(updated.share_slug)).catch(() => {});
-        toast(tx("Public link copied to clipboard", "نُسخ الرابط العام"), "success");
-      } else {
-        toast(tx("Note is private again", "أصبحت الملاحظة خاصة"), "success");
-      }
-      const rows = await refresh();
-      open(rows.find((x) => x.id === n.id) ?? updated);
+      if (!n.is_public && updated.share_slug) { await navigator.clipboard.writeText(shareUrl(updated.share_slug)).catch(() => {}); toast(t("Public link copied", "نُسخ الرابط العام")); }
+      else toast(t("Note is private again", "أصبحت الملاحظة خاصة"));
+      const rows = await refresh(); setSelected(rows.find((x) => x.id === n.id) ?? updated);
     } catch (e: any) { toast(e.message, "error"); } finally { setBusy(false); }
   }
 
-  const editorOpen = mode === "edit";
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && (selected || mode === "edit")) { e.preventDefault(); save(); } };
+    window.addEventListener("keydown", fn); return () => window.removeEventListener("keydown", fn);
+  });
+
+  const showEditor = selected || mode !== "view";
+  const html = useMemo(() => render(mode === "view" ? (selected?.body ?? "") : draft.body), [mode, selected?.body, draft.body]);
 
   return (
-    <div dir={ar ? "rtl" : "ltr"} className="flex h-full min-h-0 flex-col">
-      <PageHeader
-        title={tx("Notes warehouse", "مستودع الملاحظات")}
-        description={tx("Your cloud notes — synced to desktop, VSCode, Chrome, and MCP agents.", "ملاحظاتك السحابية — متزامنة مع كل تطبيقاتك ووكلاء MCP.")}
-        actions={<Button onClick={startNew}><Plus className="me-1.5 h-4 w-4" />{tx("New note", "ملاحظة جديدة")}</Button>}
-      />
+    <div className="mid-shell has-sidebar" style={{ gridTemplateColumns: "var(--mid-sidebar-w) 1fr", flex: 1, minHeight: 0 }}>
+      {/* Notes pane — same as the desktop sidebar in "Notes" mode */}
+      <aside className="mid-sidebar">
+        <div className="mid-sidebar-header">
+          <input className="mid-table-filter" type="search" placeholder={t("Filter notes…", "تصفية الملاحظات…")} value={q}
+            onChange={(e) => { setQ(e.target.value); clearTimeout(timer.current); timer.current = setTimeout(() => refresh(e.target.value, category), 250); }} />
+          <Button variant="ghost" iconOnly icon="plus" title={t("New note (Cmd/Ctrl+N)", "ملاحظة جديدة")} onClick={startNew} />
+        </div>
+        {categories.length > 0 && (
+          <div className="mid-notes-types" role="tablist">
+            <button className={`mid-notes-type${category === "" ? " is-active" : ""}`} onClick={() => { setCategory(""); refresh(q, ""); }}>{t("All", "الكل")}</button>
+            {categories.map((c) => <button key={c} className={`mid-notes-type${category === c ? " is-active" : ""}`} onClick={() => { setCategory(c); refresh(q, c); }}>{c}</button>)}
+          </div>
+        )}
+        <div className="mid-notes-list">
+          {notes.length === 0 && <div className="mid-empty"><div><Icon name="bookmark" />{t("No notes yet — create your first one.", "لا ملاحظات بعد — أنشئ أول واحدة.")}</div></div>}
+          {notes.map((n) => (
+            <button key={n.id} className={`mid-note-row${selected?.id === n.id ? " is-active" : ""}`} onClick={() => open(n)}>
+              <span className="mid-note-type-chip"><Icon name="markdown" size="sm" /></span>
+              <span className="mid-note-title">{n.title}</span>
+              <span className="mid-note-meta">
+                <span>{fmtDate(n.updated_at)}</span>
+                {n.category && <span className="mid-truncate">· {n.category}</span>}
+                {n.tags && <span className="mid-note-tags">{n.tags.split(",").slice(0, 3).map((tag) => <span key={tag} className="mid-note-tag">{tag.trim()}</span>)}</span>}
+              </span>
+              {n.is_public && <span className="mid-note-share" title={t("Shared publicly", "مشاركة عامة")}><Icon name="link" size="sm" /></span>}
+            </button>
+          ))}
+        </div>
+      </aside>
 
-      <div className="flex min-h-0 flex-1 gap-0 border-t border-border">
-        {/* list pane */}
-        <aside className="flex w-80 shrink-0 flex-col border-e border-border">
-          <div className="space-y-2 p-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="ps-8" placeholder={tx("Search notes…", "ابحث…")} value={q} onChange={(e) => onSearch(e.target.value)} />
+      <div className="mid-editor-area">
+        {showEditor ? (<>
+          <div className="mid-tabstrip" role="tablist">
+            <button className="mid-tab is-active" role="tab">
+              <Icon name="markdown" size="sm" />
+              <span className="mid-tab-title">{(mode === "view" ? selected?.title : draft.title) || t("Untitled", "بدون عنوان")}{dirty ? " •" : ""}</span>
+            </button>
+            <div className="mid-tab-actions">
+              <div className="mid-mode-toggle" role="tablist" aria-label="Render mode">
+                <button className={`mid-mode-seg${mode === "view" ? " is-active" : ""}`} title={t("View", "عرض")} onClick={() => setMode("view")} disabled={!selected}><Icon name="show" size="sm" /></button>
+                <button className={`mid-mode-seg${mode === "split" ? " is-active" : ""}`} title={t("Split", "مقسّم")} onClick={() => setMode("split")}><Icon name="columns" size="sm" /></button>
+                <button className={`mid-mode-seg${mode === "edit" ? " is-active" : ""}`} title={t("Edit", "تحرير")} onClick={() => setMode("edit")}><Icon name="edit" size="sm" /></button>
+              </div>
+              {selected && (<>
+                <Button variant="ghost" iconOnly icon="link" title={selected.is_public ? t("Unshare", "إلغاء المشاركة") : t("Share publicly", "مشاركة عامة")} onClick={() => toggleShare(selected)} disabled={busy} />
+                {selected.is_public && selected.share_slug && <Button variant="ghost" iconOnly icon="copy" title={t("Copy link", "نسخ الرابط")} onClick={async () => { await navigator.clipboard.writeText(shareUrl(selected.share_slug!)).catch(() => {}); toast(t("Link copied", "نُسخ الرابط")); }} />}
+                <Button variant="ghost" iconOnly icon="trash" title={t("Delete", "حذف")} onClick={() => setConfirmDelete(selected)} />
+              </>)}
+              <Button variant="primary" icon="save" busy={busy} disabled={!dirty} onClick={save} title="Cmd/Ctrl+S">{t("Save", "حفظ")}</Button>
             </div>
-            {categories.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${category === "" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-                  onClick={() => { setCategory(""); refresh(q, ""); }}>
-                  {tx("All", "الكل")}
-                </button>
-                {categories.map((c) => (
-                  <button key={c}
-                    className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${category === c ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-                    onClick={() => { setCategory(c); refresh(q, c); }}>
-                    {c}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-          <div className="min-h-0 flex-1 overflow-auto">
-            {notes.length === 0 && (
-              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                <Cloud className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                {tx("No notes yet — create your first one.", "لا ملاحظات بعد — أنشئ أول واحدة.")}
-              </div>
-            )}
-            {notes.map((n) => (
-              <button key={n.id} onClick={() => open(n)}
-                className={`block w-full border-b border-border/60 px-4 py-3 text-start transition-colors hover:bg-accent/40 ${selected?.id === n.id ? "bg-accent/60" : ""}`}>
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{n.title}</span>
-                  {n.is_public && <Share2 className="h-3 w-3 shrink-0 text-primary" />}
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  {n.category && <span className="inline-flex items-center gap-1"><FolderOpen className="h-3 w-3" />{n.category}</span>}
-                  <span>{fmtDate(n.updated_at)}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </aside>
 
-        {/* detail pane */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {!selected && !editorOpen && (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              {tx("Select a note, or create a new one.", "اختر ملاحظة أو أنشئ جديدة.")}
+          {mode !== "view" && (
+            <div className="mid-editor-meta">
+              <input className="mid-settings-control mid-editor-title" placeholder={t("Note title", "عنوان الملاحظة")} value={draft.title} onChange={(e) => edit("title", e.target.value)} autoFocus={!selected} />
+              <Input placeholder={t("Category", "التصنيف")} value={draft.category} onChange={(e) => edit("category", e.target.value)} />
+              <Input placeholder={t("tags, comma, separated", "وسوم مفصولة بفواصل")} value={draft.tags} onChange={(e) => edit("tags", e.target.value)} />
             </div>
           )}
 
-          {(selected || editorOpen) && (
-            <>
-              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-                <div className="flex min-w-0 items-center gap-2">
-                  {editorOpen ? (
-                    <Input className="h-8 w-72 font-medium" placeholder={tx("Note title", "العنوان")} value={draft.title}
-                      onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} autoFocus />
-                  ) : (
-                    <>
-                      <h2 className="truncate font-semibold">{selected!.title}</h2>
-                      {selected!.is_public && <StatusBadge tone="success">{tx("Public", "عام")}</StatusBadge>}
-                    </>
+          <div className={`mid-editor-body${mode === "split" ? " is-split" : ""}`}>
+            {mode !== "view" && <textarea className="mid-editor-textarea" dir="ltr" spellCheck={false} placeholder={t("Write markdown…", "اكتب ماركداون…")} value={draft.body} onChange={(e) => edit("body", e.target.value)} />}
+            {mode !== "edit" && (
+              <div className="mid-preview">
+                <article className="mid-md">
+                  {mode === "view" && selected && <h1>{selected.title}</h1>}
+                  <div dangerouslySetInnerHTML={{ __html: html }} />
+                  {mode === "view" && selected && (
+                    <p className="mid-muted mid-mono" style={{ marginTop: "var(--mid-space-8)" }}>
+                      {selected.category ? `${selected.category} · ` : ""}{selected.tags ? `${selected.tags} · ` : ""}{t("updated", "آخر تحديث")} {fmtDate(selected.updated_at)}
+                    </p>
                   )}
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {editorOpen ? (
-                    <>
-                      <Button size="sm" onClick={save} disabled={busy}><Save className="me-1 h-4 w-4" />{tx("Save", "حفظ")}</Button>
-                      <Button size="sm" variant="ghost" onClick={() => (selected ? setMode("view") : setSelected(null))}><X className="h-4 w-4" /></Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button size="sm" variant="outline" onClick={() => setMode("edit")}><Pencil className="me-1 h-4 w-4" />{tx("Edit", "تحرير")}</Button>
-                      <Button size="sm" variant="outline" onClick={() => toggleShare(selected!)} disabled={busy}>
-                        {selected!.is_public ? <><X className="me-1 h-4 w-4" />{tx("Unshare", "إلغاء المشاركة")}</> : <><Share2 className="me-1 h-4 w-4" />{tx("Share", "مشاركة")}</>}
-                      </Button>
-                      {selected!.is_public && selected!.share_slug && (
-                        <Button size="sm" variant="ghost" onClick={async () => {
-                          await navigator.clipboard.writeText(shareUrl(selected!.share_slug!)).catch(() => {});
-                          toast(tx("Link copied", "نُسخ الرابط"), "success");
-                        }}><Link2 className="h-4 w-4" /></Button>
-                      )}
-                      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setConfirmDelete(selected!)}><Trash2 className="h-4 w-4" /></Button>
-                    </>
-                  )}
-                </div>
+                </article>
               </div>
-
-              {editorOpen ? (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="flex items-center gap-3 border-b border-border px-4 py-2">
-                    <div className="flex items-center gap-1.5">
-                      <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                      <Input className="h-7 w-40 text-xs" placeholder={tx("Category", "التصنيف")} value={draft.category}
-                        onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))} />
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                      <Input className="h-7 w-56 text-xs" placeholder={tx("tags, comma, separated", "وسوم مفصولة بفواصل")} value={draft.tags}
-                        onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))} />
-                    </div>
-                  </div>
-                  <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
-                    <textarea
-                      className="min-h-0 w-full resize-none border-e border-border bg-background p-4 font-mono text-sm outline-none"
-                      placeholder={tx("Write markdown…", "اكتب ماركداون…")}
-                      value={draft.body}
-                      onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
-                      dir="ltr"
-                    />
-                    <div className="hidden min-h-0 overflow-auto p-4 lg:block">
-                      <div className="flex items-center gap-1.5 pb-3 text-xs text-muted-foreground"><Eye className="h-3.5 w-3.5" />{tx("Preview", "معاينة")}</div>
-                      <article className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: renderPreview(draft.body) }} />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="min-h-0 flex-1 overflow-auto p-6">
-                  <article className="prose dark:prose-invert max-w-3xl" dangerouslySetInnerHTML={{ __html: renderPreview(selected!.body) }} />
-                  <div className="mt-8 flex items-center gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
-                    {selected!.category && <span className="inline-flex items-center gap-1"><FolderOpen className="h-3 w-3" />{selected!.category}</span>}
-                    {selected!.tags && <span className="inline-flex items-center gap-1"><Tag className="h-3 w-3" />{selected!.tags}</span>}
-                    <span>{tx("Updated", "آخر تحديث")} {fmtDate(selected!.updated_at)}</span>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+            )}
+          </div>
+        </>) : (
+          <div className="mid-empty"><div><Icon name="markdown" /><div>{t("Select a note, or create a new one.", "اختر ملاحظة أو أنشئ جديدة.")}</div></div></div>
+        )}
       </div>
 
-      {/* delete confirmation */}
-      <Dialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{tx("Delete note?", "حذف الملاحظة؟")}</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {tx(`"${confirmDelete?.title}" will be permanently removed from your warehouse.`, `سيتم حذف "${confirmDelete?.title}" نهائيًا.`)}
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDelete(null)}>{tx("Cancel", "إلغاء")}</Button>
-            <Button variant="destructive" onClick={() => doDelete(confirmDelete!)} disabled={busy}>{tx("Delete", "حذف")}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title={t("Delete note?", "حذف الملاحظة؟")}
+        footer={<><span className="mid-frame-spacer" /><Button onClick={() => setConfirmDelete(null)}>{t("Cancel", "إلغاء")}</Button><Button variant="destructive" icon="trash" busy={busy} onClick={() => doDelete(confirmDelete!)}>{t("Delete", "حذف")}</Button></>}>
+        <p>{t(`"${confirmDelete?.title}" will be permanently removed from your warehouse.`, `سيتم حذف "${confirmDelete?.title}" نهائيًا.`)}</p>
+      </Modal>
     </div>
   );
 }

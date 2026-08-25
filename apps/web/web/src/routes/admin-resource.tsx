@@ -1,261 +1,210 @@
+// Admin → generic resource browser (/admin/$resource). Columns come from the
+// resource schema; rows are server-paged (adminListPaged) and refreshed over SSE.
+// Same design system as the desktop app (mid-* classes only).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "@tanstack/react-router";
-import { Pencil, Trash2, Eye, Plus } from "lucide-react";
-import {
-  PageHeader, Button, Badge, DataTable,
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
-  useT,
-  type ColumnDef, type SortingState, type PaginationState, type DataTableServerState,
-} from "@togo-framework/ui";
-import {
-  adminListPaged, adminCreate, adminUpdate, adminDelete, resourceFields,
-  controlFor, formatValue, type ResourceField, type PagedResult,
-} from "../lib/admin";
-import { ResourceForm, validateForm } from "../components/admin/ResourceForm";
+import { Alert, Button, Chip, Icon, Input, Modal, fmtDate, useToast } from "../components/ui";
+import { useLang } from "../lib/i18n";
+import { adminDelete, adminListPaged, controlFor, formatValue, resourceFields, type PagedResult, type ResourceField } from "../lib/admin";
+import { ResourceForm } from "../components/admin/ResourceForm";
 import { Infolist } from "../components/admin/Infolist";
-import { useToast } from "../components/admin/toast";
 import { API } from "../lib/api";
 
 type Row = Record<string, any>;
 type Mode = "create" | "edit" | "view" | "delete";
+type Sort = { id: string; desc: boolean } | null;
+type Query = { for: string; page: number; sort: Sort };
 
+const PAGE_SIZE = 20;
 const labelOf = (name: string) => name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
-const DEFAULT_PAGE_SIZE = 20;
 
 export function AdminResource() {
   const { resource } = useParams({ strict: false }) as { resource: string };
-  const { language } = useT();
+  const { t, lang, dir } = useLang();
   const { toast } = useToast();
-  const ar = language === "ar";
-  const dir = ar ? "rtl" : "ltr";
-  const single = resource.replace(/s$/, "");
+  const single = labelOf(resource.replace(/s$/, ""));
 
-  // Data state
   const [result, setResult] = useState<PagedResult | null>(null);
   const [fields, setFields] = useState<ResourceField[]>([]);
   const [err, setErr] = useState("");
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  // Server-side state (lifted from DataTable via serverCallbacks)
-  const [serverSorting, setServerSorting] = useState<SortingState>([]);
-  const [serverPagination, setServerPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: DEFAULT_PAGE_SIZE });
-  const [serverGlobalFilter, setServerGlobalFilter] = useState("");
-
-  // Modal + form state
+  const [filter, setFilter] = useState("");
   const [modal, setModal] = useState<{ mode: Mode; row?: Row } | null>(null);
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  // Track current resource so we reset pagination on navigation
-  const resourceRef = useRef(resource);
+  // Paging/sort state is keyed on the resource so switching resources resets it
+  // without an extra render + fetch.
+  const [query, setQuery] = useState<Query>({ for: resource, page: 1, sort: null });
+  const active: Query = query.for === resource ? query : { for: resource, page: 1, sort: null };
+  useEffect(() => { if (query.for !== resource) setQuery({ for: resource, page: 1, sort: null }); }, [query.for, resource]);
+  const { page, sort } = active;
 
-  const refresh = useCallback(async (
-    pagination: PaginationState = serverPagination,
-    sorting: SortingState = serverSorting,
-    globalFilter: string = serverGlobalFilter,
-  ) => {
-    const s = sorting[0];
-    const r = await adminListPaged(resource, {
-      page: pagination.pageIndex + 1,
-      pageSize: pagination.pageSize,
-      sort: s?.id,
-      order: s ? (s.desc ? "desc" : "asc") : undefined,
-      search: globalFilter || undefined,
-    }).catch(() => ({ items: [], total: 0, page: 1, pageSize: pagination.pageSize }));
-    setResult(r);
-  }, [resource, serverPagination, serverSorting, serverGlobalFilter]);
+  const refresh = useCallback(async () => {
+    try {
+      const r = await adminListPaged(resource, { page, pageSize: PAGE_SIZE, sort: sort?.id, order: sort ? (sort.desc ? "desc" : "asc") : undefined });
+      setResult(r); setErr("");
+    } catch (e: any) {
+      setResult({ items: [], total: 0, page, pageSize: PAGE_SIZE });
+      setErr(e?.message || String(e));
+    }
+  }, [resource, page, sort]);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   useEffect(() => {
-    // Reset state when switching resources
-    if (resourceRef.current !== resource) {
-      resourceRef.current = resource;
-      setServerSorting([]);
-      setServerPagination({ pageIndex: 0, pageSize: DEFAULT_PAGE_SIZE });
-      setServerGlobalFilter("");
-    }
-    setResult(null);
-    resourceFields(resource).then(setFields);
-    refresh({ pageIndex: 0, pageSize: DEFAULT_PAGE_SIZE }, [], "");
-
+    setResult(null); setFilter(""); setModal(null); setFields([]);
+    let alive = true;
+    resourceFields(resource).then((f) => { if (alive) setFields(f); });
     const es = new EventSource(`${API}/events`);
-    es.onmessage = () => refresh();
-    return () => es.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    es.onmessage = () => refreshRef.current();
+    return () => { alive = false; es.close(); };
   }, [resource]);
+  useEffect(() => { refresh(); }, [refresh]);
 
-  // DataTable server-side callback — called by DataTable on sort/filter/page change.
-  const serverCallbacks = useMemo(() => ({
-    onStateChange: (state: DataTableServerState) => {
-      setServerSorting(state.sorting);
-      setServerPagination(state.pagination);
-      setServerGlobalFilter(state.globalFilter);
-      refresh(state.pagination, state.sorting, state.globalFilter);
-    },
-  }), [refresh]);
+  // Client-side filter over the current page's string fields.
+  const rows = useMemo(() => {
+    const all = result?.items ?? [];
+    const q = filter.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((r) => String(r.id ?? "").toLowerCase().includes(q) || Object.values(r).some((v) => typeof v === "string" && v.toLowerCase().includes(q)));
+  }, [result, filter]);
 
-  function open(mode: Mode, row?: Row) {
-    const init: Record<string, string> = {};
-    fields.forEach((f) => (init[f.name] = row ? String(row[f.name] ?? "") : ""));
-    setForm(init); setErr(""); setErrors({}); setModal({ mode, row });
-  }
+  const total = result?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const setPage = (p: number) => setQuery({ for: resource, page: Math.min(Math.max(1, p), pages), sort });
+  const toggleSort = (id: string) => setQuery({ for: resource, page: 1, sort: sort?.id === id ? (sort.desc ? null : { id, desc: true }) : { id, desc: false } });
+  const close = useCallback(() => setModal(null), []);
 
-  async function save() {
-    setErr("");
-    const { errors: errs, ok } = validateForm(fields, form);
-    setErrors(errs);
-    if (!ok) return;
-    setSaving(true);
-    const payload: Record<string, unknown> = {};
-    for (const f of fields) {
-      const v = form[f.name] ?? "";
-      const c = controlFor(f);
-      if (v === "") { if (!f.nullable && c !== "switch") payload[f.name] = ""; continue; }
-      payload[f.name] = c === "number" || c === "relation" ? Number(v) : c === "switch" ? v === "true" : c === "json" ? safeJson(v) : v;
-    }
+  async function del() {
+    if (!modal?.row) return;
+    setDeleting(true);
     try {
-      if (modal?.mode === "edit") { await adminUpdate(resource, modal.row!.id, payload); toast(ar ? "تم التحديث" : "Updated"); }
-      else { await adminCreate(resource, payload); toast(ar ? "تم الإنشاء" : "Created"); }
-      setModal(null); await refresh();
-    } catch (e: any) { setErr(e.message); toast(e.message, "error"); }
-    finally { setSaving(false); }
+      await adminDelete(resource, String(modal.row.id));
+      setModal(null); toast(t("Deleted", "تم الحذف")); await refresh();
+    } catch (e: any) { toast(e?.message || String(e), "error"); }
+    finally { setDeleting(false); }
   }
 
-  async function del(ids?: string[]) {
-    setErr("");
-    try {
-      const targets = ids ?? (modal?.row ? [String(modal.row.id)] : []);
-      await Promise.all(targets.map((id) => adminDelete(resource, id)));
-      setModal(null); toast(ar ? `تم حذف ${targets.length}` : `Deleted ${targets.length}`); await refresh();
-    } catch (e: any) { setErr(e.message); toast(e.message, "error"); }
-  }
-
-  const columns: ColumnDef<Row>[] = useMemo(() => [
-    { accessorKey: "id", header: "id", cell: ({ getValue }) => <span className="text-muted-foreground">#{String(getValue())}</span> },
-    ...fields.map((f) => ({
-      accessorKey: f.name,
-      header: labelOf(f.name),
-      cell: ({ getValue }: any) => <Cell f={f} v={getValue()} language={language} />,
-    }) as ColumnDef<Row>),
-    {
-      id: "actions",
-      header: () => <span className="block text-end">{ar ? "إجراءات" : "Actions"}</span>,
-      enableSorting: false, enableHiding: false,
-      cell: ({ row }) => (
-        <div className="flex justify-end gap-1">
-          <Button size="sm" variant="ghost" aria-label="view" onClick={(e) => { e.stopPropagation(); open("view", row.original); }}><Eye className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" aria-label="edit" onClick={(e) => { e.stopPropagation(); open("edit", row.original); }}><Pencil className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" aria-label="delete" className="text-destructive" onClick={(e) => { e.stopPropagation(); setModal({ mode: "delete", row: row.original }); }}><Trash2 className="h-3.5 w-3.5" /></Button>
-        </div>
-      ),
-    },
-  ], [fields, language, ar]);
-
-  // Per-column select filters for enum + boolean fields (Filament-style table filters).
-  const filterDefs = useMemo(() =>
-    fields.filter((f) => f.enum?.length || /bool/.test(f.type.toLowerCase())).map((f) => ({
-      columnId: f.name,
-      type: "select" as const,
-      options: (f.enum?.length ? f.enum : ["true", "false"]).map((v) => ({ value: v, label_en: v, label_ar: v })),
-      placeholder_en: labelOf(f.name), placeholder_ar: labelOf(f.name),
-    })), [fields]);
-
-  const rows = result?.items ?? [];
-  const bulkActions = useMemo(() => [
-    { id: "export", label_en: "Export", label_ar: "تصدير", variant: "outline" as const, onAction: (ids: string[]) => exportRows(rows.filter((r) => ids.includes(String(r.id))), resource) },
-    { id: "delete", label_en: "Delete", label_ar: "حذف", variant: "destructive" as const, onAction: (ids: string[]) => del(ids) },
-  ], [rows, resource, ar]);
+  const sortMark = (id: string) => (sort?.id === id ? (sort.desc ? " ↓" : " ↑") : "");
 
   return (
-    <div className="space-y-6 p-6" dir={dir}>
-      <PageHeader title={labelOf(resource)} description={`${result?.total ?? 0} ${ar ? "سجل" : "records"}`}
-        actions={<Button onClick={() => open("create")}><Plus className="me-1.5 h-4 w-4" />{ar ? "إضافة" : "Create"}</Button>} />
-      {err && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{err}</p>}
+    <div className="mid-page mid-page--wide" dir={dir}>
+      <div className="mid-page-head">
+        <div>
+          <h1 className="mid-page-title">{labelOf(resource)}</h1>
+          <p className="mid-page-subtitle">{total} {t("records", "سجل")} · <span className="mid-mono">/api/{resource}</span></p>
+        </div>
+        <Button variant="primary" icon="plus" onClick={() => setModal({ mode: "create" })}>{t("New", "جديد")}</Button>
+      </div>
 
-      <DataTable
-        columns={columns}
-        data={rows}
-        getRowId={(r) => String((r as Row).id)}
-        loading={result === null}
-        showGlobalSearch
-        showCsvExport
-        csvFilename={resource}
-        enableRowSelection
-        bulkActions={bulkActions}
-        filterDefs={filterDefs}
-        onRowClick={(r) => open("view", r as Row)}
-        language={language}
-        /* Server-side mode: pagination, sorting, and global search are all server-driven.
-           DataTable fires onStateChange whenever any of these change; we re-fetch from the API. */
-        totalRows={result?.total}
-        serverCallbacks={serverCallbacks}
-      />
+      <div className="mid-stack">
+        <Alert tone="danger">{err}</Alert>
 
-      {/* Create / edit — schema form with validation + relation pickers. */}
-      <Dialog open={modal?.mode === "create" || modal?.mode === "edit"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent dir={dir} className="sm:max-w-2xl">
-          <DialogHeader><DialogTitle className="capitalize">{modal?.mode === "edit" ? (ar ? "تعديل" : "Edit") : (ar ? "إضافة" : "Create")} {single}</DialogTitle></DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto px-0.5 py-1">
-            <ResourceForm fields={fields} value={form} errors={errors} onChange={setForm} language={language} />
+        <div className="mid-row">
+          <Icon name="search" className="mid-icon--muted" />
+          <Input className="mid-grow" value={filter} placeholder={t("Filter this page…", "تصفية هذه الصفحة…")} onChange={(e) => setFilter(e.target.value)} />
+          <Button variant="ghost" icon="refresh" onClick={() => refresh()}>{t("Refresh", "تحديث")}</Button>
+          <Button variant="ghost" icon="download" disabled={rows.length === 0} onClick={() => exportRows(rows, resource)}>{t("Export", "تصدير")}</Button>
+        </div>
+
+        <section className="mid-settings-group">
+          <div className="mid-table-wrap">
+            <table className="mid-table">
+              <thead>
+                <tr>
+                  <th onClick={() => toggleSort("id")} role="button">id{sortMark("id")}</th>
+                  {fields.map((f) => <th key={f.name} onClick={() => toggleSort(f.name)} role="button">{labelOf(f.name)}{sortMark(f.name)}</th>)}
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {result === null ? (
+                  <tr><td colSpan={fields.length + 2}><div className="mid-empty">{t("Loading…", "جارٍ التحميل…")}</div></td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={fields.length + 2}><div className="mid-empty"><Icon name="folder-open" />{filter ? t("No rows match the filter.", "لا توجد صفوف مطابقة.") : t("No records yet.", "لا توجد سجلات بعد.")}</div></td></tr>
+                ) : rows.map((r) => (
+                  <tr key={String(r.id)} onClick={() => setModal({ mode: "view", row: r })}>
+                    <td className="is-mono">#{String(r.id)}</td>
+                    {fields.map((f) => <td key={f.name}><Cell f={f} v={r[f.name]} lang={lang} /></td>)}
+                    <td>
+                      <div className="mid-row-actions">
+                        <Button variant="ghost" iconOnly icon="show" aria-label={t("View", "عرض")} title={t("View", "عرض")} onClick={(e) => { e.stopPropagation(); setModal({ mode: "view", row: r }); }} />
+                        <Button variant="ghost" iconOnly icon="edit" aria-label={t("Edit", "تعديل")} title={t("Edit", "تعديل")} onClick={(e) => { e.stopPropagation(); setModal({ mode: "edit", row: r }); }} />
+                        <Button variant="ghost" iconOnly icon="trash" aria-label={t("Delete", "حذف")} title={t("Delete", "حذف")} onClick={(e) => { e.stopPropagation(); setModal({ mode: "delete", row: r }); }} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setModal(null)}>{ar ? "إلغاء" : "Cancel"}</Button>
-            <Button onClick={save} disabled={saving}>{saving ? (ar ? "جارٍ الحفظ…" : "Saving…") : (ar ? "حفظ" : "Save")}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="mid-table-footer">
+            <span>
+              {total === 0 ? t("No records", "لا توجد سجلات") : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} ${t("of", "من")} ${total}`}
+              {filter && result ? ` · ${rows.length} ${t("shown", "معروض")}` : ""}
+            </span>
+            <span className="mid-row">
+              <Button variant="ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("Previous", "السابق")}</Button>
+              <span className="mid-mono">{page} / {pages}</span>
+              <Button variant="ghost" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t("Next", "التالي")}</Button>
+            </span>
+          </div>
+        </section>
+      </div>
+
+      {/* Create / edit — schema form (validates + submits itself). */}
+      <Modal open={modal?.mode === "create" || modal?.mode === "edit"} onClose={close}
+        title={`${modal?.mode === "edit" ? t("Edit", "تعديل") : t("New", "إضافة")} ${single}`}>
+        {modal && (modal.mode === "create" || modal.mode === "edit") ? (
+          <ResourceForm table={resource} fields={fields} row={modal.mode === "edit" ? modal.row : undefined} onCancel={close}
+            onSaved={(mode) => { setModal(null); toast(mode === "edit" ? t("Updated", "تم التحديث") : t("Created", "تم الإنشاء")); refresh(); }} />
+        ) : null}
+      </Modal>
 
       {/* View — infolist. */}
-      <Dialog open={modal?.mode === "view"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent dir={dir} className="sm:max-w-xl">
-          <DialogHeader><DialogTitle className="capitalize">{single}</DialogTitle></DialogHeader>
-          {modal?.row && <Infolist row={modal.row} fields={fields} language={language} />}
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setModal(null)}>{ar ? "إغلاق" : "Close"}</Button>
-            <Button onClick={() => modal?.row && open("edit", modal.row)}>{ar ? "تعديل" : "Edit"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Modal open={modal?.mode === "view"} onClose={close} title={`${single} #${modal?.row?.id ?? ""}`}
+        footer={<>
+          <Button variant="secondary" onClick={close}>{t("Close", "إغلاق")}</Button>
+          <Button variant="primary" icon="edit" onClick={() => modal?.row && setModal({ mode: "edit", row: modal.row })}>{t("Edit", "تعديل")}</Button>
+        </>}>
+        {modal?.row ? <Infolist row={modal.row} fields={fields} /> : null}
+      </Modal>
 
       {/* Delete confirmation. */}
-      <AlertDialog open={modal?.mode === "delete"} onOpenChange={(o) => !o && setModal(null)}>
-        <AlertDialogContent dir={dir}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{ar ? "حذف السجل" : "Delete record"}</AlertDialogTitle>
-            <AlertDialogDescription>{ar ? "لا يمكن التراجع عن هذا الإجراء. حذف هذا السجل؟" : "This action cannot be undone. Delete this record?"}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{ar ? "إلغاء" : "Cancel"}</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => del()}>{ar ? "حذف" : "Delete"}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Modal open={modal?.mode === "delete"} onClose={close} title={t("Delete record", "حذف السجل")}
+        footer={<>
+          <Button variant="secondary" onClick={close}>{t("Cancel", "إلغاء")}</Button>
+          <Button variant="destructive" icon="trash" busy={deleting} onClick={del}>{t("Delete", "حذف")}</Button>
+        </>}>
+        <Alert tone="danger">{t("This action cannot be undone.", "لا يمكن التراجع عن هذا الإجراء.")}</Alert>
+        <p className="mid-settings-empty">{t("Delete", "حذف")} {single} <span className="mid-mono">#{String(modal?.row?.id ?? "")}</span>?</p>
+      </Modal>
     </div>
   );
 }
 
-function Cell({ f, v, language }: { f: ResourceField; v: any; language: string }) {
+function Cell({ f, v, lang }: { f: ResourceField; v: any; lang: string }) {
   const c = controlFor(f);
-  if (v === null || v === undefined || v === "") return <span className="text-muted-foreground/50">—</span>;
+  if (v === null || v === undefined || v === "") return <span className="mid-subtle">—</span>;
   if (c === "switch" || typeof v === "boolean") {
     const on = v === true || v === "true";
-    return <Badge variant={on ? "default" : "secondary"}>{on ? "Yes" : "No"}</Badge>;
+    return <Chip tone={on ? "ok" : undefined}>{on ? "Yes" : "No"}</Chip>;
   }
-  if (c === "select") return <Badge variant="secondary" className="capitalize">{String(v)}</Badge>;
-  if (c === "relation") return <Badge variant="outline">#{String(v)}</Badge>;
-  const text = formatValue(f, v, language);
-  return <span className="line-clamp-1 max-w-[28ch]">{text}</span>;
+  if (c === "select") return <Chip tone="accent">{String(v)}</Chip>;
+  if (c === "relation") return <span className="mid-mono">#{String(v)}</span>;
+  if (c === "date" || c === "datetime") {
+    const d = new Date(v);
+    return <span>{isNaN(d.getTime()) ? String(v) : fmtDate(String(v))}</span>;
+  }
+  const text = formatValue(f, v, lang);
+  return <span title={text}>{text.length > 80 ? `${text.slice(0, 80)}…` : text}</span>;
 }
 
-function safeJson(s: string): unknown { try { return JSON.parse(s); } catch { return s; } }
-
-/** Export selected rows as a CSV download (bulk action). */
-function exportRows(rows: Record<string, any>[], name: string) {
+/** Export rows as a CSV download. */
+function exportRows(rows: Row[], name: string) {
   if (!rows.length) return;
   const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
   const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = [cols.join(","), ...rows.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\n");
+  const csv = [cols.join(","), ...rows.map((r) => cols.map((c) => esc(typeof r[c] === "object" && r[c] !== null ? JSON.stringify(r[c]) : r[c])).join(","))].join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  const a = document.createElement("a"); a.href = url; a.download = `${name}-selected.csv`; a.click(); URL.revokeObjectURL(url);
+  const a = document.createElement("a"); a.href = url; a.download = `${name}.csv`; a.click(); URL.revokeObjectURL(url);
 }

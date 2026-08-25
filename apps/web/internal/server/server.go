@@ -45,6 +45,7 @@ func Boot() *app.App {
 		mcpsrv.Mount(k, a, authsvc)
 		mountMFALogin(k, authsvc)
 		mountOTPMail(k)
+		mountPasswordReset(k)
 	}
 	updates.Mount(k)
 

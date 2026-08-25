@@ -31,8 +31,13 @@ Mark It Down runs on four surfaces backed by one cloud service:
 ## apps/web — the ToGo service
 
 Built on the [togo framework](https://github.com/togo-framework/togo) (Go microkernel
-+ plugins) with the TanStack (Vite + React 19 + TanStack Router/Query) SPA the
-framework scaffolds. Installed plugins: `auth`, `auth-mfa`, `auth-dev` (dev only),
++ plugins) with a Vite + React 19 + TanStack Router SPA. The SPA deliberately uses
+**no UI kit and no Tailwind**: it imports the desktop app's design system straight
+from `packages/ui-tokens` (tokens, primitives, icons) and `packages/core` (the 25
+themes) via the `@mid/*` aliases in `vite.config.ts`, and ports the desktop shell
+(titlebar · activity bar · sidebar · statusbar), settings groups, onboarding frame,
+welcome hero, and notes list under the same `mid-*` class names — so web and desktop
+look identical and share one theme engine (`src/lib/theme.tsx`). Installed plugins: `auth`, `auth-mfa`, `auth-dev` (dev only),
 `mail`, `cache`, `storage`, `realtime`, `i18n`.
 
 | Surface | Where |

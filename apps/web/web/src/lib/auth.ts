@@ -40,7 +40,9 @@ export const auth = {
   },
   requestOtp: (email: string, purpose = "reset") => post("otp", { email, purpose }),
   verifyOtp: (email: string, code: string, purpose = "reset") => post("otp/verify", { email, code, purpose }),
-  changePassword: (current: string, next: string) => post("change-password", { current_password: current, new_password: next }),
+  changePassword: (current: string, next: string) => post("change-password", { old_password: current, new_password: next }),
+  // Code-verified password reset (app endpoint; the plugin only verifies codes).
+  resetPassword: (email: string, code: string, newPassword: string) => post("reset-password", { email, code, new_password: newPassword }),
 };
 
 // ---- 2FA (app-level challenge login + auth-mfa factor routes) ----

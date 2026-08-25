@@ -1,13 +1,16 @@
-import { Badge } from "@togo-framework/ui";
+// Infolist — read-only key/value view of one resource row, driven by the schema.
+// Same design system as the desktop app (mid-* classes only).
+import { Chip, fmtDate } from "../ui";
+import { useLang } from "../../lib/i18n";
 import { controlFor, formatValue, type ResourceField } from "../../lib/admin";
 
 const labelOf = (name: string) => name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-/** A Filament-style infolist: labelled key/value rows with badges for enums/bools,
- * formatted dates, and a — placeholder for empties. Driven by the resource schema. */
-export function Infolist({ row, fields, language = "en" }: { row: Record<string, any>; fields: ResourceField[]; language?: string }) {
+/** Labelled rows with chips for enums/bools, formatted dates, and a — placeholder for empties.
+ * Schema fields first (declared order), then any extra row keys (id/timestamps). */
+export function Infolist({ row, fields }: { row: Record<string, any>; fields: ResourceField[] }) {
+  const { lang } = useLang();
   const byName = new Map(fields.map((f) => [f.name, f]));
-  // Show schema fields first (in declared order), then any extra row keys (id/timestamps).
   const keys = [
     "id",
     ...fields.map((f) => f.name).filter((n) => n !== "id"),
@@ -15,29 +18,33 @@ export function Infolist({ row, fields, language = "en" }: { row: Record<string,
   ].filter((k, i, a) => a.indexOf(k) === i && k in row);
 
   return (
-    <dl className="divide-y divide-border/60 rounded-lg border border-border text-sm">
-      {keys.map((k) => {
-        const f = byName.get(k);
-        const v = row[k];
-        return (
-          <div key={k} className="flex gap-3 px-3 py-2.5">
-            <dt className="w-40 shrink-0 text-muted-foreground">{labelOf(k)}</dt>
-            <dd className="min-w-0 break-words font-medium"><Value f={f} v={v} language={language} /></dd>
+    <ul className="mid-list">
+      {keys.map((k) => (
+        <li key={k}>
+          <div className="mid-setting-row mid-grow">
+            <div className="mid-setting-row__label mid-muted">{labelOf(k)}</div>
+            <div className="mid-setting-row__control"><Value f={byName.get(k)} name={k} v={row[k]} lang={lang} /></div>
           </div>
-        );
-      })}
-    </dl>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function Value({ f, v, language }: { f?: ResourceField; v: any; language: string }) {
-  if (v === null || v === undefined || v === "") return <span className="text-muted-foreground/60">—</span>;
+function Value({ f, name, v, lang }: { f?: ResourceField; name: string; v: any; lang: string }) {
+  if (v === null || v === undefined || v === "") return <span className="mid-subtle">—</span>;
   const control = f ? controlFor(f) : "text";
   if (control === "switch" || typeof v === "boolean") {
     const on = v === true || v === "true";
-    return <Badge variant={on ? "default" : "secondary"}>{on ? "Yes" : "No"}</Badge>;
+    return <Chip tone={on ? "ok" : undefined}>{on ? "Yes" : "No"}</Chip>;
   }
-  if (control === "select") return <Badge variant="secondary" className="capitalize">{String(v)}</Badge>;
-  if (control === "relation") return <Badge variant="outline">#{String(v)}</Badge>;
-  return <span>{formatValue(f, v, language)}</span>;
+  if (control === "select") return <Chip tone="accent">{String(v)}</Chip>;
+  if (control === "relation") return <span className="mid-mono">#{String(v)}</span>;
+  if (name === "id") return <span className="mid-mono">{String(v)}</span>;
+  if (typeof v === "object") return <pre className="mid-code">{JSON.stringify(v, null, 2)}</pre>;
+  if (control === "date" || control === "datetime" || /_at$/.test(name)) {
+    const d = new Date(v);
+    return <span>{isNaN(d.getTime()) ? String(v) : fmtDate(String(v))}</span>;
+  }
+  return <span>{formatValue(f, v, lang)}</span>;
 }

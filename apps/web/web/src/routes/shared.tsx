@@ -1,48 +1,39 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
-import { Button } from "@togo-framework/ui";
 import { notesApi, type SharedNote } from "../lib/notes";
 import { MarkItDownMark } from "../lib/brand";
 import { APP_NAME } from "../lib/api";
+import { Button, Icon } from "../components/ui";
 
 // Public share viewer — /s/$slug. The backend returns pre-sanitized HTML
-// (goldmark + bluemonday), so it can be injected directly.
+// (goldmark + bluemonday), rendered with the same reading styles as the desktop preview.
 export function Shared() {
   const { slug } = useParams({ from: "/s/$slug" });
   const [note, setNote] = useState<SharedNote | null>(null);
   const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    notesApi.shared(slug).then(setNote).catch(() => setErr(true));
-  }, [slug]);
+  useEffect(() => { notesApi.shared(slug).then(setNote).catch(() => setErr(true)); }, [slug]);
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <nav className="mx-auto flex w-full max-w-3xl items-center justify-between px-6 py-5">
-        <Link to="/" className="flex items-center gap-2.5">
-          <MarkItDownMark size={28} className="rounded-lg" />
-          <span className="font-semibold tracking-tight">{APP_NAME}</span>
-        </Link>
-        <Button asChild size="sm" variant="outline"><Link to="/register">Get {APP_NAME}</Link></Button>
+    <div className="mid-landing">
+      <nav className="mid-landing-nav">
+        <Link to="/" className="mid-titlebar-brand"><MarkItDownMark size={22} /> {APP_NAME}</Link>
+        <div className="mid-landing-nav-actions">
+          <Link to="/register"><Button variant="primary" icon="download">Get {APP_NAME}</Button></Link>
+        </div>
       </nav>
-      <div className="mx-auto w-full max-w-3xl px-6 pb-20">
+      <main className="mid-preview">
         {err && (
-          <div className="py-24 text-center text-muted-foreground">
-            <p className="text-lg font-medium">This note isn't available.</p>
-            <p className="mt-1 text-sm">The link may have been revoked or never existed.</p>
-          </div>
+          <div className="mid-empty"><div><Icon name="lock" /><div>This note isn't available.</div><div className="mid-subtle">The link may have been revoked or never existed.</div></div></div>
         )}
-        {!err && !note && <div className="py-24 text-center text-sm text-muted-foreground">Loading…</div>}
+        {!err && !note && <div className="mid-empty"><span className="mid-spinner" /></div>}
         {note && (
-          <>
-            <h1 className="mt-6 text-3xl font-bold tracking-tight">{note.title}</h1>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Shared note · updated {new Date(note.updated_at).toLocaleDateString(undefined, { dateStyle: "medium" })}
-            </p>
-            <article className="prose dark:prose-invert mt-8 max-w-none" dangerouslySetInnerHTML={{ __html: note.html }} />
-          </>
+          <article className="mid-md">
+            <h1>{note.title}</h1>
+            <p className="mid-muted mid-mono">Shared note · updated {new Date(note.updated_at).toLocaleDateString(undefined, { dateStyle: "medium" })}</p>
+            <div dangerouslySetInnerHTML={{ __html: note.html }} />
+          </article>
         )}
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
