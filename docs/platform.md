@@ -153,8 +153,8 @@ Cloudflare (explicit proxied A record → 45.129.183.99; the *.fadymondy.com wil
   → NPM on Proxmox LXC 100 (https://npm.3x1.io, host "markitdown.fadymondy.com",
     Cloudflare Origin cert, SSL forced) → http://10.10.10.1:4572
   → reverse SSH tunnel from the Windows box (Scheduled Task `markitdown-tunnel`,
-    E:SitesToGo.setupmarkitdown-tunnel.ps1: -R 10.10.10.1:4572 → 127.0.0.1:9320)
-  → WSL container `markitdown` (published 127.0.0.1:9320 → :8080)
+    E:SitesToGo.setupmarkitdown-tunnel.ps1: -R 10.10.10.1:4572 → 127.0.0.1:9321)
+  → WSL container `markitdown` (published 127.0.0.1:9321 → :8080)
 ```
 
 The *local* WSL NPM (18080/18443/8181) and Windows Firewall are not in this path:
@@ -169,14 +169,14 @@ tunnel picks it up from the published loopback port.
    ```
 2. **Build + run the container** from the WSL dir `~/services/markitdown/`
    (`docker-compose.yml` builds from `/mnt/e/Sites/mark-it-down/apps/web`, joins
-   `stack_stacknet`, publishes `127.0.0.1:9320`, mounts `markitdown_data` for the
+   `stack_stacknet`, publishes `127.0.0.1:9321`, mounts `markitdown_data` for the
    SQLite file and `markitdown_storage`, and reads `AUTH_SECRET` from its private `.env`):
    ```bash
    cd ~/services/markitdown && docker compose up -d --build
-   curl -s http://127.0.0.1:9320/api/health     # from Windows or WSL
+   curl -s http://127.0.0.1:9321/api/health     # from Windows or WSL
    ```
 3. **Tunnel** — the `markitdown-tunnel` Scheduled Task (logon trigger) keeps the
-   `-R 10.10.10.1:4572:127.0.0.1:9320` forward alive; log in `.setup/markitdown-tunnel.log`.
+   `-R 10.10.10.1:4572:127.0.0.1:9321` forward alive; log in `.setup/markitdown-tunnel.log`.
 4. **NPM + DNS** (one-time, done): NPM proxy host id 24 → `http://10.10.10.1:4572`,
    Cloudflare A record `markitdown` → `45.129.183.99` (proxied). Credentials live in
    the cabrain `togo` brain's secrets vault.
