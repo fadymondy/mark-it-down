@@ -1,0 +1,12 @@
+/bin/
+*.exe
+.env
+.env.local
+
+
+/web/node_modules/
+/web/.next/
+/db/atlas/migrations/atlas.sum
+.DS_Store
+togo.db*
+/storage/

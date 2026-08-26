@@ -4,6 +4,47 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-26
+
+### Added — The platform: web app, mobile app, Chrome extension, unified updates (#328, #329)
+
+Mark It Down grows from two surfaces to four, backed by one cloud service:
+
+- **Web app (`apps/web`)** — a [ToGo](https://github.com/togo-framework/togo) (Go) service + TanStack SPA:
+  - Landing page with per-platform install buttons fed live from GitHub Releases.
+  - Auth: register / login / logout, CSRF-guarded sessions, email-OTP password
+    reset (mail-plugin bridge), and **TOTP 2FA** with a challenge-token login
+    flow, QR enrollment, and recovery codes.
+  - **Cloud notes warehouse**: user-scoped notes CRUD (search, categories, tags)
+    with a two-pane editor + live preview, and **public share links**
+    (`/s/{slug}`) rendering sanitized HTML server-side.
+  - **MCP connector**: `POST /mcp` (Streamable HTTP) behind bearer personal
+    access tokens — tool parity with the bundled stdio server, so Claude
+    Desktop/Code and Cursor connect with a copy-paste config from the profile.
+  - **Admin panel**: user management (impersonate, reset, magic links), SMTP
+    settings, and schema-driven resource CRUD.
+  - **Unified update feed**: `GET /api/updates/{platform}` classifies release
+    assets for windows / mac / linux / vscode / chrome with caching.
+- **Chrome extension (`apps/chrome-extension`)** — MV3: quick capture into the
+  warehouse, a 25-theme markdown viewer for `.md` URLs, options with PAT auth,
+  and a daily update check (Web Store handles auto-update for store installs).
+- **CI/CD** — the CI matrix now builds the Go API + SPA and the Chrome
+  extension; the release workflow attaches the Chrome zip next to the
+  installers and the `.vsix`.
+- **Mobile app (`apps/mobile`)** — Flutter (Android/iOS): warehouse client with
+  2FA login + one-tap developer login, notes list/editor/viewer, public sharing,
+  all 25 themes and the shared design tokens; Android release APK, iOS scaffolded.
+- **One design system** — the web SPA dropped the UI kit + Tailwind for the
+  desktop's own tokens (`packages/ui-tokens` via `@mid/*` aliases) and a new
+  shared motion layer (`animations.css`: entrances, stagger, skeletons, press &
+  hover feedback, one focus ring, reduced-motion safe), documented in
+  [docs/DESIGN.md](docs/DESIGN.md). Landing page lists all seven install
+  targets including Android (APK) and iOS (soon).
+- **Web notes workspace** — master/detail layout mirroring desktop/mobile
+  (responsive down to phones), admin on its own activity-bar tab, skeleton
+  loading, and the notes API no longer requires category/tags/body keys.
+- Docs: [docs/platform.md](docs/platform.md), [docs/chrome-extension.md](docs/chrome-extension.md).
+
 ## [0.2.7] — 2026-05-03
 
 ### Fixed — Settings page is no longer a placeholder (#315)

@@ -1,0 +1,23 @@
+{
+  "name": "mark-it-down-chrome",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Mark It Down for Chrome — quick note capture into the warehouse plus a standalone themeable markdown viewer.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "zip": "node scripts/zip.mjs",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "archiver": "^7.0.1",
+    "dompurify": "^3.2.3",
+    "esbuild": "^0.24.0",
+    "highlight.js": "^11.10.0",
+    "jsdom": "^25.0.1",
+    "marked": "^14.1.3",
+    "marked-highlight": "^2.2.1",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,11 @@
+web/node_modules
+web/.vite
+bin/*
+!bin/web-linux
+!bin/migrate-linux
+storage
+togo.db*
+.env
+.env.local
+*.exe
+.claude

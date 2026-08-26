@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Mark It Down">
+  <title>Mark It Down</title>
+  <defs>
+    <!-- Page-corner rounded square: deep navy → indigo for "developer document" feel -->
+    <linearGradient id="pageGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d2333"/>
+      <stop offset="1" stop-color="#3b3a7a"/>
+    </linearGradient>
+    <!-- Hash glyph: warm cream — high contrast on the navy, friendly -->
+    <linearGradient id="hashGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff5d8"/>
+      <stop offset="1" stop-color="#f7c97b"/>
+    </linearGradient>
+    <!-- Inner highlight at top-left for subtle 3D -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Drop shadow under the hash for emboss -->
+    <filter id="emboss" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="6" result="shadow"/>
+      <feComponentTransfer in="shadow" result="darken">
+        <feFuncA type="linear" slope="0.55"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="darken"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded-square page -->
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="url(#pageGrad)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="url(#sheen)"/>
+
+  <!-- Markdown # glyph (slightly italic for editorial flair).
+       Two vertical bars + two horizontal bars, all rounded ends.
+       The italic slant is achieved by skewing the verticals along x. -->
+  <g filter="url(#emboss)" fill="url(#hashGrad)">
+    <!-- vertical bars (skewed -8°) -->
+    <g transform="translate(512 512) skewX(-8) translate(-512 -512)">
+      <rect x="350" y="232" width="92" height="560" rx="46"/>
+      <rect x="582" y="232" width="92" height="560" rx="46"/>
+    </g>
+    <!-- horizontal bars (level) -->
+    <rect x="232" y="402" width="560" height="92" rx="46"/>
+    <rect x="232" y="566" width="560" height="92" rx="46"/>
+  </g>
+</svg>

@@ -82,6 +82,35 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx vsce publish --packagePath *.vsix
 
+  chrome:
+    name: Chrome extension (.zip)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/chrome-extension/package-lock.json
+      - name: Install
+        run: npm ci
+        working-directory: apps/chrome-extension
+      - name: Build + zip
+        run: npm run build && npm run zip
+        working-directory: apps/chrome-extension
+      - name: Attach zip to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          ZIP=$(ls apps/chrome-extension/dist-zip/*.zip | head -n 1)
+          # Same idempotency dance as the vsix job — whichever job gets here
+          # first creates the draft release; release-notes promotes it later.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "$TAG" --notes "Build in progress..."
+          fi
+          gh release upload "$TAG" "$ZIP" --clobber
+
   release-notes:
     name: Generate release notes from CHANGELOG
     runs-on: ubuntu-latest

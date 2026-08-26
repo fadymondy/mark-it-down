@@ -1,0 +1,41 @@
+# Managed by togo. Source of truth for generated registries.
+resources:
+    - name: Note
+      table: notes
+      fields:
+        - name: title
+          go: string
+          gql: String!
+          pg: text
+          "null": false
+        - name: body
+          go: string
+          gql: String!
+          pg: text
+          "null": false
+        - name: category
+          go: string
+          gql: String
+          pg: text
+          "null": true
+        - name: tags
+          go: string
+          gql: String
+          pg: text
+          "null": true
+        - name: user_id
+          go: string
+          gql: String!
+          pg: text
+          "null": false
+        - name: share_slug
+          go: string
+          gql: String
+          pg: text
+          "null": true
+        - name: is_public
+          go: bool
+          gql: Boolean!
+          pg: boolean
+          "null": false
+      controller: true

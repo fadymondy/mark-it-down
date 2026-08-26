@@ -10,6 +10,7 @@ const copies = [
   ['packages/ui-tokens/src/tokens.css', join(out, 'tokens.css')],
   ['packages/ui-tokens/src/primitives.css', join(out, 'primitives.css')],
   ['packages/ui-tokens/src/icons.css', join(out, 'icons.css')],
+  ['packages/ui-tokens/src/animations.css', join(out, 'animations.css')],
   ['node_modules/katex/dist/katex.min.css', join(out, 'katex.css')],
 ];
 for (const [src, dest] of copies) copyFileSync(src, dest);

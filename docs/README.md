@@ -26,6 +26,16 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 |---|---|---|
 | F14 — Auto-update for both surfaces | shipped | [auto-update.md](auto-update.md) + [releasing.md](releasing.md) |
 
+## v3.0 — the platform (#328)
+
+| Feature | Status | Doc |
+|---|---|---|
+| Web app on ToGo — landing, auth + TOTP 2FA, cloud notes warehouse, public sharing, admin | shipped (first-cut) | [platform.md](platform.md) |
+| MCP connector over Streamable HTTP (`/mcp`, PAT-authenticated) | shipped | [platform.md](platform.md) |
+| Chrome extension (MV3): quick capture, markdown viewer, warehouse client | shipped (first-cut) | [chrome-extension.md](chrome-extension.md) |
+| Unified update feed `/api/updates/{platform}` for every surface | shipped | [platform.md](platform.md) |
+| Flutter mobile app (Android/iOS): warehouse client, shared tokens + 25 themes | shipped (first-cut) | [platform.md](platform.md) |
+
 ## v2.0 features
 
 | Feature | Status | Doc |
