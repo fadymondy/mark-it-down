@@ -16,7 +16,15 @@ All five share the same design system — `packages/ui-tokens` + `packages/core`
 
 ## Status
 
-**v0.1.0 — Phase 0.1**: extension scaffold + working read-only viewer (with optional inline editor textarea). The 9 features below are the v1 roadmap.
+**v0.3.0 — the platform release.** Mark It Down is now five apps on one design
+system and one cloud warehouse:
+
+- **Web** — [markitdown.fadymondy.com](https://markitdown.fadymondy.com): landing + downloads, auth with TOTP 2FA, cloud notes warehouse with public share links, an MCP connector over HTTP, and an admin panel.
+- **Desktop / VSCode** — the full editor suite (viewer, CodeMirror, mermaid, DataTables, exports, slideshows, publishing, importers) with auto-update from GitHub Releases.
+- **Chrome** — quick capture to the warehouse + a 25-theme markdown viewer.
+- **Mobile (Flutter)** — Android APK on the release page (iOS scaffolded): warehouse notes, editor/viewer, sharing, the same themes.
+
+Install links for every platform live on the [web landing page](https://markitdown.fadymondy.com) and update automatically from the latest GitHub Release. See [CHANGELOG.md](CHANGELOG.md) for each version and [docs/DESIGN.md](docs/DESIGN.md) for the design system all surfaces follow.
 
 ## Roadmap (v1.0)
 
