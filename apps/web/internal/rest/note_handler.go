@@ -146,9 +146,9 @@ func RegisterNoteRoutes(api huma.API, a *app.App) {
 	}, func(ctx context.Context, in *struct {
 		Body struct {
 			Title    string  `json:"title" validate:"required"`
-			Body     string  `json:"body"`
-			Category *string `json:"category"`
-			Tags     *string `json:"tags"`
+			Body     string  `json:"body,omitempty"`
+			Category *string `json:"category,omitempty"`
+			Tags     *string `json:"tags,omitempty"`
 		}
 	}) (*struct {
 		Body resources.NoteResponse
@@ -184,9 +184,9 @@ func RegisterNoteRoutes(api huma.API, a *app.App) {
 		ID   string `path:"id"`
 		Body struct {
 			Title    string  `json:"title"`
-			Body     string  `json:"body"`
-			Category *string `json:"category"`
-			Tags     *string `json:"tags"`
+			Body     string  `json:"body,omitempty"`
+			Category *string `json:"category,omitempty"`
+			Tags     *string `json:"tags,omitempty"`
 		}
 	}) (*struct {
 		Body resources.NoteResponse

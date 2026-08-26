@@ -1,0 +1,85 @@
+/* Mark It Down — motion layer.
+ * One motion vocabulary for every surface (web, desktop, VSCode webview):
+ * durations/easings come from tokens.css (--mid-motion-*, --mid-ease-*); this
+ * file adds the named keyframes, entrance utilities, skeletons, and the focus
+ * ring. Everything respects prefers-reduced-motion.
+ *
+ * Vocabulary (use these, don't invent per-screen motion):
+ *   mid-anim-fade-up     content entering in place (cards, list rows, pages)
+ *   mid-anim-fade        low-emphasis appear (overlays, hints)
+ *   mid-anim-scale-in    dialogs / popovers (from 96% + fade)
+ *   mid-anim-slide-up    toasts / sheets from the edge
+ *   .mid-skeleton        loading placeholder shimmer
+ *   .mid-pressable       press feedback (scale 0.98 on :active)
+ *   .mid-hover-raise     cards that lift 1px + shadow on hover
+ *   .mid-stagger > *     children cascade in (60ms steps, first 8)
+ */
+
+@keyframes mid-anim-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mid-anim-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes mid-anim-scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes mid-anim-slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes mid-anim-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes mid-anim-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+.mid-anim-fade { animation: mid-anim-fade var(--mid-motion-base) var(--mid-ease-out) both; }
+.mid-anim-fade-up { animation: mid-anim-fade-up var(--mid-motion-base) var(--mid-ease-out) both; }
+.mid-anim-scale-in { animation: mid-anim-scale-in var(--mid-motion-base) var(--mid-ease-out) both; }
+.mid-anim-slide-up { animation: mid-anim-slide-up var(--mid-motion-base) var(--mid-ease-out) both; }
+.mid-anim-pulse { animation: mid-anim-pulse 2s var(--mid-ease-in-out) infinite; }
+
+/* Staggered cascade for lists/grids of entering children. */
+.mid-stagger > * { animation: mid-anim-fade-up var(--mid-motion-base) var(--mid-ease-out) both; }
+.mid-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.mid-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.mid-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.mid-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.mid-stagger > *:nth-child(5) { animation-delay: 240ms; }
+.mid-stagger > *:nth-child(6) { animation-delay: 300ms; }
+.mid-stagger > *:nth-child(7) { animation-delay: 360ms; }
+.mid-stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+/* Skeleton shimmer — sized by the consumer (width/height/border-radius). */
+.mid-skeleton {
+  position: relative;
+  border-radius: var(--mid-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--mid-surface) 25%,
+    var(--mid-surface-hover) 37%,
+    var(--mid-surface) 63%
+  );
+  background-size: 200% 100%;
+  animation: mid-anim-shimmer 1.4s linear infinite;
+  color: transparent !important;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Interaction feedback — apply next to existing component classes. */
+.mid-pressable { transition: transform var(--mid-motion-fast) var(--mid-ease-out); }
+.mid-pressable:active:not(:disabled) { transform: scale(0.98); }
+.mid-hover-raise {
+  transition:
+    transform var(--mid-motion-base) var(--mid-ease-out),
+    box-shadow var(--mid-motion-base) var(--mid-ease-out),
+    border-color var(--mid-motion-base) var(--mid-ease-out);
+}
+.mid-hover-raise:hover { transform: translateY(-1px); box-shadow: var(--mid-shadow-md); }
+
+/* One consistent keyboard focus ring across every surface. */
+:where(.mid-btn, .mid-settings-control, .mid-table-filter, .mid-list-row, .mid-note-row,
+       .mid-activity-btn, .mid-mode-seg, .mid-mode-pill, .mid-theme-swatch, .mid-notes-type,
+       .mid-welcome-action, .mid-tab):focus-visible {
+  outline: 2px solid var(--mid-link);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* Accessibility: collapse all motion to fades for users who ask for less. */
+@media (prefers-reduced-motion: reduce) {
+  .mid-anim-fade, .mid-anim-fade-up, .mid-anim-scale-in, .mid-anim-slide-up,
+  .mid-stagger > * { animation-duration: 1ms; animation-delay: 0ms; }
+  .mid-skeleton { animation: none; }
+  .mid-pressable:active:not(:disabled), .mid-hover-raise:hover { transform: none; }
+}

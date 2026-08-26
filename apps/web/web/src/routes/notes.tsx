@@ -19,6 +19,7 @@ export function Notes() {
   const { toast } = useToast();
   const search = useSearch({ strict: false }) as { new?: number };
   const [notes, setNotes] = useState<Note[]>([]);
+  const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [selected, setSelected] = useState<Note | null>(null);
@@ -33,7 +34,7 @@ export function Notes() {
 
   async function refresh(query = q, cat = category) {
     const rows = await notesApi.list({ q: query || undefined, category: cat || undefined }).catch(() => []);
-    setNotes(rows);
+    setNotes(rows); setLoading(false);
     return rows;
   }
   useEffect(() => { refresh(); }, []);
@@ -107,7 +108,12 @@ export function Notes() {
           </div>
         )}
         <div className="mid-notes-list">
-          {notes.length === 0 && (
+          {loading && notes.length === 0 && (
+            <div style={{ padding: "var(--mid-space-2)", display: "grid", gap: "var(--mid-space-2)" }}>
+              {[0, 1, 2, 3].map((i) => <div key={i} className="mid-skeleton" style={{ height: 44 }} />)}
+            </div>
+          )}
+          {!loading && notes.length === 0 && (
             <div className="mid-empty"><div><Icon name="bookmark" />{t("No notes yet — create your first one.", "لا ملاحظات بعد — أنشئ أول واحدة.")}</div></div>
           )}
           {notes.map((n) => (

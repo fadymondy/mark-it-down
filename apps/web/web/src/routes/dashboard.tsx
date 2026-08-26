@@ -43,11 +43,11 @@ export function Dashboard() {
         <Link to="/notes" search={{ new: 1 } as any}><Button variant="primary" icon="plus">{t("New note", "ملاحظة جديدة")}</Button></Link>
       </div>
       <div className="mid-settings-form">
-        <div className="mid-stat-grid">
-          <div className="mid-stat"><div className="mid-stat-label">{t("Notes", "الملاحظات")}</div><div className="mid-stat-value">{notes.length}</div><div className="mid-stat-hint">{t("in your warehouse", "في مستودعك")}</div></div>
-          <div className="mid-stat"><div className="mid-stat-label">{t("Updated this week", "حُدّثت هذا الأسبوع")}</div><div className="mid-stat-value">{week}</div><div className="mid-stat-hint">{t("last 7 days", "آخر 7 أيام")}</div></div>
-          <div className="mid-stat"><div className="mid-stat-label">{t("Categories", "التصنيفات")}</div><div className="mid-stat-value">{categories}</div></div>
-          <div className="mid-stat"><div className="mid-stat-label">{t("Shared publicly", "مشاركة عامة")}</div><div className="mid-stat-value">{shared}</div></div>
+        <div className="mid-stat-grid mid-stagger">
+          <div className="mid-stat mid-hover-raise"><div className="mid-stat-label">{t("Notes", "الملاحظات")}</div><div className="mid-stat-value">{notes.length}</div><div className="mid-stat-hint">{t("in your warehouse", "في مستودعك")}</div></div>
+          <div className="mid-stat mid-hover-raise"><div className="mid-stat-label">{t("Updated this week", "حُدّثت هذا الأسبوع")}</div><div className="mid-stat-value">{week}</div><div className="mid-stat-hint">{t("last 7 days", "آخر 7 أيام")}</div></div>
+          <div className="mid-stat mid-hover-raise"><div className="mid-stat-label">{t("Categories", "التصنيفات")}</div><div className="mid-stat-value">{categories}</div></div>
+          <div className="mid-stat mid-hover-raise"><div className="mid-stat-label">{t("Shared publicly", "مشاركة عامة")}</div><div className="mid-stat-value">{shared}</div></div>
         </div>
 
         <Group title={t("Recent notes", "أحدث الملاحظات")} icon="bookmark" flush>
@@ -67,9 +67,9 @@ export function Dashboard() {
 
         {counts.length > 0 && (
           <Group title={t("Resources", "الموارد")} icon="list-ul" description={t("Record counts per registered resource (admin).", "عدد السجلات لكل مورد (للمدير).")}>
-            <div className="mid-stat-grid">
+            <div className="mid-stat-grid mid-stagger">
               {counts.map(({ meta, count }) => (
-                <Link key={meta.table} to="/admin/$resource" params={{ resource: meta.table }} className="mid-stat" style={{ textDecoration: "none", color: "inherit" }}>
+                <Link key={meta.table} to="/admin/$resource" params={{ resource: meta.table }} className="mid-stat mid-hover-raise" style={{ textDecoration: "none", color: "inherit" }}>
                   <div className="mid-stat-label">{labelOf(meta.name || meta.table)}</div><div className="mid-stat-value">{count}</div>
                 </Link>
               ))}

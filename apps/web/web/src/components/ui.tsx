@@ -16,7 +16,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant; icon?: IconName; iconOnly?: boolean; busy?: boolean;
 }
 export function Button({ variant = "default", icon, iconOnly, busy, className = "", children, disabled, ...rest }: ButtonProps) {
-  const cls = ["mid-btn", variant !== "default" ? `mid-btn--${variant}` : "", iconOnly ? "mid-btn--icon" : "", className].filter(Boolean).join(" ");
+  const cls = ["mid-btn", "mid-pressable", variant !== "default" ? `mid-btn--${variant}` : "", iconOnly ? "mid-btn--icon" : "", className].filter(Boolean).join(" ");
   return (
     <button className={cls} disabled={disabled || busy} {...rest}>
       {busy ? <span className="mid-spinner" /> : icon ? <Icon name={icon} /> : null}
@@ -115,8 +115,10 @@ export function Modal({ open, onClose, title, children, footer }: { open: boolea
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="mid-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <Frame title={title} headerExtra={<Button variant="ghost" iconOnly icon="x" onClick={onClose} aria-label="Close" />} footer={footer}>{children}</Frame>
+    <div className="mid-modal-backdrop mid-anim-fade" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="mid-anim-scale-in" style={{ display: "contents" }}>
+        <Frame title={title} headerExtra={<Button variant="ghost" iconOnly icon="x" onClick={onClose} aria-label="Close" />} footer={footer}>{children}</Frame>
+      </div>
     </div>
   );
 }
@@ -136,7 +138,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastCtx.Provider value={{ toast }}>
       {children}
       <div className="mid-toasts" aria-live="polite">
-        {items.map((t) => <div key={t.id} className={`mid-toast${t.kind === "error" ? " mid-toast--error" : ""}`}><Icon name={t.kind === "error" ? "x" : "check"} size="sm" />{t.msg}</div>)}
+        {items.map((t) => <div key={t.id} className={`mid-toast mid-anim-slide-up${t.kind === "error" ? " mid-toast--error" : ""}`}><Icon name={t.kind === "error" ? "x" : "check"} size="sm" />{t.msg}</div>)}
       </div>
     </ToastCtx.Provider>
   );

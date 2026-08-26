@@ -7,6 +7,7 @@
 @import "@mid/tokens/tokens.css";
 @import "@mid/tokens/primitives.css";
 @import "@mid/tokens/icons.css";
+@import "@mid/tokens/animations.css";
 
 /* ── App shell ────────────────────────────────────────────────────────── */
 html, body, #root { height: 100%; }

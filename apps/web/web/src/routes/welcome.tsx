@@ -55,18 +55,18 @@ export function Welcome() {
         </div>
       </nav>
 
-      <section className="mid-welcome">
+      <section className="mid-welcome mid-anim-fade-up">
         <div className="mid-welcome-glyph"><MarkItDownMark size={84} /></div>
         <h1 className="mid-welcome-title">{APP_NAME}</h1>
         <p className="mid-welcome-tagline">
           {t("A beautiful markdown editor everywhere you write — desktop, VSCode, Chrome, and the cloud. One warehouse for your notes, one MCP connector for your AI agents.",
              "محرر ماركداون جميل أينما تكتب — سطح المكتب وVSCode وكروم والسحابة. مستودع واحد لملاحظاتك وموصل MCP واحد لوكلاء الذكاء الاصطناعي.")}
         </p>
-        <div className="mid-welcome-actions">
+        <div className="mid-welcome-actions mid-stagger">
           {TARGETS.map((x) => {
             const asset = feed?.downloads?.[x.key]?.[0];
             return (
-              <a key={x.key} className="mid-welcome-action" href={asset?.url ?? x.fallback} target="_blank" rel="noopener noreferrer">
+              <a key={x.key} className="mid-welcome-action mid-pressable" href={asset?.url ?? x.fallback} target="_blank" rel="noopener noreferrer">
                 <Icon name={x.icon} />
                 <span className="mid-welcome-action-label">{t(x.en, x.ar)}</span>
                 <span className="mid-welcome-action-kbd">{asset ? feed?.tag : t("get", "احصل")}</span>
@@ -81,9 +81,9 @@ export function Welcome() {
         </p>
       </section>
 
-      <section className="mid-feature-grid">
+      <section className="mid-feature-grid mid-stagger">
         {FEATURES.map((f) => (
-          <div key={f.en} className="mid-feature">
+          <div key={f.en} className="mid-feature mid-hover-raise">
             <div className="mid-feature-head"><Icon name={f.icon} />{t(f.en, f.ar)}</div>
             <p>{t(f.descEn, f.descAr)}</p>
           </div>
