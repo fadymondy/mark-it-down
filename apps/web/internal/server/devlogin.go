@@ -97,6 +97,23 @@ func clientIP(r *http.Request) (net.IP, bool) {
 // clients. Only mounted outside production and only when the auth-dev login
 // method is present (so it tracks auth-dev's own enable/disable).
 func mountDevLoginToken(k *togo.Kernel, authsvc *auth.Service) {
+	// Temporary diagnosis endpoint: echoes what the CIDR guard sees for this
+	// caller (IP + the proxy headers). Safe: reveals only the caller their own
+	// address. Remove once the edge header path is settled.
+	k.Router.Get("/api/auth/dev/whoami", func(w http.ResponseWriter, r *http.Request) {
+		ip, viaProxy := clientIP(r)
+		ipStr := ""
+		if ip != nil {
+			ipStr = ip.String()
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ip": ipStr, "viaProxy": viaProxy,
+			"cf_connecting_ip": r.Header.Get("CF-Connecting-IP"),
+			"x_forwarded_for":  r.Header.Get("X-Forwarded-For"),
+			"remote_addr":      r.RemoteAddr,
+		})
+	})
+
 	switch strings.ToLower(os.Getenv("APP_ENV")) {
 	case "production", "prod":
 		return
