@@ -57,6 +57,31 @@ class AuthApi {
       .request('POST', '/api/auth/reset-password', body: {'email': email, 'code': code, 'new_password': newPassword})
       .then((_) {});
 
+  /// Whether the server advertises the auth-dev "Login as developer" method
+  /// (only outside production, and only for callers on an allowed network).
+  Future<bool> devLoginAvailable() async {
+    try {
+      final data = await _c.request('GET', '/api/auth/methods');
+      final methods = (data is Map ? data['methods'] : null) as List<dynamic>? ?? [];
+      return methods.any((m) => m is Map && m['type'] == 'dev');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// One-tap developer login — hits the app's bearer variant
+  /// (POST /api/auth/dev/token) and stores the returned admin token.
+  Future<void> devLogin() async {
+    final data = await _c.request('POST', '/api/auth/dev/token',
+        headers: {'X-Dev-Login-Secret': kDevLoginSecret}) as Map<String, dynamic>;
+    final user = (data['user'] as Map<String, dynamic>?) ?? {};
+    await _c.setSession(
+      token: data['token'] as String,
+      email: (user['email'] ?? 'developer') as String,
+      id: (user['id'] ?? '') as String,
+    );
+  }
+
   /// Confirm the stored bearer still works; returns the fresh identity or null.
   Future<Map<String, dynamic>?> me() async {
     try {

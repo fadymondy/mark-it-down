@@ -9,6 +9,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const kDefaultServer = 'https://markitdown.fadymondy.com';
 
+// Shared secret for the one-tap developer login (POST /api/auth/dev/token) —
+// matches DEV_LOGIN_SECRET on the staging server. Test convenience only; the
+// endpoint is not mounted when APP_ENV=production. Override at build time with
+// --dart-define=MID_DEV_LOGIN_SECRET=… .
+const kDevLoginSecret = String.fromEnvironment(
+  'MID_DEV_LOGIN_SECRET',
+  defaultValue: 'mid_dev_5d469556222628024a6db153c97c83e0',
+);
+
 class ApiException implements Exception {
   final int status;
   final String message;
@@ -63,12 +72,13 @@ class ApiClient {
     await prefs.remove('mid-user-id');
   }
 
-  Map<String, String> _headers({bool json = true}) => {
+  Map<String, String> _headers({bool json = true, Map<String, String>? extra}) => {
         if (json) 'Content-Type': 'application/json',
         if (_token != null) 'Authorization': 'Bearer $_token',
+        ...?extra,
       };
 
-  Future<dynamic> request(String method, String path, {Object? body}) async {
+  Future<dynamic> request(String method, String path, {Object? body, Map<String, String>? headers}) async {
     final uri = Uri.parse('$_server$path');
     late http.Response res;
     final encoded = body == null ? null : jsonEncode(body);
@@ -76,7 +86,7 @@ class ApiClient {
       case 'GET':
         res = await http.get(uri, headers: _headers(json: false));
       case 'POST':
-        res = await http.post(uri, headers: _headers(), body: encoded);
+        res = await http.post(uri, headers: _headers(extra: headers), body: encoded);
       case 'PUT':
         res = await http.put(uri, headers: _headers(), body: encoded);
       case 'DELETE':

@@ -46,6 +46,7 @@ func Boot() *app.App {
 		mountMFALogin(k, authsvc)
 		mountOTPMail(k)
 		mountPasswordReset(k)
+		mountDevLoginToken(k, authsvc)
 	}
 	updates.Mount(k)
 

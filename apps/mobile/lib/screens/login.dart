@@ -27,6 +27,15 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _useRecovery = false;
   bool _busy = false;
   String? _error;
+  bool _devAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _auth.devLoginAvailable().then((v) {
+      if (mounted) setState(() => _devAvailable = v);
+    });
+  }
 
   Future<void> _run(Future<void> Function() fn) async {
     setState(() { _busy = true; _error = null; });
@@ -167,6 +176,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: MidTokens.s3),
                       ..._links(p),
+                      if (_devAvailable && _mode == _Mode.login) ...[
+                        Row(children: [
+                          Expanded(child: Divider(color: p.border)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: MidTokens.s3),
+                            child: Text('or', style: TextStyle(color: p.fgMuted, fontSize: MidTokens.fsXs)),
+                          ),
+                          Expanded(child: Divider(color: p.border)),
+                        ]),
+                        const SizedBox(height: MidTokens.s2),
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : () => _run(() async { await _auth.devLogin(); _done(); }),
+                          icon: const Icon(Icons.terminal, size: 16),
+                          label: const Text('Login as developer'),
+                        ),
+                      ],
                     ],
                   ),
                 ),

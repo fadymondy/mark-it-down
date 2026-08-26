@@ -9,21 +9,47 @@
 // deployment), then X-Forwarded-For; a request with neither header is allowed
 // only from loopback (local `go run` / vite dev). Everything else gets a 404,
 // exactly as if the plugin were not installed.
+//
+// mountDevLoginToken adds a sibling POST /api/auth/dev/token behind the SAME
+// guard: it returns a bearer JWT + user in the JSON body (auth-dev only sets a
+// session cookie), so the token-based clients — the mobile app, the Chrome
+// extension, scripts — get a one-tap developer login too.
 package server
 
 import (
+	"crypto/subtle"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+
+	auth "github.com/togo-framework/auth"
+	"github.com/togo-framework/togo"
 )
 
-const devLoginPath = "/api/auth/dev/login"
+func constantTimeEq(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+const (
+	devLoginPath      = "/api/auth/dev/login"
+	devLoginTokenPath = "/api/auth/dev/token"
+)
 
 func devLoginGuard(next http.Handler) http.Handler {
 	allowed := parseCIDRs(os.Getenv("DEV_LOGIN_ALLOW_CIDRS"))
+	secret := os.Getenv("DEV_LOGIN_SECRET")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.TrimSuffix(r.URL.Path, "/") != devLoginPath {
+		p := strings.TrimSuffix(r.URL.Path, "/")
+		if p != devLoginPath && p != devLoginTokenPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// The token route (used by the mobile app / token clients) may also be
+		// unlocked with a shared secret header, since it can be hit from any
+		// network where the CIDR check can't apply. The cookie route stays
+		// CIDR-only. The secret must be non-empty to count.
+		if p == devLoginTokenPath && secret != "" && constantTimeEq(r.Header.Get("X-Dev-Login-Secret"), secret) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -64,6 +90,36 @@ func clientIP(r *http.Request) (net.IP, bool) {
 		host = r.RemoteAddr
 	}
 	return net.ParseIP(host), false
+}
+
+// mountDevLoginToken registers POST /api/auth/dev/token — same admin identity
+// as auth-dev's dev login, but returned as a bearer token for token-only
+// clients. Only mounted outside production and only when the auth-dev login
+// method is present (so it tracks auth-dev's own enable/disable).
+func mountDevLoginToken(k *togo.Kernel, authsvc *auth.Service) {
+	switch strings.ToLower(os.Getenv("APP_ENV")) {
+	case "production", "prod":
+		return
+	}
+	email := os.Getenv("DEV_LOGIN_EMAIL")
+	if email == "" {
+		return // no dev identity configured → nothing to mount
+	}
+	k.Router.Post(devLoginTokenPath, func(w http.ResponseWriter, r *http.Request) {
+		id, err := authsvc.FindOrCreateByEmail(r.Context(), email)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "dev login failed"})
+			return
+		}
+		id.Roles = []string{"admin"}
+		id.Permissions = []string{"*"}
+		tok, err := authsvc.IssueToken(*id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"token": tok, "user": id})
+	})
 }
 
 func parseCIDRs(s string) []*net.IPNet {
