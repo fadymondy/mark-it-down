@@ -4,7 +4,9 @@ All notable changes to this extension will be documented in this file.
 
 ## [Unreleased]
 
-### Added — The platform: web app, Chrome extension, unified updates (#328)
+## [0.3.0] — 2026-08-26
+
+### Added — The platform: web app, mobile app, Chrome extension, unified updates (#328, #329)
 
 Mark It Down grows from two surfaces to four, backed by one cloud service:
 
@@ -29,6 +31,18 @@ Mark It Down grows from two surfaces to four, backed by one cloud service:
 - **CI/CD** — the CI matrix now builds the Go API + SPA and the Chrome
   extension; the release workflow attaches the Chrome zip next to the
   installers and the `.vsix`.
+- **Mobile app (`apps/mobile`)** — Flutter (Android/iOS): warehouse client with
+  2FA login + one-tap developer login, notes list/editor/viewer, public sharing,
+  all 25 themes and the shared design tokens; Android release APK, iOS scaffolded.
+- **One design system** — the web SPA dropped the UI kit + Tailwind for the
+  desktop's own tokens (`packages/ui-tokens` via `@mid/*` aliases) and a new
+  shared motion layer (`animations.css`: entrances, stagger, skeletons, press &
+  hover feedback, one focus ring, reduced-motion safe), documented in
+  [docs/DESIGN.md](docs/DESIGN.md). Landing page lists all seven install
+  targets including Android (APK) and iOS (soon).
+- **Web notes workspace** — master/detail layout mirroring desktop/mobile
+  (responsive down to phones), admin on its own activity-bar tab, skeleton
+  loading, and the notes API no longer requires category/tags/body keys.
 - Docs: [docs/platform.md](docs/platform.md), [docs/chrome-extension.md](docs/chrome-extension.md).
 
 ## [0.2.7] — 2026-05-03
