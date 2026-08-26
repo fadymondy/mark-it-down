@@ -27,15 +27,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _useRecovery = false;
   bool _busy = false;
   String? _error;
-  bool _devAvailable = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _auth.devLoginAvailable().then((v) {
-      if (mounted) setState(() => _devAvailable = v);
-    });
-  }
 
   Future<void> _run(Future<void> Function() fn) async {
     setState(() { _busy = true; _error = null; });
@@ -44,7 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
-      setState(() => _error = 'Network error — check the server URL in Settings.');
+      setState(() => _error = 'Network error — check your connection and the server URL in Settings.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -176,7 +167,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: MidTokens.s3),
                       ..._links(p),
-                      if (_devAvailable && _mode == _Mode.login) ...[
+                      // One-tap developer login (staging convenience). Always
+                      // shown on the login screen; if the server has it
+                      // disabled the tap surfaces a clear error instead.
+                      if (_mode == _Mode.login) ...[
                         Row(children: [
                           Expanded(child: Divider(color: p.border)),
                           Padding(
