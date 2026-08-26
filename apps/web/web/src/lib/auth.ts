@@ -28,9 +28,15 @@ export const auth = {
   register: (email: string, password: string) => post("register", { email, password }),
   logout: () => post("logout"),
   me: async (): Promise<Me | null> => {
-    const res = await fetch(`${API}/api/auth/me`, { credentials: "include" });
-    if (!res.ok) return null;
-    return res.json();
+    // Never throw from the route guard: a network blip must read as "signed out",
+    // not white-screen the whole app via the router error boundary.
+    try {
+      const res = await fetch(`${API}/api/auth/me`, { credentials: "include" });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
   },
   methods: async (): Promise<{ name: string; label: string; type: string; url: string }[]> => {
     const res = await fetch(`${API}/api/auth/methods`, { credentials: "include" }).catch(() => null);

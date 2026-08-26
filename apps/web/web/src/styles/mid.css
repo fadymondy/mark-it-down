@@ -29,7 +29,25 @@ a:hover { color: var(--mid-link-hover); text-decoration: underline; }
   overflow: hidden;
 }
 .mid-shell.has-sidebar { grid-template-columns: 44px var(--mid-sidebar-w) 1fr; }
-.mid-main { min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.mid-main { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ── Notes workspace — desktop master/detail without a nested shell ─────── */
+.mid-notes-workspace { display: flex; flex: 1; min-height: 0; }
+.mid-notes-pane {
+  width: 300px; flex-shrink: 0; display: flex; flex-direction: column;
+  min-height: 0; border-right: 1px solid var(--mid-border); background: var(--mid-surface);
+}
+[dir="rtl"] .mid-notes-pane { border-right: 0; border-left: 1px solid var(--mid-border); }
+.mid-notes-detail { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mid-notes-back { display: none; }
+.mid-flip-x { transform: scaleX(-1); }
+[dir="rtl"] .mid-flip-x { transform: none; }
+@media (max-width: 720px) {
+  .mid-notes-pane { width: 100%; }
+  .mid-notes-workspace.show-detail .mid-notes-pane { display: none; }
+  .mid-notes-workspace:not(.show-detail) .mid-notes-detail { display: none; }
+  .mid-notes-back { display: inline-flex; }
+}
 
 /* Titlebar */
 .mid-titlebar {
@@ -81,6 +99,7 @@ a:hover { color: var(--mid-link-hover); text-decoration: underline; }
   padding: var(--mid-space-2) 0; background: var(--mid-bg); border-right: 1px solid var(--mid-border);
 }
 .mid-activity-spacer { flex: 1; }
+.mid-activity-divider { width: 22px; height: 1px; background: var(--mid-border); margin: var(--mid-space-1) 0; flex-shrink: 0; }
 .mid-activity-btn {
   width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: 0; color: var(--mid-fg-muted); border-radius: var(--mid-radius-md);
@@ -222,7 +241,7 @@ code.mid-inline { font-family: var(--mid-font-mono); font-size: 0.92em; backgrou
 .mid-chip--accent { background: color-mix(in srgb, var(--mid-link) 15%, transparent); color: var(--mid-link); }
 
 /* ── Settings-style pages (dashboard, profile, admin) ─────────────────── */
-.mid-page { width: 100%; max-width: 880px; margin: 0 auto; padding: var(--mid-space-6) var(--mid-space-8); }
+.mid-page { flex: 1; width: 100%; max-width: 880px; margin: 0 auto; padding: var(--mid-space-6) var(--mid-space-8); overflow-y: auto; }
 .mid-page--wide { max-width: 1180px; }
 .mid-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--mid-space-4); margin-bottom: var(--mid-space-5); }
 .mid-page-title { margin: 0; font-size: var(--mid-font-size-xl); font-weight: var(--mid-weight-semibold); letter-spacing: -0.01em; }

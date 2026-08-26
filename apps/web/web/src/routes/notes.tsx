@@ -9,9 +9,11 @@ import { useLang } from "../lib/i18n";
 type Mode = "view" | "split" | "edit";
 const render = (md: string) => DOMPurify.sanitize(marked.parse(md, { async: false }) as string);
 
-// Warehouse notes — the desktop layout: notes list in a sidebar pane (type chips
-// + rows), tabstrip over the editor area, and the View / Split / Edit segmented
-// toggle, all with the renderer's class names.
+// Warehouse notes — mirrors the desktop app and the mobile app: a notes-list
+// pane on the left and an editor/preview on the right, with the View / Split /
+// Edit segmented toggle. On narrow screens it becomes a master → detail flow
+// (list, tap a note to open the editor, Back returns to the list), so the list
+// is never hidden the way a plain sidebar would be.
 export function Notes() {
   const { t } = useLang();
   const { toast } = useToast();
@@ -24,6 +26,8 @@ export function Notes() {
   const [draft, setDraft] = useState({ title: "", body: "", category: "", tags: "" });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  // On mobile, whether the detail (editor) pane is showing over the list.
+  const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Note | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -33,16 +37,16 @@ export function Notes() {
     return rows;
   }
   useEffect(() => { refresh(); }, []);
-  useEffect(() => { if (search?.new) startNew(); }, [search?.new]);
+  useEffect(() => { if (search?.new) startNew(); /* eslint-disable-next-line */ }, [search?.new]);
 
   const categories = useMemo(() => Array.from(new Set(notes.map((n) => n.category).filter(Boolean))) as string[], [notes]);
 
   function open(n: Note) {
-    setSelected(n); setMode("view"); setDirty(false);
+    setSelected(n); setMode("view"); setDirty(false); setDetailOpen(true);
     setDraft({ title: n.title, body: n.body, category: n.category ?? "", tags: n.tags ?? "" });
   }
   function startNew() {
-    setSelected(null); setMode("edit"); setDirty(true);
+    setSelected(null); setMode("edit"); setDirty(true); setDetailOpen(true);
     setDraft({ title: "", body: "", category: category || "", tags: "" });
   }
   function edit<K extends keyof typeof draft>(k: K, v: string) { setDraft((d) => ({ ...d, [k]: v })); setDirty(true); }
@@ -55,7 +59,7 @@ export function Notes() {
       const saved = selected ? await notesApi.update(selected.id, payload) : await notesApi.create(payload);
       const rows = await refresh();
       const fresh = rows.find((n) => n.id === saved.id) ?? saved;
-      setSelected(fresh); setDirty(false);
+      setSelected(fresh); setDirty(false); setMode("view");
       toast(t("Saved", "تم الحفظ"));
     } catch (e: any) { toast(e.message, "error"); } finally { setBusy(false); }
   }
@@ -63,7 +67,7 @@ export function Notes() {
     setBusy(true);
     try {
       await notesApi.remove(n.id); setConfirmDelete(null);
-      if (selected?.id === n.id) { setSelected(null); setMode("view"); }
+      if (selected?.id === n.id) { setSelected(null); setMode("view"); setDetailOpen(false); }
       await refresh(); toast(t("Note deleted", "تم الحذف"));
     } catch (e: any) { toast(e.message, "error"); } finally { setBusy(false); }
   }
@@ -78,7 +82,9 @@ export function Notes() {
   }
 
   useEffect(() => {
-    const fn = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && (selected || mode === "edit")) { e.preventDefault(); save(); } };
+    const fn = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && (selected || mode !== "view")) { e.preventDefault(); save(); }
+    };
     window.addEventListener("keydown", fn); return () => window.removeEventListener("keydown", fn);
   });
 
@@ -86,13 +92,13 @@ export function Notes() {
   const html = useMemo(() => render(mode === "view" ? (selected?.body ?? "") : draft.body), [mode, selected?.body, draft.body]);
 
   return (
-    <div className="mid-shell has-sidebar" style={{ gridTemplateColumns: "var(--mid-sidebar-w) 1fr", flex: 1, minHeight: 0 }}>
-      {/* Notes pane — same as the desktop sidebar in "Notes" mode */}
-      <aside className="mid-sidebar">
+    <div className={`mid-notes-workspace${detailOpen ? " show-detail" : ""}`}>
+      {/* List pane */}
+      <aside className="mid-notes-pane">
         <div className="mid-sidebar-header">
           <input className="mid-table-filter" type="search" placeholder={t("Filter notes…", "تصفية الملاحظات…")} value={q}
             onChange={(e) => { setQ(e.target.value); clearTimeout(timer.current); timer.current = setTimeout(() => refresh(e.target.value, category), 250); }} />
-          <Button variant="ghost" iconOnly icon="plus" title={t("New note (Cmd/Ctrl+N)", "ملاحظة جديدة")} onClick={startNew} />
+          <Button variant="ghost" iconOnly icon="plus" title={t("New note", "ملاحظة جديدة")} onClick={startNew} />
         </div>
         {categories.length > 0 && (
           <div className="mid-notes-types" role="tablist">
@@ -101,7 +107,9 @@ export function Notes() {
           </div>
         )}
         <div className="mid-notes-list">
-          {notes.length === 0 && <div className="mid-empty"><div><Icon name="bookmark" />{t("No notes yet — create your first one.", "لا ملاحظات بعد — أنشئ أول واحدة.")}</div></div>}
+          {notes.length === 0 && (
+            <div className="mid-empty"><div><Icon name="bookmark" />{t("No notes yet — create your first one.", "لا ملاحظات بعد — أنشئ أول واحدة.")}</div></div>
+          )}
           {notes.map((n) => (
             <button key={n.id} className={`mid-note-row${selected?.id === n.id ? " is-active" : ""}`} onClick={() => open(n)}>
               <span className="mid-note-type-chip"><Icon name="markdown" size="sm" /></span>
@@ -117,54 +125,67 @@ export function Notes() {
         </div>
       </aside>
 
-      <div className="mid-editor-area">
-        {showEditor ? (<>
-          <div className="mid-tabstrip" role="tablist">
-            <button className="mid-tab is-active" role="tab">
-              <Icon name="markdown" size="sm" />
-              <span className="mid-tab-title">{(mode === "view" ? selected?.title : draft.title) || t("Untitled", "بدون عنوان")}{dirty ? " •" : ""}</span>
-            </button>
-            <div className="mid-tab-actions">
-              <div className="mid-mode-toggle" role="tablist" aria-label="Render mode">
-                <button className={`mid-mode-seg${mode === "view" ? " is-active" : ""}`} title={t("View", "عرض")} onClick={() => setMode("view")} disabled={!selected}><Icon name="show" size="sm" /></button>
-                <button className={`mid-mode-seg${mode === "split" ? " is-active" : ""}`} title={t("Split", "مقسّم")} onClick={() => setMode("split")}><Icon name="columns" size="sm" /></button>
-                <button className={`mid-mode-seg${mode === "edit" ? " is-active" : ""}`} title={t("Edit", "تحرير")} onClick={() => setMode("edit")}><Icon name="edit" size="sm" /></button>
+      {/* Detail pane (editor / preview) */}
+      <div className="mid-notes-detail">
+        {showEditor ? (
+          <div className="mid-editor-area">
+            <div className="mid-tabstrip" role="tablist">
+              <button className="mid-btn mid-btn--icon mid-btn--ghost mid-notes-back" title={t("Back to list", "العودة للقائمة")}
+                onClick={() => { setDetailOpen(false); if (!selected) setMode("view"); }}>
+                <Icon name="chevron-right" className="mid-flip-x" />
+              </button>
+              <button className="mid-tab is-active" role="tab">
+                <Icon name="markdown" size="sm" />
+                <span className="mid-tab-title">{(mode === "view" ? selected?.title : draft.title) || t("Untitled", "بدون عنوان")}{dirty ? " •" : ""}</span>
+              </button>
+              <div className="mid-tab-actions">
+                <div className="mid-mode-toggle" role="tablist" aria-label="Render mode">
+                  <button className={`mid-mode-seg${mode === "view" ? " is-active" : ""}`} title={t("View", "عرض")} onClick={() => setMode("view")} disabled={!selected}><Icon name="show" size="sm" /></button>
+                  <button className={`mid-mode-seg${mode === "split" ? " is-active" : ""}`} title={t("Split", "مقسّم")} onClick={() => setMode("split")}><Icon name="columns" size="sm" /></button>
+                  <button className={`mid-mode-seg${mode === "edit" ? " is-active" : ""}`} title={t("Edit", "تحرير")} onClick={() => setMode("edit")}><Icon name="edit" size="sm" /></button>
+                </div>
+                {selected && (<>
+                  <Button variant="ghost" iconOnly icon="link" title={selected.is_public ? t("Unshare", "إلغاء المشاركة") : t("Share publicly", "مشاركة عامة")} onClick={() => toggleShare(selected)} disabled={busy} />
+                  {selected.is_public && selected.share_slug && <Button variant="ghost" iconOnly icon="copy" title={t("Copy link", "نسخ الرابط")} onClick={async () => { await navigator.clipboard.writeText(shareUrl(selected.share_slug!)).catch(() => {}); toast(t("Link copied", "نُسخ الرابط")); }} />}
+                  <Button variant="ghost" iconOnly icon="trash" title={t("Delete", "حذف")} onClick={() => setConfirmDelete(selected)} />
+                </>)}
+                <Button variant="primary" icon="save" busy={busy} disabled={!dirty} onClick={save} title="Cmd/Ctrl+S">{t("Save", "حفظ")}</Button>
               </div>
-              {selected && (<>
-                <Button variant="ghost" iconOnly icon="link" title={selected.is_public ? t("Unshare", "إلغاء المشاركة") : t("Share publicly", "مشاركة عامة")} onClick={() => toggleShare(selected)} disabled={busy} />
-                {selected.is_public && selected.share_slug && <Button variant="ghost" iconOnly icon="copy" title={t("Copy link", "نسخ الرابط")} onClick={async () => { await navigator.clipboard.writeText(shareUrl(selected.share_slug!)).catch(() => {}); toast(t("Link copied", "نُسخ الرابط")); }} />}
-                <Button variant="ghost" iconOnly icon="trash" title={t("Delete", "حذف")} onClick={() => setConfirmDelete(selected)} />
-              </>)}
-              <Button variant="primary" icon="save" busy={busy} disabled={!dirty} onClick={save} title="Cmd/Ctrl+S">{t("Save", "حفظ")}</Button>
             </div>
-          </div>
 
-          {mode !== "view" && (
-            <div className="mid-editor-meta">
-              <input className="mid-settings-control mid-editor-title" placeholder={t("Note title", "عنوان الملاحظة")} value={draft.title} onChange={(e) => edit("title", e.target.value)} autoFocus={!selected} />
-              <Input placeholder={t("Category", "التصنيف")} value={draft.category} onChange={(e) => edit("category", e.target.value)} />
-              <Input placeholder={t("tags, comma, separated", "وسوم مفصولة بفواصل")} value={draft.tags} onChange={(e) => edit("tags", e.target.value)} />
-            </div>
-          )}
-
-          <div className={`mid-editor-body${mode === "split" ? " is-split" : ""}`}>
-            {mode !== "view" && <textarea className="mid-editor-textarea" dir="ltr" spellCheck={false} placeholder={t("Write markdown…", "اكتب ماركداون…")} value={draft.body} onChange={(e) => edit("body", e.target.value)} />}
-            {mode !== "edit" && (
-              <div className="mid-preview">
-                <article className="mid-md">
-                  {mode === "view" && selected && <h1>{selected.title}</h1>}
-                  <div dangerouslySetInnerHTML={{ __html: html }} />
-                  {mode === "view" && selected && (
-                    <p className="mid-muted mid-mono" style={{ marginTop: "var(--mid-space-8)" }}>
-                      {selected.category ? `${selected.category} · ` : ""}{selected.tags ? `${selected.tags} · ` : ""}{t("updated", "آخر تحديث")} {fmtDate(selected.updated_at)}
-                    </p>
-                  )}
-                </article>
+            {mode !== "view" && (
+              <div className="mid-editor-meta">
+                <input className="mid-settings-control mid-editor-title" placeholder={t("Note title", "عنوان الملاحظة")} value={draft.title} onChange={(e) => edit("title", e.target.value)} autoFocus={!selected} />
+                <Input placeholder={t("Category", "التصنيف")} value={draft.category} onChange={(e) => edit("category", e.target.value)} />
+                <Input placeholder={t("tags, comma, separated", "وسوم مفصولة بفواصل")} value={draft.tags} onChange={(e) => edit("tags", e.target.value)} />
               </div>
             )}
+
+            <div className={`mid-editor-body${mode === "split" ? " is-split" : ""}`}>
+              {mode !== "view" && <textarea className="mid-editor-textarea" dir="ltr" spellCheck={false} placeholder={t("Write markdown…", "اكتب ماركداون…")} value={draft.body} onChange={(e) => edit("body", e.target.value)} />}
+              {mode !== "edit" && (
+                <div className="mid-preview">
+                  <article className="mid-md">
+                    {mode === "view" && selected && <h1>{selected.title}</h1>}
+                    <div dangerouslySetInnerHTML={{ __html: html }} />
+                    {mode === "view" && selected && (
+                      <p className="mid-muted mid-mono" style={{ marginTop: "var(--mid-space-8)" }}>
+                        {selected.category ? `${selected.category} · ` : ""}{selected.tags ? `${selected.tags} · ` : ""}{t("updated", "آخر تحديث")} {fmtDate(selected.updated_at)}
+                      </p>
+                    )}
+                  </article>
+                </div>
+              )}
+            </div>
           </div>
-        </>) : (
-          <div className="mid-empty"><div><Icon name="markdown" /><div>{t("Select a note, or create a new one.", "اختر ملاحظة أو أنشئ جديدة.")}</div></div></div>
+        ) : (
+          <div className="mid-empty">
+            <div>
+              <Icon name="markdown" />
+              <div>{t("Select a note, or create a new one.", "اختر ملاحظة أو أنشئ جديدة.")}</div>
+              <div style={{ marginTop: "var(--mid-space-3)" }}><Button variant="primary" icon="plus" onClick={startNew}>{t("New note", "ملاحظة جديدة")}</Button></div>
+            </div>
+          </div>
         )}
       </div>
 
