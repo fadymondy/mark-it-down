@@ -81,6 +81,25 @@ Mint a token in **Profile → Access tokens**, then:
 }
 ```
 
+## apps/mobile — the Flutter companion (Android/iOS)
+
+Same brand, same design system, same backend:
+
+- **Design tokens**: `lib/theme/tokens.dart` mirrors `packages/ui-tokens/tokens.css`
+  (zinc light/dark/sepia palettes, spacing/radius/type scale) as Flutter ThemeData.
+- **The 25 named themes** are code-generated from `packages/core/src/themes/themes.ts`
+  into `lib/theme/themes.g.dart` — regenerate with `node scripts/gen-mobile-themes.mjs`.
+- **Brand mark** is drawn natively (`lib/widgets/brand.dart`, same art as
+  `media/brand/icon.svg`); launcher icons come from `build/icons/1024.png` via
+  `dart run flutter_launcher_icons`.
+- **Warehouse client** (`lib/api/`) talks to the same ToGo backend as every other
+  surface: `POST /api/auth/mfa-login` (with the TOTP challenge + recovery-code flow),
+  register, emailed-code password reset, and the user-scoped notes CRUD + public
+  sharing. The bearer token lives in secure storage; the server URL is changeable
+  in Settings (default `https://markitdown.fadymondy.com`).
+- Build: `cd apps/mobile && flutter build apk --release` (Android) /
+  `flutter build ipa` (macOS host required for iOS).
+
 ## Auto-update matrix
 
 GitHub Releases is the single source of truth. Every surface updates from it —
@@ -112,6 +131,7 @@ mark-it-down/
 ├── apps/electron/        Desktop app (electron-builder config in root package.json)
 ├── apps/web/             ToGo service: Go API (cmd/, internal/) + SPA (web/)
 ├── apps/chrome-extension/ MV3 extension (own package.json + esbuild)
+├── apps/mobile/          Flutter app (Android/iOS) — same tokens, themes, warehouse API
 ├── packages/core/        Shared source-only TS (imported relatively, bundled per app)
 ├── packages/ui-tokens/   Shared design tokens + icon set
 └── plugins/              Claude Code plugin (bundled MCP stdio server)

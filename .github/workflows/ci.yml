@@ -113,6 +113,29 @@ jobs:
           path: apps/chrome-extension/dist-zip/*.zip
           retention-days: 14
 
+  mobile:
+    name: Flutter app (Android)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Pub get
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Build debug APK
+        run: flutter build apk --debug
+
   integration:
     name: VSCode integration tests
     runs-on: ubuntu-latest

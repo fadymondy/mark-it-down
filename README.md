@@ -1,6 +1,6 @@
 # Mark It Down
 
-A beautiful markdown viewer + editor everywhere you write — **VSCode**, **desktop (Electron)**, **Chrome**, and the **web** — with rich rendering, live mermaid, sortable tables, code-block exports, a cloud notes warehouse, and MCP servers for AI agents.
+A beautiful markdown viewer + editor everywhere you write — **VSCode**, **desktop (Electron)**, **Chrome**, **mobile (Flutter)**, and the **web** — with rich rendering, live mermaid, sortable tables, code-block exports, a cloud notes warehouse, and MCP servers for AI agents.
 
 ## The platform
 
@@ -10,8 +10,9 @@ A beautiful markdown viewer + editor everywhere you write — **VSCode**, **desk
 | Desktop app | Standalone editor with tabs, typed notes, importers, tray MCP, auto-update | `apps/electron/` |
 | Web app | Landing + auth (TOTP 2FA), cloud notes warehouse with public share links, MCP connector over HTTP, admin panel — built on the [ToGo](https://github.com/togo-framework/togo) Go framework | `apps/web/` |
 | Chrome extension | Quick note capture to the warehouse, markdown viewer with 25 themes | `apps/chrome-extension/` |
+| Mobile app (Flutter) | Android/iOS warehouse client — notes, markdown viewer/editor, 2FA login, all 25 themes | `apps/mobile/` |
 
-All four share `packages/core` (renderer, themes, search, wikilinks) and update from GitHub Releases through one feed — see [docs/platform.md](docs/platform.md).
+All five share the same design system — `packages/ui-tokens` + `packages/core` (renderer, themes, search, wikilinks) and update from GitHub Releases through one feed — see [docs/platform.md](docs/platform.md).
 
 ## Status
 

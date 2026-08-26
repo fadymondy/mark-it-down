@@ -34,6 +34,7 @@ Per-feature documentation for the v1.0 roadmap. Each page covers what the featur
 | MCP connector over Streamable HTTP (`/mcp`, PAT-authenticated) | shipped | [platform.md](platform.md) |
 | Chrome extension (MV3): quick capture, markdown viewer, warehouse client | shipped (first-cut) | [chrome-extension.md](chrome-extension.md) |
 | Unified update feed `/api/updates/{platform}` for every surface | shipped | [platform.md](platform.md) |
+| Flutter mobile app (Android/iOS): warehouse client, shared tokens + 25 themes | shipped (first-cut) | [platform.md](platform.md) |
 
 ## v2.0 features
 
