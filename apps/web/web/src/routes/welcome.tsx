@@ -16,6 +16,8 @@ const TARGETS: { key: string; icon: IconName; en: string; ar: string; fallback: 
   { key: "windows", icon: "download", en: "Windows", ar: "ويندوز", fallback: "https://github.com/fadymondy/mark-it-down/releases/latest" },
   { key: "mac", icon: "download", en: "macOS", ar: "ماك", fallback: "https://github.com/fadymondy/mark-it-down/releases/latest" },
   { key: "linux", icon: "download", en: "Linux", ar: "لينكس", fallback: "https://github.com/fadymondy/mark-it-down/releases/latest" },
+  { key: "android", icon: "markdown", en: "Android", ar: "أندرويد", fallback: "https://markitdown.fadymondy.com/mark-it-down-v0.3.0.apk" },
+  { key: "ios", icon: "markdown", en: "iOS", ar: "iOS", fallback: "" },
   { key: "vscode", icon: "code", en: "VSCode", ar: "VSCode", fallback: "https://marketplace.visualstudio.com/items?itemName=fadymondy.mark-it-down" },
   { key: "chrome", icon: "link", en: "Chrome", ar: "كروم", fallback: "https://github.com/fadymondy/mark-it-down/releases/latest" },
 ];
@@ -65,8 +67,18 @@ export function Welcome() {
         <div className="mid-welcome-actions mid-stagger">
           {TARGETS.map((x) => {
             const asset = feed?.downloads?.[x.key]?.[0];
+            const href = asset?.url ?? x.fallback;
+            if (!href) {
+              return (
+                <span key={x.key} className="mid-welcome-action" style={{ opacity: 0.55, cursor: "default" }}>
+                  <Icon name={x.icon} />
+                  <span className="mid-welcome-action-label">{t(x.en, x.ar)}</span>
+                  <span className="mid-welcome-action-kbd">{t("soon", "قريبًا")}</span>
+                </span>
+              );
+            }
             return (
-              <a key={x.key} className="mid-welcome-action mid-pressable" href={asset?.url ?? x.fallback} target="_blank" rel="noopener noreferrer">
+              <a key={x.key} className="mid-welcome-action mid-pressable" href={href} target="_blank" rel="noopener noreferrer">
                 <Icon name={x.icon} />
                 <span className="mid-welcome-action-label">{t(x.en, x.ar)}</span>
                 <span className="mid-welcome-action-kbd">{asset ? feed?.tag : t("get", "احصل")}</span>

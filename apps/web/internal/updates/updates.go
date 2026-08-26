@@ -165,6 +165,10 @@ func classify(name string) string {
 		return "mac"
 	case strings.HasSuffix(n, ".appimage"), strings.HasSuffix(n, ".deb"):
 		return "linux"
+	case strings.HasSuffix(n, ".apk"):
+		return "android"
+	case strings.HasSuffix(n, ".ipa"):
+		return "ios"
 	case strings.HasSuffix(n, ".vsix"):
 		return "vscode"
 	case strings.Contains(n, "chrome") && strings.HasSuffix(n, ".zip"):
