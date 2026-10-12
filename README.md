@@ -1,5 +1,9 @@
 # Mark It Down
 
+<!-- Product Hunt badge: hidden until the post launches (it 404s while a draft). On launch day, remove this comment wrapper.
+<a href="https://www.producthunt.com/posts/mark-it-down?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-mark-it-down" target="_blank" rel="noopener"><picture><source media="(prefers-color-scheme: dark)" srcset="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1277751&theme=dark"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1277751&theme=light" alt="Mark It Down - Featured on Product Hunt" width="250" height="54" loading="lazy" /></picture></a>
+-->
+
 A beautiful markdown viewer + editor everywhere you write — **VSCode**, **desktop (Electron)**, **Chrome**, **mobile (Flutter)**, and the **web** — with rich rendering, live mermaid, sortable tables, code-block exports, a cloud notes warehouse, and MCP servers for AI agents.
 
 ## The platform
